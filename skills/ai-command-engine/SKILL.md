@@ -1,0 +1,64 @@
+---
+name: ai-command-engine
+description: 通过简易 JSON 指令操作嘉立创 EDA 专业版（EasyEDA Pro）。当用户要求用 AI 操作/检查/绘制嘉立创 EDA 的原理图或 PCB，或查询嘉立创 SMT 可贴装物料时使用本 skill。铁律：每条 /command 必须带顶层 instanceId（先 GET /connections 查、勿缓存；省略会落到全局选中实例，多 AI 并行时就是操作别家工程）。前置条件：EDA 内已安装并启用 "AI Command Engine" 扩展（勾选「允许外部交互」），且 bridge/command-proxy.mjs 指令代理正在运行（打开 EDA 会自动拉起，关闭 EDA 后 300 秒自动退出；0.10.71 起插件每 5 分钟自动重试拉起，代理空闲退出/崩溃后最多 5 分钟自愈）。
+---
+
+# AI Command Engine — 嘉立创 EDA 操作指令集
+
+HTTP 发 JSON 到 `http://localhost:49720` 操作 EasyEDA Pro；禁止自编 `eda.*` API。
+
+## 新手必读（首次操作前读一遍，熟悉后跳过）
+
+- **连接**：`GET /health` 自检（不通=代理没跑，AI 按 setup.md §1a 自己拉起；通但无实例=EDA 侧问题 §1b）→ `GET /connections` 选窗 → `POST /select`；发指令 `POST /command`，只许 `cmd`+`params`；拿不准先 `GET /help?cmd=<名>`。→ [setup.md](references/setup.md) §1~5
+- **被拒「已被用户暂停」**：该实例被用户在 EDA「AI Command」菜单点了「断开指令代理」——指令未发往任何窗口（工程安全）。**不要自行想办法重连**（旧模块重放/外部恢复会被代理口令校验拒绝）；请用户点菜单「连接指令代理」恢复（0.10.69 起，恢复需口令，只有菜单点击能解除）。`/connections` 里该实例 `paused:true`；全部实例暂停且断开后，代理空闲 300 秒自动退出。
+- **坐标**：原理图 10mil/格（A4≈1170×825，取 10 倍数）；PCB 是 mil（1mm≈39.37）。差 10 倍，混用放飞。→ [setup.md](references/setup.md) §6
+- **激活**：`schematic.*`/`pcb.*` 前先 `editor.openDocument {"uuid":...}`（uuid 来自 project.getInfo）。→ [setup.md](references/setup.md) §7
+- **守则**：先查再画、**每条指令带顶层 instanceId**（先 GET /connections 查、勿缓存）；批量优先；画完必读回（有假成功）；常 save、大改前备份；0 致命才 importChanges；超时≠取消（taskId 查进度或原样重发）；**视觉验收用 schematic.exportPng**（后台窗口 editor.screenshot 截的是缓存帧，连截字节相同=没重绘，pitfalls K9~K10）。
+
+## 按任务选指令（速查，先看这里）
+
+不知道用哪条时，按"我要做什么"查 [tasks.md](references/tasks.md)，不给对象分类、直接给可执行序列。高频 Top 8：
+
+| 我要… | 用这条 |
+| --- | --- |
+| 整页结构验收（桥接/错网/重复位号/排版一次查） | `schematic.structuralAudit` |
+| 从零画功能区 | `schematic.buildBlock` |
+| 批量接线 | `schematic.batchWire`（单脚 `labelWire`/双脚 `linkWire`） |
+| 整理乱图 | `schematic.autoLayout`（先 dryRun） |
+| 连通性对账 | `schematic.exportNetlist` |
+| 切工程 | 先 `schematic.save` → `project.open` |
+| 转 PCB | `pcb.importChanges`（0 致命才导，弹窗用户点） |
+| 出生产资料 | `pcb.exportGerber`/`exportPickPlace` + `schematic.exportBom` |
+
+## 指令分级（0.10.61）
+
+**✅ 推荐**
+批量类 `buildBlock`/`autoLayout`/`batchWire`/`macro`（一次提交多条，带进度心跳）；语义接网 `labelWire`/`linkWire`；只读体检 `structuralAudit`/`list*`/`get*`/`runDrc*`（只读不改图，探路/验收随便跑）；PCB `checkPlacement`/`routeTrack`/`pourCopper`/`runDrc`；修复类一律先 `dryRun`。
+
+**🟡 不推荐（不禁止）**
+单条 mutation 逐条发（`placeDevice`/`drawWire`/`labelWire`/`delete` 单个）——能用但慢，多条应收成 `batchWire`/`macro`。串行发没问题；并发发多个不再报错（0.10.50 起代理自动排队逐个执行），但吞吐退化为 ~3s/条。批量失败项 `error` 带 name/stack 完整堆栈（0.10.51），可直接定位。
+
+**🔴 有风险（用错后果）**
+`autoLayout` 真跑→器件乱跑只能 undo；修复类不带 dryRun→误删标签只能删线重画；`delete`→删错无撤销，先备份；`importFile`→覆盖导入无法回退；`groupBySchematicRegions`→无备份不可回滚；`importChanges`→DRC 非 0 会把错误同步进 PCB；改 Designator→位号错位、官方还会再规范化。
+
+## 指令文档（7 份，按对象）
+
+| 对象 | 文件 |
+| --- | --- |
+| 原理图（含宏） | [commands-schematic.md](references/commands-schematic.md) |
+| PCB（含低频附录+自动布线闭环） | [commands-pcb.md](references/commands-pcb.md) |
+| 网络类/差分对/生产导出 | [commands-net.md](references/commands-net.md) |
+| 工程/板子/图页 | [commands-project.md](references/commands-project.md) |
+| 复用模块 | [commands-cbb.md](references/commands-cbb.md) |
+| 自建库+工程内选料 | [commands-lib.md](references/commands-lib.md) |
+| 知识库/SMT 物料 | [commands-knowledge.md](references/commands-knowledge.md) |
+| **低频指令附录（32 条，参数用 /help 在线查）** | [commands-misc.md](references/commands-misc.md) |
+
+## 其他文件
+
+- [tasks.md](references/tasks.md) — **按需求选指令速查**（我要做什么 → 指令序列，先看这里）
+- [setup.md](references/setup.md) — 连接/坐标/激活全文（新手区引用的详情）+ 超时心跳 + 编辑器操作/截图
+- [workflow.md](references/workflow.md) — 标准流程 + 工作守则全文
+- [pitfalls.md](references/pitfalls.md) — ⚠️ 踩坑实录，出问题时先查它
+
+单条指令参数拿不准 → `GET /help?cmd=<名>` 在线查。

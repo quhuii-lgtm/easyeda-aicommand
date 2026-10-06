@@ -1,0 +1,131 @@
+{
+	"name": "ai-command-engine",
+	"uuid": "29aa51f0bed4411d866cb7a7a249231a",
+	"displayName": "AI Command Engine",
+	"description": "AI 指令引擎：为 AI 编程工具提供简易 JSON 指令接口，内部封装嘉立创 EDA 专业版扩展 API，支持宏指令组合与布线知识库",
+	"version": "0.10.73",
+	"publisher": "ai-command-engine",
+	"engines": {
+		"eda": "^3.2.0"
+	},
+	"license": "Apache-2.0",
+	"repository": {
+		"type": "extension-store",
+		"url": ""
+	},
+	"categories": "Other",
+	"keywords": [
+		"Tool"
+	],
+	"images": {
+		"logo": "./images/logo.png"
+	},
+	"homepage": "",
+	"bugs": "",
+	"activationEvents": {
+		"onStartupFinished": true
+	},
+	"entry": "./dist/index",
+	"dependentExtensions": {},
+	"headerMenus": {
+		"home": [
+			{
+				"id": "aiCommand",
+				"title": "AI Command",
+				"menuItems": [
+					{
+						"id": "About",
+						"title": "About...",
+						"registerFn": "about"
+					},
+					{
+						"id": "ListCommands",
+						"title": "List Commands...",
+						"registerFn": "listCommands"
+					},
+					{
+						"id": "ConnectBridge",
+						"title": "连接指令代理",
+						"registerFn": "connectBridge"
+					},
+					{
+						"id": "DisconnectBridge",
+						"title": "断开指令代理",
+						"registerFn": "disconnectBridge"
+					},
+					{
+						"id": "SmtQuery",
+						"title": "SMT Part Query...",
+						"registerFn": "openSmtQuery"
+					}
+				]
+			}
+		],
+		"sch": [
+			{
+				"id": "aiCommand",
+				"title": "AI Command",
+				"menuItems": [
+					{
+						"id": "About",
+						"title": "About...",
+						"registerFn": "about"
+					},
+					{
+						"id": "ListCommands",
+						"title": "List Commands...",
+						"registerFn": "listCommands"
+					},
+					{
+						"id": "ConnectBridge",
+						"title": "连接指令代理",
+						"registerFn": "connectBridge"
+					},
+					{
+						"id": "DisconnectBridge",
+						"title": "断开指令代理",
+						"registerFn": "disconnectBridge"
+					},
+					{
+						"id": "SmtQuery",
+						"title": "SMT Part Query...",
+						"registerFn": "openSmtQuery"
+					}
+				]
+			}
+		],
+		"pcb": [
+			{
+				"id": "aiCommand",
+				"title": "AI Command",
+				"menuItems": [
+					{
+						"id": "About",
+						"title": "About...",
+						"registerFn": "about"
+					},
+					{
+						"id": "ListCommands",
+						"title": "List Commands...",
+						"registerFn": "listCommands"
+					},
+					{
+						"id": "ConnectBridge",
+						"title": "连接指令代理",
+						"registerFn": "connectBridge"
+					},
+					{
+						"id": "DisconnectBridge",
+						"title": "断开指令代理",
+						"registerFn": "disconnectBridge"
+					},
+					{
+						"id": "SmtQuery",
+						"title": "SMT Part Query...",
+						"registerFn": "openSmtQuery"
+					}
+				]
+			}
+		]
+	}
+}

@@ -1,0 +1,12 @@
+{
+	"version": "1.6.27",
+	"generatedAt": "2026-10-04T16:36:54.262Z",
+	"frameworkFiles": {
+		"build/dev.ts": "5810974083b51b533cef62efd8bc5bc1968afa6e359501b2f585a6eb701626e6",
+		"build/packaged.ts": "84492d4aa05b19f90d81d850b458cf03e0552abc69daf8e05382b5399236d098",
+		"build/update.ts": "5e9482cdd1a1664cff787e756c5a1862e20b341ed4da8cd591b51bcc7ef0c3eb",
+		"build/utils.ts": "64f03f1eae96bfa509901b15ffda48c2bc5485354883298c20a0cb1868ad2f58",
+		"config/esbuild.common.ts": "ce5b51f7bba15dfa45bf3e65a0ca4e679ca9031d29a26b4141ce870fd460e3a8",
+		"config/esbuild.prod.ts": "0a90bb6619f20dce2162c43ed9e8bde19a005bed94b7675c3b2ca6ca50df370b"
+	}
+}

@@ -1,0 +1,16 @@
+node_modules/
+dist/
+build/dist/
+*.log
+
+# 运行时生成 / 本地敏感文件（绝不入库）
+bridge/jlc-credentials.json
+bridge/lane-log-*.jsonl
+bridge/backups/
+bridge/proxy-restart.log
+
+# 系统与编辑器
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/
