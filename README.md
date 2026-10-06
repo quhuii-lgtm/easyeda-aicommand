@@ -1,96 +1,72 @@
-# EasyEDA AI Command（easyeda-aicommand）
+# EasyEDA AI Command
 
-嘉立创 EDA 专业版（EasyEDA Pro）的 AI 指令引擎：用简易 JSON 指令通过本地代理操作原理图 / PCB / 工程 / 元件库，配套 AI 使用侧技能（skill），**插件与技能同步安装、同步发布**。
+嘉立创 EDA 专业版的 AI 指令引擎，通过本机 HTTP 代理执行原理图、PCB、工程和元件库操作。
 
-当前版本：**0.10.73**（插件）。代理（bridge）无版本号，随仓库最新代码运行。
+**首次使用请按 [安装与使用指南](docs/QUICKSTART.md) 依次完成：代理依赖 → EDA 插件 → 只读验证 → AI 技能。**下载 `.eext` 并不自动安装另外两部分。
 
-## 组成部分
+## 版本与组成
 
-| 目录 | 内容 |
+当前发布插件为 [v0.10.73](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.10.73)。代理与技能随仓库代码分发，请同时记录所用仓库提交；插件版本相同不表示代理和技能也相同。后续文档及助手修订见 [CHANGELOG](CHANGELOG.md)。
+
+| 路径 | 内容 |
 | --- | --- |
-| `src/` + `extension.json` | EDA 插件本体（206 条指令：schematic./pcb./project./library./editor./macro 等） |
-| `bridge/` | 指令代理 `command-proxy.mjs`：HTTP + WebSocket 桥，写指令单行道、写保护状态机、SMT 物料查询、lane-log 对账 |
-| `skills/ai-command-engine/` | AI 使用侧技能：SKILL.md + references（指令手册 setup/workflow/pitfalls/tasks），教 AI 安全正确地调用本插件 |
-| `test/` | 回归测试（守卫单测、结构审计回归等） |
-| `bridge/mock-host-test.mjs` | 代理状态机假宿主回归（19 用例，独立端口，不触真实 EDA） |
+| `src/`、`extension.json` | EDA 插件源码；安装包从 Releases 下载 |
+| `bridge/` | Node.js HTTP/WebSocket 代理及 Windows 启动器 |
+| [skills/ai-command-engine/](skills/ai-command-engine/SKILL.md) | 唯一维护的 AI 技能入口、分类指令手册和可选 Python 助手 |
+| `test/`、`bridge/mock-host-test.mjs` | 守卫与代理模拟回归，不代替真实 EDA 验收 |
+| [docs/QUICKSTART.md](docs/QUICKSTART.md) | 安装、首次调用、常见报错、升级和卸载 |
 
-## 安装（三部分一起装）
+## 安装摘要
 
-### 1. 装 EDA 插件
+要求 Node.js >=20.17.0（含 npm）。Windows 是本文档提供的操作路径；宿主版本及其他平台的验证边界见首次使用指南。
 
-Release 页下载 `ai-command-engine_vX.Y.Z.eext`，在嘉立创 EDA 专业版「文件 → 导入 → 专业版插件」导入。打开工程后插件自动连接本地代理（首次会自动拉起）。
-
-### 2. 装指令代理
-
-代理是独立 Node 脚本，插件依赖它通信：
-
-```bash
-node bridge/command-proxy.mjs        # 监听 127.0.0.1:49720
+```powershell
+git clone https://github.com/quhuii-lgtm/easyeda-aicommand.git
+Set-Location easyeda-aicommand
+npm ci
+node bridge/command-proxy.mjs
 ```
 
-环境变量：`PORT`（改端口）、`PROXY_IDLE_MS`（空闲退出毫秒，0=常驻）、`PROXY_CMD_TIMEOUT_MS`（指令超时，默认 300000）。全部扩展断开后默认 300 秒自动退出，打开 EDA 会自动拉起。
+ZIP 用户在解压后的仓库目录运行后两条命令。保留代理终端，再从 [Releases](https://github.com/quhuii-lgtm/easyeda-aicommand/releases) 下载 `.eext`，在 EDA 插件管理界面导入、启用并允许外部交互，打开试用工程，点击 AI Command → 连接指令代理。
 
-### 3. 装 AI 技能
+默认地址为 `http://127.0.0.1:49720`。代理启动后再验证 `/health` 与 `/connections`，按工程名核对目标实例。完整 PowerShell 请求和预期结果见 [第一次只读调用](docs/QUICKSTART.md#3-完成第一次只读调用)。
 
-把 `skills/ai-command-engine/` 整个目录拷到你的 AI 工具技能目录（Kimi Work：技能目录下；其他工具按其技能规范）。AI 加载该技能后即可获得全部指令手册与安全守则。
+**默认手动启动代理。**`ai-command-proxy://` 自动拉起只有在用户已自行注册协议时才有效；仓库没有协议注册脚本。不要只修改代理端口，发布插件和配套工具默认使用 49720。
 
-> 三步缺一不可：插件干活、代理传话、技能教 AI 怎么发话。
+## 安装 AI 技能
 
-### 4. （可选）配置查询物料密钥
+将整个 `skills/ai-command-engine/` 安装到 AI 工具的技能目录，保留其子目录。已有同名技能先备份、对比，不覆盖个人改动。具体位置与试用提示词见 [技能安装](docs/QUICKSTART.md#4-安装-ai-技能)。根目录 `SKILL.md` 只是导航，不是另一份技能。
 
-要用 `smt.queryComponent`（SMT 可贴装物料查询）才需要配置，一次性，不配置不影响画图等其他全部功能。
+## 可选 SMT 物料查询
 
-**获取密钥**（嘉立创开放平台，约 1 分钟）：
+仅物料查询需要 [嘉立创开放平台](https://open.jlc.com) 的 appId、accessKey 和 secretKey。代理启动后打开 `http://127.0.0.1:49720/smt` 填写；配置文件是当前仓库的 `bridge/jlc-credentials.json`，已被 Git 忽略。
 
-1. 打开 https://open.jlc.com ，登录嘉立创账号
-2. 点「快速接入」→「创建应用」，一键生成应用密钥
-3. 记下三个值：**appId（应用ID）、accessKey（应用API密钥）、secretKey（应用密钥）**
+普通画图不需要这些密钥。换目录升级时需自行迁移配置；不要上传或在反馈中粘贴密钥。步骤见 [物料查询](docs/QUICKSTART.md#5-可选-smt-物料查询)。
 
-**填写密钥**：
+## 调用边界
 
-1. 启动代理后（`node bridge/command-proxy.mjs`，或打开 EDA 自动拉起），浏览器打开 `http://127.0.0.1:49720/smt`
-2. 把三个值粘贴进对应输入框，保存
-3. 密钥写入 `bridge/jlc-credentials.json`，**只需配置一次**：升级插件/代理不丢失，保存后即时生效（不用重启代理），页面也支持人工查询物料
+- 每个完整 `/command` 请求显式携带顶层 `instanceId`，先查询并核对目标，`/select` 不能替代它。
+- 图页操作还应带 `params.__docUuid` 核对页身份。实例相同不代表焦点页正确。
+- 写超时不代表取消；遇到写保护先只读核实旧写状态，不能盲目重试或自动解除保护。
+- 完成修改后保存、读回并检查网络及图像。API 成功、DRC 或模拟回归不能独立证明电路正确。
 
-> ⚠️ 安全：jlc-credentials.json 含 secretKey，**不要提交到 git、不要外发**（本仓库 .gitignore 已排除）。SMT 查询走代理本地签名调用，密钥不出本机。
+## 开发与回归
 
-**验证**：
+安装发布包不需要构建。开发者在仓库目录执行：
 
-```bash
-curl -X POST http://127.0.0.1:49720/command \
-  -H "Content-Type: application/json" \
-  -d '{"cmd":"smt.queryComponent","instanceId":"<实例ID>","params":{"queryString":"0603 10k"}}'
+```powershell
+npm ci
+npm run build
+node bridge/mock-host-test.mjs
+npx esbuild test/docGuardRegression.ts --bundle --format=cjs --platform=node --outfile=build/dist/docGuardRegression.cjs
+node build/dist/docGuardRegression.cjs
+python -B -m unittest discover -s skills/ai-command-engine/tests -v
 ```
 
-未配置时该指令会返回明确报错并提示去 `/smt` 页面填写。
+构建产物位于 `build/dist/ai-command-engine_v*.eext`。代理回归使用独立端口 49799 和假扩展；运行前确认该端口空闲。Python 测试使用模拟 HTTP，不连接 EDA。真实客户端安装与绘图仍需单独验收。
 
-## 快速验证
+## 反馈与许可
 
-```bash
-# 代理存活 + 实例在线
-curl http://127.0.0.1:49720/connections
+问题请提交到 [Issues](https://github.com/quhuii-lgtm/easyeda-aicommand/issues)，附版本、仓库提交、复现步骤及脱敏错误。升级、密钥迁移与卸载见 [指南](docs/QUICKSTART.md#升级停止与卸载)。
 
-# 发一条只读指令（instanceId 从 /connections 查，勿缓存）
-curl -X POST http://127.0.0.1:49720/command \
-  -H "Content-Type: application/json" \
-  -d '{"cmd":"project.getInfo","instanceId":"<实例ID>","params":{}}'
-```
-
-## 核心可靠性设计（0.10.73）
-
-- **写指令单行道**：每窗口 FIFO 一次一条，官方 API 并发容量低的根治
-- **写保护状态机**：写超时/心跳超时 → 该实例拒绝一切写，直到可信迟到结果或显式 `write.acknowledge`；入队+出队双重检查；按实例号键，断线重连不清除
-- **文档守卫**：schematic./pcb. 指令校验焦点文档类型与可选 `__docUuid`，杜绝写到错误页
-- **instanceId 硬校验**：/command 必须带顶层 instanceId，多 AI 并行互不串台
-- **lane-log 对账**：写队列/保护/连接事件全量 JSONL，出问题先查日志
-
-## 构建与回归
-
-```bash
-npm install && npm run build     # 产出 build/dist/ai-command-engine_v*.eext
-node bridge/mock-host-test.mjs   # 代理状态机 19 用例（约 20 秒）
-```
-
-## 许可证
-
-Apache-2.0（见 LICENSE）
+[Apache-2.0](LICENSE)。构建框架原有历史保留在 [SDK changelog](docs/SDK-CHANGELOG.md)。

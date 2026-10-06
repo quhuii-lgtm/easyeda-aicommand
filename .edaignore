@@ -18,3 +18,7 @@
 debug.log
 /bridge/jlc-credentials.json
 /bridge/backups/
+/bridge/lane-log-*.jsonl
+/bridge/lane-log-error.txt
+/bridge/proxy-restart.log
+__pycache__/
