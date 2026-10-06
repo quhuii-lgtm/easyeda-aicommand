@@ -276,7 +276,8 @@ curl http://localhost:49720/help                                # 全部指令�
 | `smt.queryComponent` | 查询 SMT 可贴装物料 | `queryString`, `pageNum?`, `pageSize?` |
 
 - 返回 `components[].code` 即立创编号，可直接用于 `schematic.placeDevice`。
-- 首次使用：让用户打开 `http://127.0.0.1:49720/smt` 填 appId / accessKey / secretKey（存于 `bridge/jlc-credentials.json`，升级不丢失）；该页面也支持人工查询。
+- 首次使用：让用户打开 `http://127.0.0.1:49720/smt` 填 appId / accessKey / secretKey（存于 `bridge/jlc-credentials.json`，升级不丢失，保存即时生效不用重启代理）；该页面也支持人工查询。
+- **密钥获取**（AI 代操作遇到"未配置密钥"报错时引导用户）：https://open.jlc.com → 登录嘉立创账号 →「快速接入」→「创建应用」一键生成三件套（appId / accessKey / secretKey）；约 1 分钟。密钥只存本机，勿提交 git、勿外发。
 
 ### 宏指令（组合多个指令）
 

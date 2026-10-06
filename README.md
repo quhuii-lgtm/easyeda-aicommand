@@ -36,6 +36,34 @@ node bridge/command-proxy.mjs        # 监听 127.0.0.1:49720
 
 > 三步缺一不可：插件干活、代理传话、技能教 AI 怎么发话。
 
+### 4. （可选）配置查询物料密钥
+
+要用 `smt.queryComponent`（SMT 可贴装物料查询）才需要配置，一次性，不配置不影响画图等其他全部功能。
+
+**获取密钥**（嘉立创开放平台，约 1 分钟）：
+
+1. 打开 https://open.jlc.com ，登录嘉立创账号
+2. 点「快速接入」→「创建应用」，一键生成应用密钥
+3. 记下三个值：**appId（应用ID）、accessKey（应用API密钥）、secretKey（应用密钥）**
+
+**填写密钥**：
+
+1. 启动代理后（`node bridge/command-proxy.mjs`，或打开 EDA 自动拉起），浏览器打开 `http://127.0.0.1:49720/smt`
+2. 把三个值粘贴进对应输入框，保存
+3. 密钥写入 `bridge/jlc-credentials.json`，**只需配置一次**：升级插件/代理不丢失，保存后即时生效（不用重启代理），页面也支持人工查询物料
+
+> ⚠️ 安全：jlc-credentials.json 含 secretKey，**不要提交到 git、不要外发**（本仓库 .gitignore 已排除）。SMT 查询走代理本地签名调用，密钥不出本机。
+
+**验证**：
+
+```bash
+curl -X POST http://127.0.0.1:49720/command \
+  -H "Content-Type: application/json" \
+  -d '{"cmd":"smt.queryComponent","instanceId":"<实例ID>","params":{"queryString":"0603 10k"}}'
+```
+
+未配置时该指令会返回明确报错并提示去 `/smt` 页面填写。
+
 ## 快速验证
 
 ```bash
