@@ -65,7 +65,7 @@
 - macro 返回结果的键是 `steps`（不是 result/data）。
 - `project.modifyTitleBlock` 只能改图框**已存在**的字段；纸张切换让用户在 EDA 界面手动改。
 - `project.createPcb`/`project.createSchematic` 的 boardName **必须是已存在的板子名**；新建省略 boardName，之后 `project.associateBoard` 关联。
-- 验证新 API：先 `POST http://127.0.0.1:49620/execute {"code":"..."}` 官方网关探针（⚠️ 代码不支持可选链 `?.`；`/eda-windows` 列窗口、`/eda-windows/select` 选窗）。网关可能掉线、`system.eval` 逃生口不可用——用现有封装指令当探针（placeNetLabel/listNetLabels/pruneFloatingLabels dryRun/exportNetlist）或直接查 pro-api-types 类型注释（官方把关键限制写在注释里）。
+- 历史开发环境另有 49620 原生 API 网关，但未随本仓库发布，不是使用前置条件。普通调用先查正式指令帮助；扩展开发需单独确认调试环境和授权。
 - **插件不越权**：指令只检查如实反馈，不擅自修复/删除/回滚；异常返回状态码+warning+建议，由操作者决定（主动调 pruneFloatingLabels/dedupeWireNets/delete 才是授权清理）。
 
 ## 桥接开关与多实例（0.10.66~0.10.70 实测，K5~K8）
@@ -124,7 +124,6 @@
 - **重复位号丢引脚教训（0.10.60 bug，0.10.61 已修）**：一批器件位号未规范化（全是 "R?"）时，按位号索引引脚会互相覆盖只留第一个——引脚收集必须按器件（primitiveId）条目，不能按位号做 key。
 - **structuralAudit 的 COMP_OUTSIDE_REGION 对图框误报**：图框 (0,0) 不在任何功能区框内会被报 candidate，图框不是器件，验收时忽略。
 
-
 ## 视觉验收与工程操作（0.10.71 实测，K9~K12，2026-10-06 VIN 事件定论）
 
 - **K9 后台窗口不重绘，screenshot 截缓存帧**：EDA 窗口在后台/不聚焦时交互画布不增量重绘，`editor.screenshot` 拿到的是旧帧——**连截两次返回字节级相同就是缓存帧信号**（zoomToAll/zoomToRegion 返回 ok 也刷不动它）。API 放置/修改后"图上看不到"**先疑截图、再疑数据**；数据核验永远以 listComponents/getDocumentSource/网表/exportPng 为准。实测：同页 5 个器件 screenshot 只显示 1 个，exportPng 全在；生产工程"VIN 不可见"纯属假象，符号一直在图上。
@@ -150,5 +149,5 @@
   ② **`write.acknowledge`**（本地指令，需顶层 instanceId）——调用方确认现场后的显式解除。注意：普通写（drawWire/placeDevice）不在任务表，**task.list 空不能证明写已结束**，不要拿它当解除依据。
 - **写被拒时的标准动作**：不要无脑重试——先 `task.get` 查前一条写的实际结果（长任务类），再用只读指令核对现场（listComponents/listWires 看有无半注册残留），然后 `write.acknowledge` 解除。lane-log 记 `write-uncertain-set/cleared` 可对账。
 - **editor.\* 不再整体只读**：只读白名单为 `editor.(listTabs|screenshot|zoomToAll|zoomToRegion)$` 四条；`openDocument/closeDocument` 会改变目标文档上下文，**按写指令排队**；macro 整体占一条写通道，外部切页排在其后不被插入（假宿主实测顺序 macro→openDocument）。
-- **文档守卫（插件侧 0.10.73）**：焦点类型不符时**只有激活的同类标签才自愈**（焦点卡住实测场景的恢复）；无激活命中 → 拒绝，要求显式声明目标。页级操作建议显式传 `params.__docUuid`（页 uuid 用 `schematic.list` 查），焦点不符即报错。
-- **运维旋钮**：`PROXY_CMD_TIMEOUT_MS` 环境变量可覆盖代理指令超时（默认 300s）；`PORT` 可改监听端口。假宿主回归脚本 `bridge/mock-host-test.mjs`（16 用例，独立端口不触真实 EDA）。
+- **文档守卫（插件侧 0.10.73）**：焦点类型不符时**只有激活的同类标签才自愈**（焦点卡住实测场景的恢复）；无激活命中 → 拒绝，要求显式声明目标。页级操作建议显式传 `params.__docUuid`（页 uuid 用 `project.listSchematicPages` 查），焦点不符即报错。
+- **运维旋钮**：`PROXY_CMD_TIMEOUT_MS` 环境变量可覆盖代理指令超时（默认 300s）；`PORT` 仅改变代理监听端口，不同步插件/启动器/助手；普通用户保持默认 49720。假宿主回归脚本 `bridge/mock-host-test.mjs`（19 用例，独立端口不触真实 EDA）。

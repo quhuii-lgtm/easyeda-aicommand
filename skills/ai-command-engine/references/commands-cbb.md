@@ -1,5 +1,7 @@
 # 复用模块指令（cbb.*，0.10.34 共 12 条）
 
+> 本页表格/参数对象描述命令及 `params`，不是完整 HTTP 请求。发送 `/command` 时外层必须带 `cmd`、顶层 `instanceId` 和所需 `params`；宏仅外层路由，步骤继承实例。完整示例见 [setup](setup.md)。
+
 复用模块（CBB，官方"模块"功能）的库管理、放置与导出。库 UUID 一律先 `cbb.listLibraries` 获取（system/personal/project/favorite 四类）；官方默认搜系统库，个人库是自己沉淀的模块。
 
 | 指令 | 说明 | 关键参数 |

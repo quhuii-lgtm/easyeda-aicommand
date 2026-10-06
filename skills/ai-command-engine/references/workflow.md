@@ -2,7 +2,7 @@
 
 ## 画原理图（批量优先）
 
-1. `/connections` 选窗 → `editor.openDocument` 激活 → `schematic.getPageInfo` 读图框。
+1. `GET /connections` 核对窗口；每条请求带顶层 `instanceId` → `editor.openDocument` 激活 → 页级请求带 `params.__docUuid` → `schematic.getPageInfo` 读图框。
 2. **放器件优先 `buildBlock`**：一个功能区一条命令；零散补充才 `placeDevice`。同功能器件聚拢。
 3. **连线优先 `batchWire`**：一批接线一次提交；单条修补用 `labelWire`（单脚）/`linkWire`（双脚）；`connectPin`/`drawWire`/`placeNetLabel` 仅特殊场景（母排、多点直连、批量改色）。
 4. **读回自查**：`listWires`+`exportNetlist` 审计每个网络的引脚成员（别信"画了就通"）。
@@ -15,14 +15,13 @@
 - 标签问题：`fixNetLabels` 全科体检（dryRun 默认 true）；浮标残留 `pruneFloatingLabels`（分批，看 batches/unprocessed）。
 - 网络碎（人工拖标签等）：`repairNet` 收尾。
 
-## 元器件摆放规范（放器件/整理/审图必查，2026-10-06 用户增订）
+## 元器件摆放与表达（以项目及器件要求为准）
 
-1. **解耦电容对脚专配**——哪颗电容属于哪个引脚就直接短桩接在该引脚上，不与其他引脚的电容并联混接；整排电容全并在电源总线上是典型违规。
-2. **输入/输出电容就近同序**——芯片要求就近放置的输入/输出电容，原理图上也按同样顺序就近摆，与引脚一一对应。
-3. **同引脚可并联**——归属同一引脚的多个电容允许并联。
-4. **无孤立器件**——每个元件至少一脚实质入网；指示器件按信号本意接线（LED 接控制脚而非惯性接电源）。
-5. **走线不进器件本体**——导线（含干线母线）与符号身体/边框留间距；网络标签方向随导线（横线横标、竖线竖标），不压引脚、不重叠。
-6. 详细验收清单与持续改进闭环见 `eda-schematic-layout` 技能 §1–§2。
+1. 去耦电容在原理图上应能辨认对应电源引脚/电源域；实际连接、容量、数量及 PCB 距离按具体器件资料与项目工况确定。不能从示意摆放推导同名电源脚不可并网。
+2. 输入/输出电容与相关引脚的关系表达清楚，PCB 就近布局要求仍须在 PCB 上核验。
+3. 同功能块优先真实连线，跨块按需标签；合法未连接引脚明确标注 NC，不为消除视觉孤立而添加需求外连接。
+4. 避免导线穿符号本体、标签压引脚、文字重叠；移动后复核网络和预期端点。
+5. 本技能自包含，不要求用户另装作者的原理图优化技能。
 
 ## 原理图转 PCB
 
@@ -40,12 +39,12 @@
 ## 工作守则（全文）
 
 1. **先查再画**：改前先 `project.getInfo`/`listComponents` 了解现状。
-2. **先选窗、先激活**：多工程显式 `/select`；`schematic.*`/`pcb.*` 前先 `editor.openDocument`。
+2. **先核对目标、再激活**：每条请求带顶层 `instanceId`，不以 `/select` 代替；`schematic.*`/`pcb.*` 前先 `editor.openDocument`。
 3. **批量用 macro**：>2 步合并一条 macro 发送。
 4. **画完必读回**：导线 `listWires`、网络 `exportNetlist`、PCB 网络 `getComponentPads` 逐项审计，不假设成功。
 5. **每阶段 save**。
 6. **收尾必 DRC** 如实报告；原理图 0 致命才允许 `pcb.importChanges`。
 7. **不盲目重试**：读 `error.message`/`suggestion` 修正再发；同一指令连错 3 次停下换方案。
 8. **专业知识先查库**：阻抗/等长/载流先 `knowledge.query`，按 constraints/guidance 执行。
-9. **新 API 先用网关探针验证**（开发者向）：没把握的原生 API 先 `POST http://127.0.0.1:49620/execute {"code":"..."}` 在 EDA 环境试跑（`/eda-windows` 列窗口、`/eda-windows/select` 选窗；⚠️ 不支持可选链 `?.`），确认真实行为再封装——别靠猜、别用"构建→装包→实测"长循环。网关可能掉线、`system.eval` 逃生口在当前沙箱不可用——用现有封装指令当探针（placeNetLabel/listNetLabels/pruneFloatingLabels dryRun/exportNetlist）或直接查 pro-api-types 类型注释（官方把限制写在注释里）。
+9. **扩展开发另行处理**：普通绘图使用本插件指令。任意原生 API 调试不属于本技能安装流程；作者曾用的 49620 网关未包含在此仓库，不能假定用户已安装或据此执行代码。
 10. **插件不越权**：指令只检查如实反馈，**不擅自修复/删除/回滚**——异常返回状态码+warning+建议，由操作者决定（主动调 `pruneFloatingLabels`/`dedupeWireNets`/`delete` 才是授权清理）。官方创建类接口有假失败（返回空但实际已创建），不信返回值，以文档实际内容为准。

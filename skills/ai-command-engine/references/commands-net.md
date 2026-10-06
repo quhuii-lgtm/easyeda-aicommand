@@ -1,5 +1,7 @@
 # 网络类·差分对·生产导出（PCB）
 
+> 本页表格/参数对象描述命令及 `params`，不是完整 HTTP 请求。发送 `/command` 时外层必须带 `cmd`、顶层 `instanceId` 和所需 `params`；宏仅外层路由，步骤继承实例。完整示例见 [setup](setup.md)。
+
 层管理/层叠/等长组/实时 DRC 已并入 [commands-pcb.md](commands-pcb.md) ③⑥，本文只留信号与生产。
 
 ## 网络类（NetClass）与差分对

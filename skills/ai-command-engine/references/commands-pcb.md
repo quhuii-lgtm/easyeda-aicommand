@@ -1,5 +1,7 @@
 # PCB 指令全表
 
+> 本页表格/参数对象描述命令及 `params`，不是完整 HTTP 请求。发送 `/command` 时外层必须带 `cmd`、顶层 `instanceId` 和所需 `params`；宏仅外层路由，步骤继承实例。完整示例见 [setup](setup.md)。
+
 **① 布局 → ② 布线 → ③ 结构与层 → ④ 检查导入导出 → ⑤ 图元读改**，附录 **⑥ 低频（等长组/层叠/实时DRC）→ ⑦ 自动布线闭环**。陷阱见 [pitfalls.md](pitfalls.md)。
 
 ## ① 布局
