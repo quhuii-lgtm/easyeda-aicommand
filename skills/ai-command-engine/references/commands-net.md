@@ -9,7 +9,9 @@
 | 指令 | 说明 | 关键参数 |
 | --- | --- | --- |
 | `pcb.createNetClass` | 建网络类（一组网统一设规则/颜色） | `name`, `nets[]`, `color?` |
-| `pcb.listNetClasses` / `deleteNetClass` / `renameNetClass` | 列出/删除/重命名 | delete/rename: `name` |
+| `pcb.listNetClasses` | 列出网络类 | 无 |
+| `pcb.deleteNetClass` | 删除网络类 | `name` |
+| `pcb.renameNetClass` | 重命名网络类 | `name`, `newName` |
 | `pcb.addNetToClass` / `removeNetFromClass` | 网络类增删成员 | `netClass`, `nets[]` |
 | `pcb.createDiffPair` | 建差分对（USB D+/D- 等） | `name`, `positiveNet`, `negativeNet` |
 | `pcb.listDiffPairs` / `deleteDiffPair` | 列出/删除 | delete: `name` |

@@ -1,6 +1,6 @@
 ---
 name: ai-command-engine
-description: 通过简易 JSON 指令操作嘉立创 EDA 专业版（EasyEDA Pro）。当用户要求用 AI 操作/检查/绘制嘉立创 EDA 的原理图或 PCB，或查询嘉立创 SMT 可贴装物料时使用本 skill。铁律：每条 /command 必须带顶层 instanceId（先 GET /connections 查、勿缓存；省略会被当前代理拒绝；不得依赖全局选中实例）。前置条件：EDA 内已安装并启用 "AI Command Engine" 扩展（勾选「允许外部交互」），且 bridge/command-proxy.mjs 指令代理正在运行（默认手动启动；自动拉起须预先注册本机 URL 协议，仓库不提供注册脚本；所有实例断开后默认 300 秒退出）。
+description: 通过简易 JSON 指令操作嘉立创 EDA 专业版（EasyEDA Pro）。当用户要求用 AI 操作/检查/绘制嘉立创 EDA 的原理图或 PCB，或查询嘉立创 SMT 可贴装物料时使用本 skill。铁律：每条 /command 必须带顶层 instanceId（先 GET /connections 查、勿缓存；省略会被当前代理拒绝；不得依赖全局选中实例）。前置条件：EDA 内已安装并启用 "AI Command Engine" 扩展（勾选「允许外部交互」），且 bridge/command-proxy.mjs 指令代理正在运行（默认手动启动；自动拉起须预先注册本机 URL 协议，注册与启动要求见 references/setup.md；所有实例断开后默认 300 秒退出）。
 ---
 
 # AI Command Engine — 嘉立创 EDA 操作指令集
@@ -38,10 +38,10 @@ HTTP 发 JSON 到 `http://localhost:49720` 操作 EasyEDA Pro；禁止自编 `ed
 批量类 `buildBlock`/`autoLayout`/`batchWire`/`macro`（一次提交多条，带进度心跳）；语义接网 `labelWire`/`linkWire`；只读体检 `structuralAudit`/`list*`/`get*`/`runDrc*`（只读不改图，探路/验收随便跑）；PCB `checkPlacement`/`routeTrack`/`pourCopper`/`runDrc`；修复类一律先 `dryRun`。
 
 **🟡 不推荐（不禁止）**
-单条 mutation 逐条发（`placeDevice`/`drawWire`/`labelWire`/`delete` 单个）——能用但慢，多条应收成 `batchWire`/`macro`。串行发没问题；并发发多个不再报错（0.10.50 起代理自动排队逐个执行），但吞吐退化为 ~3s/条。批量失败项 `error` 带 name/stack 完整堆栈（0.10.51），可直接定位。
+单条 mutation 逐条发（`placeDevice`/`drawWire`/`labelWire`/`delete` 单个）——能用但慢，多条应收成 `batchWire`/`macro`。串行发没问题；并发发多个不再报错（0.10.50 起代理自动排队逐个执行），但吞吐退化为 ~3s/条。批量失败项 `error` 带 name/stack 截断堆栈（0.10.51），可辅助定位。
 
 **🔴 有风险（用错后果）**
-`autoLayout` 真跑→器件乱跑只能 undo；修复类不带 dryRun→误删标签只能删线重画；`delete`→删错无撤销，先备份；`importFile`→覆盖导入无法回退；`groupBySchematicRegions`→无备份不可回滚；`importChanges`→DRC 非 0 会把错误同步进 PCB；改 Designator→位号错位、官方还会再规范化。
+`autoLayout` 真跑→部分移动失败时先检查 `error.cause.moved` 并核对现场；该命令不自动回滚，须依据备份受控恢复。没有通用 undo API，不承诺 UI undo 可用。修复类不带 dryRun→误删标签只能删线重画；`delete`→删错无撤销，先备份；`importFile`→覆盖导入无法回退；`groupBySchematicRegions`→无备份不可回滚；`importChanges`→DRC 非 0 会把错误同步进 PCB；改 Designator→位号错位、官方还会再规范化。
 
 ## 指令文档（8 份，按对象）
 

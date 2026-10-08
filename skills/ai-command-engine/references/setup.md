@@ -15,9 +15,9 @@ curl http://127.0.0.1:49720/connections
 
 连接拒绝时，在已安装依赖的仓库目录启动 `node bridge/command-proxy.mjs`，或 Windows 的 `bridge/launch-proxy.bat`。保留进程并核对健康响应。
 
-默认手动启动。插件会尝试 `ai-command-proxy://`，但它仅在本机预先注册协议时有效；仓库不提供协议注册脚本，也不包含旧弹窗提到的 `start-services.bat`。不能把等待自动恢复当成首次安装步骤。
+默认手动启动。仓库提供 `bridge/install-url-scheme.ps1` 与 `bridge/uninstall-url-scheme.ps1` 注册/注销 `ai-command-proxy://` 协议；自动启动入口为 `ai-command-proxy://start`。注册只提供启动入口，不代表代理已经启动；启动仍依赖已安装依赖及明确启动动作，不能把等待自动恢复当成首次安装步骤。
 
-所有实例断开后代理默认 300 秒退出；`PROXY_IDLE_MS=0` 可用于需要常驻的本机配置。重启时先停止自己启动的旧代理，再重新运行；启动器发现 49720 有 HTTP 响应时只提示核对，不会重启服务，也不能据此证明响应者就是代理。重连后重新查询实例，不猜测 ID 是否改变。
+所有实例断开后代理默认 300 秒退出；`PROXY_IDLE_MS=0` 可用于需要常驻的本机配置。启动器须检查健康响应中的 `ok`、`service` 与 `lifecycleProtocol=1`；旧版或其他服务应拒绝，不自动停止或重启现有服务。重连后重新查询实例，不猜测 ID 是否改变。
 
 普通用户保持默认 49720。只设代理 `PORT` 不会同步修改插件、启动器和 Python 助手的目标地址。
 

@@ -32,71 +32,129 @@ export const editorCommands: Array<ICommandDef> = [
 	},
 	{
 		name: 'editor.closeDocument',
-		summary: '关闭指定文档页签（官方 dmt_EditorControl.closeDocument）。用途：删除持久化对照测试（删→存→关→开→读回）、释放卡死的文档会话。**关闭前必须先 save**：脏文档官方可能弹「是否保存」对话框，AI 点不了，命令会返回 closed:false 并提示手动处理',
+		summary: '关闭指定文档页签（官方 dmt_EditorControl.closeDocument）。用途：删除持久化对照测试（删→存→关→开→读回）、释放卡死的文档会话。**关闭前必须先 save**：脏文档可能弹「是否保存」对话框；关闭及页签树读回未确认时返回失败，读回未知会标记 partial 并阻止宏继续',
 		params: [
 			{ name: 'uuid', type: 'string', description: '文档 UUID（与 tabId 二选一）' },
 			{ name: 'tabId', type: 'string', description: '页签 ID（editor.listTabs / openDocument 返回；优先于 uuid）' },
 		],
-		returns: '{ tabId, closed, note? }',
+		returns: '{ tabId, closed, note? }（closed=false 为命令失败；页签树必须是有效结构且明确不含目标才能报告 closed=true）',
 		example: { cmd: 'editor.closeDocument', params: { uuid: '5c96eb02cb6183a2' } },
 		handler: async (params) => {
 			let tabId = params.tabId ? String(params.tabId) : undefined
-			if (!tabId && params.uuid) {
-				// 从页签树按文档 uuid 反查 tabId（页签 ID 形如 "<docUuid>@<projectUuid>"）
-				try {
-					const tree = await (eda.dmt_EditorControl as any).getSplitScreenTree()
-					const walk = (node: any): string | undefined => {
-						if (!node)
-							return undefined
-						if (Array.isArray(node.tabs)) {
-							const hit = node.tabs.find((t: any) => typeof t.tabId === 'string' && t.tabId.startsWith(String(params.uuid)))
-							if (hit)
-								return hit.tabId
-						}
-						for (const key of ['children', 'splitScreens', 'leaves']) {
-							if (Array.isArray(node[key])) {
-								for (const child of node[key]) {
-									const found = walk(child)
-									if (found)
-										return found
-								}
+			const inspectTree = (tree: any, matches: (tabId: string) => boolean): { valid: boolean, found: boolean } => {
+				let found = false
+				const walk = (node: any): boolean => {
+					if (!node || typeof node !== 'object' || Array.isArray(node))
+						return false
+					let recognized = false
+					for (const key of ['tabs', 'children', 'splitScreens', 'leaves']) {
+						if (!Object.prototype.hasOwnProperty.call(node, key))
+							continue
+						recognized = true
+						if (!Array.isArray(node[key]))
+							return false
+						if (key === 'tabs') {
+							for (const tab of node.tabs) {
+								if (!tab || typeof tab !== 'object' || typeof tab.tabId !== 'string')
+									return false
+								if (matches(tab.tabId))
+									found = true
 							}
 						}
-						return undefined
+						else {
+							for (const child of node[key]) {
+								if (!walk(child))
+									return false
+							}
+						}
 					}
-					tabId = walk(tree)
+					return recognized
 				}
-				catch {
-					// 页签树查询失败则直接尝试用 uuid 关
+				const valid = Boolean(tree && typeof tree === 'object' && !Array.isArray(tree) && walk(tree))
+				return { valid, found }
+			}
+			const readTree = async (stage: string): Promise<any> => {
+				const tree = await (eda.dmt_EditorControl as any).getSplitScreenTree()
+				if (!tree || typeof tree !== 'object' || Array.isArray(tree))
+					throw new Error(`${stage}读取页签树失败：返回值不是有效对象`)
+				return tree
+			}
+			if (!tabId && params.uuid) {
+				// 从页签树按文档 uuid 反查 tabId（页签 ID 形如 "<docUuid>@<projectUuid>"）
+				const tree = await readTree('关闭前')
+				const inspected = inspectTree(tree, candidate => candidate.startsWith(String(params.uuid)))
+				if (!inspected.valid)
+					throw new Error('关闭前读取到非法页签树结构，已拒绝关闭')
+				tabId = undefined
+				const find = (node: any): string | undefined => {
+					if (Array.isArray(node?.tabs)) {
+						const hit = node.tabs.find((tab: any) => tab.tabId.startsWith(String(params.uuid)))
+						if (hit)
+							return hit.tabId
+					}
+					for (const key of ['children', 'splitScreens', 'leaves']) {
+						for (const child of node?.[key] ?? []) {
+							const found = find(child)
+							if (found)
+								return found
+						}
+					}
+					return undefined
 				}
+				tabId = find(tree)
 				tabId = tabId ?? String(params.uuid)
 			}
 			if (!tabId)
 				throw new Error('缺少参数 uuid / tabId')
-			const closed = Boolean(await eda.dmt_EditorControl.closeDocument(tabId))
+			let closed: boolean
+			try {
+				closed = Boolean(await eda.dmt_EditorControl.closeDocument(tabId))
+			}
+			catch (error) {
+				const message = error instanceof Error ? error.message : String(error)
+				throw new Error(`官方 closeDocument 结果未知：${message}`, {
+					cause: { partial: true, retryable: false, phase: 'closeDocument', operationError: message, result: { tabId, closed: 'unknown' } },
+				})
+			}
 			// 读回页签列表验证确实关了——官方关闭是异步的，0.10.53 实测刚关完页签还在树里（1ms 后验证必误判），轮询最长 8s
-			let stillThere = false
+			let stillThere = true
 			for (let attempt = 0; attempt < 8; attempt++) {
+				let tree: any
+				let inspected: { valid: boolean, found: boolean }
 				try {
-					const tree = await (eda.dmt_EditorControl as any).getSplitScreenTree()
-					stillThere = JSON.stringify(tree).includes(tabId)
+					tree = await readTree('关闭后')
+					inspected = inspectTree(tree, candidate => candidate === tabId || (!params.tabId && candidate.startsWith(String(params.uuid ?? ''))))
 				}
-				catch {
-					// 验证失败不阻断，以 closed 返回值为准
+				catch (error) {
+					const message = error instanceof Error ? error.message : String(error)
+					throw new Error(`关闭后无法确认页签状态：${message}`, {
+						cause: { partial: true, retryable: false, phase: 'closeDocument.readback', operationError: message, result: { tabId, closed: 'unknown' } },
+					})
 				}
+				if (!inspected.valid) {
+					const message = '关闭后读取到非法页签树结构'
+					throw new Error(`${message}，无法确认页签是否关闭`, {
+						cause: { partial: true, retryable: false, phase: 'closeDocument.readback', operationError: message, result: { tabId, closed: 'unknown' } },
+					})
+				}
+				stillThere = inspected.found
 				if (!stillThere)
 					break
 				await new Promise(resolve => setTimeout(resolve, 1000))
 			}
-			if (closed && !stillThere)
+			if (!closed && !stillThere)
+				throw new Error(`官方 closeDocument 返回 false，但有效页签树已不含 ${tabId}；本次关闭结果矛盾且无法确认`, {
+					cause: { partial: true, retryable: false, phase: 'closeDocument.readback', result: { tabId, closed: false, treeContainsTab: false } },
+				})
+			if (!closed)
+				throw new Error(`官方未确认关闭页签 ${tabId}`, {
+					cause: { result: { tabId, closed: false, note: stillThere ? '页签仍在树中' : '树中已不存在，但官方调用返回 false，不能确认本次关闭' } },
+				})
+			if (!stillThere)
 				return { tabId, closed: true }
-			return {
-				tabId,
-				closed: false,
-				note: stillThere
-					? '官方返回已关闭但页签仍在——可能文档有未保存修改弹了确认框（AI 点不了），请在 EDA 里手动关闭该页签（不保存/保存均可，视你是否要刚才的修改）'
-					: '官方未确认关闭——请用 editor.listTabs 核对页签状态；若页签仍在且文档已脏，请手动关闭',
-			}
+			throw new Error(`官方返回已关闭但页签 ${tabId} 仍在树中——可能有未保存修改确认框，请在 EDA 里核对并手动关闭`, {
+				cause: { partial: true, retryable: false, phase: 'closeDocument.readback', result: { tabId, closed: false, note: '页签仍在有效页签树中' } },
+			})
 		},
 	},
 	{

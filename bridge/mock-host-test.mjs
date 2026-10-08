@@ -29,11 +29,11 @@ async function post(cmd, params = {}, instanceId = 'mockA') {
 	return res.json()
 }
 
-function laneEvents(event) {
+function laneEvents(event, instanceId = 'mockA') {
 	try {
 		return fs.readFileSync(LANE_LOG, 'utf-8').split('\n').filter(Boolean)
 			.map(l => { try { return JSON.parse(l) } catch { return null } })
-			.filter(e => e && e.event === event && e.instanceId === 'mockA')
+			.filter(e => e && e.event === event && (instanceId === null || e.instanceId === instanceId))
 	}
 	catch { return [] }
 }
@@ -41,9 +41,9 @@ function laneEvents(event) {
 let hungCmdId = null
 let ws = null
 
-function connectExt(instanceId = 'mockA') {
+function connectExt(instanceId = 'mockA', port = PORT) {
 	return new Promise((resolve, reject) => {
-		const sock = new WebSocket(`ws://127.0.0.1:${PORT}/ws`)
+		const sock = new WebSocket(`ws://127.0.0.1:${port}/ws`)
 		sock.on('open', () => {
 			sock.send(JSON.stringify({ type: 'hello', extension: 'ai-command-engine', version: '0.10.73-mock', instanceId }))
 			ws = sock
@@ -62,6 +62,29 @@ function connectExt(instanceId = 'mockA') {
 			}
 			sock.send(JSON.stringify({ type: 'result', id: msg.id, result: { ok: true, cmd: msg.cmd, data: 'mock-ok' } }))
 		})
+	})
+}
+async function postAt(port, cmd, params = {}, instanceId) {
+	const res = await fetch(`http://127.0.0.1:${port}/command`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ cmd, params, instanceId }),
+	})
+	return res.json()
+}
+
+function waitForFrame(sock, predicate, timeoutMs = 2000) {
+	return new Promise((resolve, reject) => {
+		const timer = setTimeout(() => { sock.off('message', onMessage); reject(new Error('frame timeout')) }, timeoutMs)
+		const onMessage = (data) => {
+			let msg
+			try { msg = JSON.parse(data.toString()) } catch { return }
+			if (!predicate(msg)) return
+			clearTimeout(timer)
+			sock.off('message', onMessage)
+			resolve(msg)
+		}
+		sock.on('message', onMessage)
 	})
 }
 
@@ -171,6 +194,9 @@ async function main() {
 
 	// ⑩ macro 整体占写通道：外部 openDocument 排在 macro 完成之后（不被插入、不自我死锁）
 	const received10 = []
+	let macroId10 = null
+	let resolveMacroDispatched
+	const macroDispatched = new Promise(resolve => { resolveMacroDispatched = resolve })
 	ws.removeAllListeners('message')
 	ws.on('message', (data) => {
 		let msg
@@ -178,19 +204,31 @@ async function main() {
 		if (msg.type === 'command') {
 			received10.push(msg.cmd)
 			if (msg.cmd === 'macro') {
-				setTimeout(() => ws.send(JSON.stringify({ type: 'result', id: msg.id, result: { ok: true, cmd: 'macro', data: 'macro-done' } })), 600)
+				macroId10 = msg.id
+				resolveMacroDispatched()
 				return
 			}
 			ws.send(JSON.stringify({ type: 'result', id: msg.id, result: { ok: true, cmd: msg.cmd, data: 'mock-ok' } }))
 		}
 	})
 	const t10 = Date.now()
-	const [macroRes, openRes10] = await Promise.all([
-		post('macro', { steps: [{ cmd: 'schematic.drawWire' }] }),
-		post('editor.openDocument', { uuid: 'page1' }),
-	])
+	const enqueueCount10 = laneEvents('enqueue', null).length
+	const macroPromise10 = post('macro', { steps: [{ cmd: 'schematic.drawWire' }] })
+	await Promise.race([macroDispatched, sleep(2000).then(() => { throw new Error('macro was not dispatched') })])
+	const openPromise10 = post('editor.openDocument', { uuid: 'page1' })
+	let secondEnqueued10 = false
+	for (let i = 0; i < 100; i++) {
+		secondEnqueued10 = laneEvents('enqueue', null).slice(enqueueCount10).some(e => e.cmd === 'editor.openDocument')
+		if (secondEnqueued10) break
+		await sleep(20)
+	}
+	check('⑩ 外部切页已进入写队列', secondEnqueued10)
+	await sleep(50)
+	check('⑩ macro 未完成前切页未派发', JSON.stringify(received10) === JSON.stringify(['macro']), received10.join('→'))
+	ws.send(JSON.stringify({ type: 'result', id: macroId10, result: { ok: true, cmd: 'macro', data: 'macro-done' } }))
+	const [macroRes, openRes10] = await Promise.all([macroPromise10, openPromise10])
 	const macroMs = Date.now() - t10
-	check('⑩ macro 完成且外部切页排在其后（不插入不死锁）', macroRes?.ok === true && openRes10?.ok === true && macroMs >= 600, `总耗时 ${macroMs}ms`)
+	check('⑩ macro 完成且外部切页排在其后（不插入不死锁）', macroRes?.ok === true && openRes10?.ok === true, `总耗时 ${macroMs}ms`)
 	check('⑩ 假宿主收到顺序 macro→openDocument', JSON.stringify(received10) === JSON.stringify(['macro', 'editor.openDocument']), received10.join('→'))
 
 	// 汇总

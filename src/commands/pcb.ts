@@ -4,6 +4,7 @@
  * 注意：PCB 坐标默认单位为 mil（与 PCB 编辑器内部一致，界面显示 mm 时注意换算，1mm ≈ 39.37mil）
  */
 import type { ICommandDef } from '../engine/types'
+import { assertSnapshotFocused, captureDocumentSnapshot, withDocumentRecovery } from '../engine/documentRecovery'
 import { widthForCurrent } from '../knowledge/rules'
 import { blobToBase64, fileToResult } from './util'
 import { beginTask, failTask, finishTask, taskProgress } from '../engine/tasks'
@@ -22,6 +23,7 @@ let currentRouteJobId: string | undefined
 /** 已完成回灌消费（或回灌已作废）的任务集合（0.10.65）：COMPLETED 任务的清线+导入只执行一次，
  *  任一步抛错也不允许重复轮询再进清线分支（旧版会叠加删除未锁定走线/重复导入） */
 const consumedRouteJobs = new Set<string>()
+const routeJobRecoveryState = new Map<string, 'applying' | 'applied' | 'recoveryRequired'>()
 let routeSkipDrc = false
 
 /** FreeRouting REST 请求（走 eda.sys_ClientUrl 绕开扩展网络限制，与官方集成扩展同款） */
@@ -327,7 +329,7 @@ export const pcbCommands: Array<ICommandDef> = [
 	},
 	{
 		name: 'pcb.routeTrack',
-		summary: 'PCB 走线（折线，自动拆成线段）；可按载流自动计算线宽',
+		summary: 'PCB 走线（折线，自动拆成线段）；可按载流自动计算线宽。分段写入部分失败时返回 partial 证据并停止后续段；失败段可能已生效，先核对现场再处理',
 		params: [
 			{ name: 'net', type: 'string', required: true, description: '网络名（须已存在于 PCB，可用 pcb.listNets 查看）' },
 			{ name: 'points', type: 'number[][]', required: true, description: '折点坐标 [[x1,y1],[x2,y2],...]' },
@@ -335,16 +337,48 @@ export const pcbCommands: Array<ICommandDef> = [
 			{ name: 'width', type: 'number', description: '线宽（与 currentA 二选一）' },
 			{ name: 'currentA', type: 'number', description: '载流（安培），由知识库自动换算线宽' },
 		],
-		returns: '{ segmentIds, width }',
+		returns: '{ segmentIds, width }；分段失败时 error.cause={partial:true,retryable:false,segmentIds,failedSegmentIndex,failedSegmentAttempted,unprocessedSegments,phase,operationError}',
 		example: { cmd: 'pcb.routeTrack', params: { net: 'VCC', points: [[100, 100], [500, 100]], width: 12 } },
 		handler: async (params) => {
+			const monotonicStart = performance.now()
+			const MAX_TIMER_MS = 2147483647
+			const requestedTimeout = params._timeoutMs == null ? 290_000 : Number(params._timeoutMs)
+			if (!Number.isFinite(requestedTimeout) || requestedTimeout > MAX_TIMER_MS)
+				throw new Error(`_timeoutMs 必须是有限且不超过 ${MAX_TIMER_MS}ms 的数值`)
+			const budgetMs = Math.max(1000, requestedTimeout)
+			const deadline = monotonicStart + budgetMs
+			const remaining = () => deadline - performance.now()
 			if (!params.net)
 				throw new Error('缺少参数 net')
 			if (!Array.isArray(params.points) || params.points.length < 2)
 				throw new Error('points 至少需要两个点')
-			await ensureNetExists(String(params.net))
-
+			for (let i = 0; i < params.points.length; i++) {
+				const point = params.points[i]
+				if (!Array.isArray(point) || point.length !== 2 || !point.every(value => typeof value === 'number' && Number.isFinite(value)))
+					throw new Error(`points[${i}] 必须是两个有限数值坐标`)
+			}
 			let width = params.width != null ? Number(params.width) : undefined
+			if (width != null && (!Number.isFinite(width) || width <= 0))
+				throw new Error('width 必须是大于 0 的有限数值')
+			if (width == null && params.currentA != null && (!Number.isFinite(Number(params.currentA)) || Number(params.currentA) <= 0))
+				throw new Error('currentA 必须是大于 0 的有限数值')
+			const layer = resolveLayer(params.layer) as any
+			const readBudget = remaining()
+			if (readBudget <= 0)
+				throw new Error('pcb.routeTrack 在写入前超出总时限，未开始创建线段')
+			let netCheckTimer: ReturnType<typeof setTimeout> | undefined
+			try {
+				await Promise.race([
+					ensureNetExists(String(params.net)),
+					new Promise<never>((_, reject) => { netCheckTimer = setTimeout(() => reject(new Error('网络存在检查超出共享总时限')), readBudget) }),
+				])
+			}
+			finally {
+				if (netCheckTimer !== undefined)
+					clearTimeout(netCheckTimer)
+			}
+			if (remaining() <= 0)
+				throw new Error('pcb.routeTrack 在写入前超出总时限，未开始创建线段')
 			if (width == null && params.currentA != null) {
 				const hit = widthForCurrent(Number(params.currentA))
 				if (!hit)
@@ -352,26 +386,56 @@ export const pcbCommands: Array<ICommandDef> = [
 				width = hit.widthMil
 			}
 
-			const layer = resolveLayer(params.layer) as any
 			const points = params.points as Array<Array<number>>
-			const segmentIds: Array<string | undefined> = []
+			const segmentIds: string[] = []
+			const failPartial = (segmentIndex: number, error: unknown, attempted = true): never => {
+				const operationError = error instanceof Error ? error.message : String(error)
+				const cause = {
+					partial: true,
+					retryable: false,
+					segmentIds: [...segmentIds],
+					failedSegmentIndex: segmentIndex,
+					failedSegmentAttempted: attempted,
+					unprocessedSegments: points.length - 1 - segmentIndex + (attempted ? 0 : 1),
+					phase: 'pcb.routeTrack',
+					operationError,
+				}
+				throw new Error(`pcb.routeTrack 第 ${segmentIndex} 段结果未确认${attempted ? '；该段可能已生效' : '；该段尚未发出'}，已停止后续写入：${operationError}`, { cause })
+			}
 			for (let i = 0; i < points.length - 1; i++) {
 				const [x1, y1] = points[i]
 				const [x2, y2] = points[i + 1]
+				const left = remaining()
+				if (left <= 0) {
+					if (i === 0)
+						throw new Error('pcb.routeTrack 在写入前超出总时限，未开始创建线段')
+					failPartial(i + 1, new Error('总时限已耗尽'), false)
+				}
 				let line: any
 				try {
-					line = await eda.pcb_PrimitiveLine.create(
-						String(params.net), layer,
-						Number(x1), Number(y1), Number(x2), Number(y2),
-						width,
-					)
+					let timer: ReturnType<typeof setTimeout> | undefined
+					try {
+						line = await Promise.race([
+							eda.pcb_PrimitiveLine.create(String(params.net), layer, Number(x1), Number(y1), Number(x2), Number(y2), width),
+							new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`第 ${i + 1} 段创建超时（共享预算已耗尽）`)), left) }),
+						])
+					}
+					finally {
+						if (timer !== undefined)
+							clearTimeout(timer)
+					}
 				}
 				catch (err) {
-					throw wrapCreateError(`第 ${i + 1} 段走线创建`, err)
+					failPartial(i + 1, wrapCreateError(`第 ${i + 1} 段走线创建`, err))
 				}
 				if (!line)
-					throw new Error(`第 ${i + 1} 段走线创建失败（官方返回空，请确认已激活 PCB 文档且该 PCB 在界面中打开过）`)
-				segmentIds.push(safeState<string>(line, 'getState_PrimitiveId'))
+					failPartial(i + 1, new Error('官方返回空'))
+				const id = safeState<unknown>(line, 'getState_PrimitiveId')
+				if (typeof id !== 'string' || !id)
+					failPartial(i + 1, new Error('官方返回对象缺少有效线段 ID'))
+				segmentIds.push(id as string)
+				if (remaining() <= 0)
+					failPartial(i + 1, new Error('创建调用完成时共享预算已耗尽'))
 			}
 			return { segmentIds, width }
 		},
@@ -909,13 +973,13 @@ export const pcbCommands: Array<ICommandDef> = [
 	},
 	{
 		name: 'pcb.checkPlacement',
-		summary: 'PCB 布局间距检查：按各器件焊盘外形算出包围盒，报告器件重叠与间距不足（本体挤压是官方 DRC 盲区，布局完成后必跑）。同时返回每个器件的外形尺寸，可用于"这个器件多大"类查询',
+		summary: 'PCB 布局间距检查：按焊盘旋转后的外接包围盒报告器件重叠与间距不足；未知或不支持的焊盘形状会跳过并令 complete=false。同时返回已检查器件的外形尺寸',
 		params: [
 			{ name: 'minClearance', type: 'number', description: '最小允许间距（mil，默认 0，即只报重叠）' },
 			{ name: 'margin', type: 'number', description: '本体余量（mil，默认 0）：焊盘包围盒四向外扩，近似器件本体（连接器/电感本体大于焊盘，建议 10~30）' },
 			{ name: 'designators', type: 'string[]', description: '只检查这些位号（留空为全部）' },
 		],
-		returns: '{ components: [{ designator, layer, bbox:{x1,y1,x2,y2,w,h} }], overlaps: [{ a, b, overlapX, overlapY }], violations: [{ a, b, gap }] }',
+		returns: '{ complete, components: [{ designator, layer, bbox:{x1,y1,x2,y2,w,h} }], overlaps: [{ a, b, overlapX, overlapY }], violations: [{ a, b, gap }], skippedNoPads?, skippedUnsupported? }',
 		example: { cmd: 'pcb.checkPlacement', params: { minClearance: 20, margin: 15 } },
 		handler: async (params) => {
 			const minClearance = params.minClearance != null ? Number(params.minClearance) : 0
@@ -927,6 +991,7 @@ export const pcbCommands: Array<ICommandDef> = [
 			type BBox = { x1: number, y1: number, x2: number, y2: number }
 			const items: Array<{ designator: string, layer: number, bbox: BBox }> = []
 			const skipped: Array<string> = []
+			const skippedUnsupported: Array<{ designator: string, primitiveId: string, padIndex: number, reason: string }> = []
 			for (const c of comps) {
 				const designator = safeState<string>(c, 'getState_Designator') ?? ''
 				if (!designator || (filter && !filter.has(designator)))
@@ -938,27 +1003,72 @@ export const pcbCommands: Array<ICommandDef> = [
 					continue
 				}
 				let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity
-				for (const p of pads) {
-					const px = safeState<number>(p, 'getState_X') ?? 0
-					const py = safeState<number>(p, 'getState_Y') ?? 0
-					const shape = safeState<Array<unknown>>(p, 'getState_Pad') ?? []
-					let hw = Number(shape[1]) / 2 || 0
-					let hh = Number(shape[2]) / 2 || 0
-					// 焊盘旋转 90/270 时宽高互换（椭圆/矩形均适用）
-					const rot = (safeState<number>(p, 'getState_Rotation') ?? 0) % 180
-					if (rot !== 0)
-						[hw, hh] = [hh, hw]
+				let invalidReason = ''
+				let invalidPadIndex = -1
+				for (let padIndex = 0; padIndex < pads.length; padIndex++) {
+					const p = pads[padIndex]
+					const px = safeState<number>(p, 'getState_X')
+					const py = safeState<number>(p, 'getState_Y')
+					const rotation = safeState<number>(p, 'getState_Rotation')
+					const shape = safeState<Array<unknown>>(p, 'getState_Pad')
+					if (typeof px !== 'number' || !Number.isFinite(px) || typeof py !== 'number' || !Number.isFinite(py) || typeof rotation !== 'number' || !Number.isFinite(rotation) || !Array.isArray(shape)) {
+						invalidReason = `pad ${padIndex + 1} 坐标、旋转或形状字段无效`
+						invalidPadIndex = padIndex
+						break
+					}
+					const type = String(shape[0] ?? '').toUpperCase()
+					const a = shape[1], b = shape[2]
+					if (typeof a !== 'number' || !Number.isFinite(a) || a <= 0) {
+						invalidReason = `pad ${padIndex + 1} 尺寸无效`
+						invalidPadIndex = padIndex
+						break
+					}
+					const rad = rotation * Math.PI / 180
+					const co = Math.abs(Math.cos(rad)), si = Math.abs(Math.sin(rad))
+					let hw: number, hh: number
+					if (type === 'RECT') {
+						if (typeof b !== 'number' || !Number.isFinite(b) || b <= 0) { invalidReason = `pad ${padIndex + 1} 矩形高度无效`; invalidPadIndex = padIndex; break }
+						hw = (a * co + b * si) / 2
+						hh = (a * si + b * co) / 2
+					}
+					else if (type === 'ELLIPSE') {
+						if (typeof b !== 'number' || !Number.isFinite(b) || b <= 0) { invalidReason = `pad ${padIndex + 1} 椭圆高度无效`; invalidPadIndex = padIndex; break }
+						hw = Math.sqrt((a * co) ** 2 + (b * si) ** 2) / 2
+						hh = Math.sqrt((a * si) ** 2 + (b * co) ** 2) / 2
+					}
+					else if (type === 'OVAL') {
+						if (typeof b !== 'number' || !Number.isFinite(b) || b <= 0) { invalidReason = `pad ${padIndex + 1} 椭圆胶囊高度无效`; invalidPadIndex = padIndex; break }
+						const radius = Math.min(a, b) / 2
+						const axis = Math.abs(a - b) / 2
+						const horizontalMajor = a >= b
+						hw = radius + axis * (horizontalMajor ? co : si)
+						hh = radius + axis * (horizontalMajor ? si : co)
+					}
+					else if (type === 'NGON') {
+						// 第 3 项是边数，不是高度；外接圆给出安全保守包围盒。
+						if (typeof b !== 'number' || !Number.isInteger(b) || b <= 2) { invalidReason = `pad ${padIndex + 1} NGON 边数无效`; invalidPadIndex = padIndex; break }
+						hw = hh = a / 2
+					}
+					else {
+						invalidReason = `pad ${padIndex + 1} 形状 ${type || '(空)'} 不支持`
+						invalidPadIndex = padIndex
+						break
+					}
 					x1 = Math.min(x1, px - hw)
 					y1 = Math.min(y1, py - hh)
 					x2 = Math.max(x2, px + hw)
 					y2 = Math.max(y2, py + hh)
 				}
+				if (invalidReason) {
+					skippedUnsupported.push({ designator, primitiveId: String(primitiveId ?? ''), padIndex: invalidPadIndex + 1, reason: invalidReason })
+					continue
+				}
 				items.push({
 					designator,
 					layer: safeState<number>(c, 'getState_Layer') ?? 0,
 					bbox: {
-						x1: Math.round(x1 - margin), y1: Math.round(y1 - margin),
-						x2: Math.round(x2 + margin), y2: Math.round(y2 + margin),
+						x1: x1 - margin, y1: y1 - margin,
+						x2: x2 + margin, y2: y2 + margin,
 					},
 				})
 			}
@@ -973,7 +1083,7 @@ export const pcbCommands: Array<ICommandDef> = [
 					const gapX = Math.max(B.bbox.x1 - A.bbox.x2, A.bbox.x1 - B.bbox.x2)
 					const gapY = Math.max(B.bbox.y1 - A.bbox.y2, A.bbox.y1 - B.bbox.y2)
 					if (gapX < 0 && gapY < 0)
-						overlaps.push({ a: A.designator, b: B.designator, overlapX: Math.round(-gapX), overlapY: Math.round(-gapY) })
+						overlaps.push({ a: A.designator, b: B.designator, overlapX: -gapX, overlapY: -gapY })
 					else {
 						const gap = Math.round(Math.max(gapX, gapY) * 10) / 10
 						if (gap < minClearance)
@@ -987,9 +1097,11 @@ export const pcbCommands: Array<ICommandDef> = [
 					layer: it.layer,
 					bbox: { ...it.bbox, w: it.bbox.x2 - it.bbox.x1, h: it.bbox.y2 - it.bbox.y1 },
 				})),
+				complete: skipped.length === 0 && skippedUnsupported.length === 0,
 				overlaps,
 				violations,
 				...(skipped.length ? { skippedNoPads: skipped } : {}),
+				...(skippedUnsupported.length ? { skippedUnsupported } : {}),
 			}
 		},
 	},
@@ -1629,15 +1741,22 @@ export const pcbCommands: Array<ICommandDef> = [
 	},
 	{
 		name: 'pcb.listPours',
-		summary: '列出 PCB 铺铜（可按网络/层过滤）',
+		summary: '列出 PCB 铺铜（可按网络/层过滤）；withFill 返回 filled/fillStatus 三态，读取异常标注未知',
 		params: [
 			{ name: 'net', type: 'string', description: '网络名过滤，留空为全部' },
 			{ name: 'layer', type: 'string', description: '层过滤：top | bottom | inner1..30 | 数字层 ID，留空为全部' },
-			{ name: 'withFill', type: 'boolean', description: 'true 时逐框读回复核填充状态（filled/fillPrimitiveId/fillRegions，0.10.43）' },
+			{ name: 'withFill', type: 'boolean', description: 'true 时逐框读回复核：成功返回 filled 与 fillStatus；null/undefined 为 empty，读取失败或非法返回为 unknown 并附 fillReadError' },
 		],
-		returns: '[{ primitiveId, net, layer, pourName, pourPriority, lineWidth, fillMethod, locked, filled?, fillPrimitiveId?, fillRegions? }]',
+		returns: '[{ primitiveId, net, layer, pourName, pourPriority, lineWidth, fillMethod, locked, filled?: boolean|null, fillStatus?: filled|empty|unknown, fillReadError?, fillPrimitiveId?, fillRegions? }]',
 		example: { cmd: 'pcb.listPours', params: { net: 'GND', withFill: true } },
 		handler: async (params) => {
+			const readFillWithTimeout = <T>(promise: Promise<T>): Promise<T> => new Promise<T>((resolve, reject) => {
+				const timer = setTimeout(() => { clearTimeout(timer); reject(new Error('getCopperRegion超时（>20s，官方无响应）')) }, 20000)
+				void promise.then(
+					value => { clearTimeout(timer); resolve(value) },
+					error => { clearTimeout(timer); reject(error) },
+				)
+			})
 			const layer = params.layer != null ? resolveLayerEx(params.layer as string | number, 1) : undefined
 			const pours = await eda.pcb_PrimitivePour.getAll(
 				params.net ? String(params.net) : undefined,
@@ -1657,11 +1776,32 @@ export const pcbCommands: Array<ICommandDef> = [
 					locked: safeState<boolean>(p, 'getState_PrimitiveLock'),
 				}
 				if (withFill) {
-					// 填充读回：关联覆铜填充存在=已生成填充（getCopperRegion 读不到不等于一定没填，官方缓存/过期态如实标注）
-					const region = await withTimeout((p as any).getCopperRegion(), 20000, 'getCopperRegion').catch(() => undefined)
-					item.filled = region != null
-					item.fillPrimitiveId = region ? safeState<string>(region, 'getState_PrimitiveId') : undefined
-					item.fillRegions = region ? (safeState<Array<unknown>>(region, 'getState_PourFills') ?? []).length : 0
+					try {
+						const region = await readFillWithTimeout((p as any).getCopperRegion())
+						if (region == null) {
+							item.filled = false
+							item.fillStatus = 'empty'
+							item.fillRegions = 0
+						}
+						else {
+							const fillRegion = region as any
+							if (typeof fillRegion !== 'object' || typeof fillRegion.getState_PrimitiveId !== 'function' || typeof fillRegion.getState_PourFills !== 'function')
+								throw new Error('填充对象缺少必要读回方法')
+							const id = fillRegion.getState_PrimitiveId()
+							const fills = fillRegion.getState_PourFills()
+							if (typeof id !== 'string' || !id || !Array.isArray(fills) || fills.some((fill: unknown) => fill == null || typeof fill !== 'object'))
+								throw new Error('填充对象 ID 或填充区域结构无效')
+							item.fillPrimitiveId = id
+							item.fillRegions = fills.length
+							item.filled = fills.length > 0
+							item.fillStatus = fills.length > 0 ? 'filled' : 'empty'
+						}
+					}
+					catch (err) {
+						item.filled = null
+						item.fillStatus = 'unknown'
+						item.fillReadError = err instanceof Error ? err.message : String(err)
+					}
 				}
 				out.push(item)
 			}
@@ -1732,7 +1872,7 @@ export const pcbCommands: Array<ICommandDef> = [
 		params: [
 			{ name: 'primitiveId', type: 'string', description: '铺铜边框图元 ID（pcb.listPours 查）；留空=重建全板全部铺铜' },
 		],
-		returns: '{ status: completed|no-fill|failed|timeout, primitiveId?, net?, layer?, fillBefore, fillAfter, rebuiltFills?, error? }——status 以读回为准：completed=调用通过且 getCopperRegion 读回到填充；no-fill=调用未报错但未生成填充（可能需在界面手动重建）；failed=官方抛错；timeout=等待超时（后台可能仍在跑，用只读指令复核，超时≠取消）',
+		returns: '{ status: completed|no-fill|failed|timeout, primitiveId?, net?, layer?, fillBefore, fillAfter, rebuiltFills?, error? }——completed 仅表示重建调用成功且合法读回含填充，不证明保存或板级制造状态；写入超时/拒绝会以 error.cause.partial=true 返回并停止宏（超时≠取消）',
 		example: { cmd: 'pcb.rebuildPour', params: { primitiveId: 'xxx' } },
 		handler: async (params) => {
 			// 官方语义（pro-api-types 实锤）：
@@ -1744,8 +1884,45 @@ export const pcbCommands: Array<ICommandDef> = [
 				fillPrimitiveId: poured ? safeState<string>(poured, 'getState_PrimitiveId') : undefined,
 				fillRegions: poured ? (safeState<Array<unknown>>(poured, 'getState_PourFills') ?? []).length : 0,
 			})
+			const validatePoured = (poured: any, label: string): void => {
+				if (poured === undefined)
+					return
+				const id = safeState<unknown>(poured, 'getState_PrimitiveId')
+				const fills = safeState<unknown>(poured, 'getState_PourFills')
+				if (typeof id !== 'string' || !id || !Array.isArray(fills))
+					throw new Error(`${label}返回了非法填充图元结构`)
+			}
+			const validatePouredList = (items: any, label: string): Array<any> => {
+				if (!Array.isArray(items))
+					throw new Error(`${label}没有返回有效数组`)
+				for (const item of items) {
+					if (item === undefined || item === null)
+						throw new Error(`${label}包含空填充图元`)
+					validatePoured(item, label)
+				}
+				return items
+			}
+			const writeOutcomeError = (label: string, error: unknown, status: 'failed' | 'timeout', details: Record<string, unknown> = {}) => {
+				const message = error instanceof Error ? error.message : String(error)
+				const result = { status, ...details, error: message, note: '写入结果未确认；超时不代表官方调用已取消，先只读复核' }
+				return new Error(`${label}结果未确认：${message}`, {
+					cause: { partial: true, retryable: false, phase: label, operationError: message, result },
+				})
+			}
 			const REBUILD_TIMEOUT_MS = 240000 // 扩展指令总预算 300s，重建本体留 240s，余量给读回
 			const FILL_READ_TIMEOUT_MS = 20000
+			const MAX_TIMER_MS = 2147483647
+			const requestedTimeout = params._timeoutMs == null ? REBUILD_TIMEOUT_MS : Number(params._timeoutMs)
+			if (!Number.isFinite(requestedTimeout) || requestedTimeout > MAX_TIMER_MS)
+				throw new Error(`_timeoutMs 必须是有限且不超过 ${MAX_TIMER_MS}ms 的数值`)
+			const rebuildBudgetMs = Math.min(REBUILD_TIMEOUT_MS, Math.max(1000, requestedTimeout))
+			const rebuildDeadline = performance.now() + rebuildBudgetMs
+			const remainingRebuildMs = (label: string, details: Record<string, unknown> = {}): number => {
+				const remaining = rebuildDeadline - performance.now()
+				if (remaining <= 0)
+					throw writeOutcomeError(label, new Error(`${label}超时（共享重建预算已耗尽）`), 'timeout', details)
+				return remaining
+			}
 
 			if (params.primitiveId) {
 				const pourId = String(params.primitiveId)
@@ -1757,37 +1934,55 @@ export const pcbCommands: Array<ICommandDef> = [
 					net: safeState<string>(pour, 'getState_Net'),
 					layer: safeState<number>(pour, 'getState_Layer'),
 				}
-				const before = await withTimeout(pour.getCopperRegion(), FILL_READ_TIMEOUT_MS, 'getCopperRegion(before)').catch(() => undefined)
+				const before = await withTimeout(pour.getCopperRegion(), FILL_READ_TIMEOUT_MS, 'getCopperRegion(before)')
+				validatePoured(before, 'getCopperRegion(before)')
 				let rebuildResult: any
-				let error: string | undefined
 				try {
-					rebuildResult = await withTimeout(pour.rebuildCopperRegion(), REBUILD_TIMEOUT_MS, 'rebuildCopperRegion')
+					const remaining = remainingRebuildMs('rebuildCopperRegion', { ...identity, fillBefore: fillInfo(before) })
+					rebuildResult = await withTimeout(pour.rebuildCopperRegion(), remaining, 'rebuildCopperRegion')
+					remainingRebuildMs('rebuildCopperRegion', { ...identity, fillBefore: fillInfo(before) })
 				}
 				catch (err: any) {
-					error = String(err?.message ?? err)
-					if (/超时/.test(error))
-						return { status: 'timeout', ...identity, fillBefore: fillInfo(before), error: `${error}——超时≠取消，后台可能仍在重建；稍后只读复核填充是否生成` }
+					const message = String(err?.message ?? err)
+					throw writeOutcomeError('rebuildCopperRegion', err, /超时/.test(message) ? 'timeout' : 'failed', { ...identity, fillBefore: fillInfo(before) })
 				}
-				const after = await withTimeout(pour.getCopperRegion(), FILL_READ_TIMEOUT_MS, 'getCopperRegion(after)').catch(() => undefined)
+				let after: any
+				try {
+					after = await withTimeout(pour.getCopperRegion(), FILL_READ_TIMEOUT_MS, 'getCopperRegion(after)')
+					validatePoured(after, 'getCopperRegion(after)')
+					remainingRebuildMs('getCopperRegion(after)', { ...identity, fillBefore: fillInfo(before) })
+				}
+				catch (err) {
+					throw writeOutcomeError('getCopperRegion(after)', err, 'failed', { ...identity, fillBefore: fillInfo(before) })
+				}
 				const fillAfter = fillInfo(after)
-				if (after)
-					return { status: 'completed', ...identity, fillBefore: fillInfo(before), fillAfter, rebuiltReturned: rebuildResult != null }
-				if (error)
-					return { status: 'failed', ...identity, fillBefore: fillInfo(before), fillAfter, error }
+				if (after && fillAfter.fillRegions > 0)
+					return { status: 'completed', ...identity, fillBefore: fillInfo(before), fillAfter, rebuiltReturned: rebuildResult != null, freshnessVerified: false }
 				return { status: 'no-fill', ...identity, fillBefore: fillInfo(before), fillAfter, note: '官方调用未报错但未生成填充图元——可能需在界面手动重建（设计→覆铜），或以只读指令复核' }
 			}
 
 			// 全板重建
-			const beforeAll = await eda.pcb_PrimitivePoured.getAll().catch(() => [] as Array<any>)
+			const beforeAll = validatePouredList(await eda.pcb_PrimitivePoured.getAll(), 'getAll(before)')
 			let rebuilt: any
-			let error: string | undefined
 			let fallbackLoop = false
-			const allPours = await eda.pcb_PrimitivePour.getAll().catch(() => [] as Array<any>)
+			const allPours = await eda.pcb_PrimitivePour.getAll()
+			if (!Array.isArray(allPours))
+				throw new Error('getAll(pours)没有返回有效数组，已拒绝重建')
+			for (const pour of allPours) {
+				const id = safeState<unknown>(pour, 'getState_PrimitiveId')
+				if (typeof id !== 'string' || !id)
+					throw new Error('getAll(pours)包含非法铺铜图元，已拒绝重建')
+			}
 			try {
 				// 0.10.45：@alpha 静态 rebuildCopperRegions 在 EDA 4.1.60 运行时不存在（装机实测 "not a function"）——
 				// 退化为逐框 rebuildCopperRegion 循环，行为等价于界面"重建全部覆铜"。
 				if (typeof (eda.pcb_PrimitivePour as any).rebuildCopperRegions === 'function') {
-					rebuilt = await withTimeout((eda.pcb_PrimitivePour as any).rebuildCopperRegions(), REBUILD_TIMEOUT_MS, 'rebuildCopperRegions')
+					const remaining = remainingRebuildMs('rebuildCopperRegions', { fillCountBefore: beforeAll.length, mode: 'static' })
+					rebuilt = await withTimeout((eda.pcb_PrimitivePour as any).rebuildCopperRegions(), remaining, 'rebuildCopperRegions')
+					remainingRebuildMs('rebuildCopperRegions', { fillCountBefore: beforeAll.length, mode: 'static' })
+					if (!Array.isArray(rebuilt))
+						throw new Error('rebuildCopperRegions没有返回有效数组')
+					validatePouredList(rebuilt, 'rebuildCopperRegions')
 				}
 				else {
 					fallbackLoop = true
@@ -1797,33 +1992,45 @@ export const pcbCommands: Array<ICommandDef> = [
 						if (!pid)
 							continue
 						try {
-							const r = await withTimeout((p as any).rebuildCopperRegion(), REBUILD_TIMEOUT_MS, `rebuildCopperRegion(${pid})`)
+							const label = `rebuildCopperRegion(${pid})`
+							const remaining = remainingRebuildMs(label, { pourId: pid, mode: 'per-pour-loop', fillCountBefore: beforeAll.length })
+							const r = await withTimeout((p as any).rebuildCopperRegion(), remaining, label)
+							remainingRebuildMs(label, { pourId: pid, mode: 'per-pour-loop', fillCountBefore: beforeAll.length })
+							validatePoured(r, `rebuildCopperRegion(${pid})`)
 							if (r)
 								results.push(r)
 						}
 						catch (e: any) {
-							error = error ?? `${pid}: ${String(e?.message ?? e)}`
+							const message = String(e?.message ?? e)
+							throw writeOutcomeError(`rebuildCopperRegion(${pid})`, e, /超时/.test(message) ? 'timeout' : 'failed', { pourId: pid, mode: 'per-pour-loop', fillCountBefore: beforeAll.length })
 						}
 					}
 					rebuilt = results
 				}
 			}
 			catch (err: any) {
-				error = error ?? String(err?.message ?? err)
-				if (/超时/.test(error) && !fallbackLoop)
-					return { status: 'timeout', fillCountBefore: (beforeAll ?? []).length, error: `${error}——超时≠取消，后台可能仍在重建；只读复核后再决定下一步` }
+				if (err?.cause?.partial === true)
+					throw err
+				const message = String(err?.message ?? err)
+				throw writeOutcomeError('rebuildCopperRegions', err, /超时/.test(message) ? 'timeout' : 'failed', { fillCountBefore: beforeAll.length, ...(fallbackLoop ? { mode: 'per-pour-loop' } : {}) })
 			}
-			const afterAll = await eda.pcb_PrimitivePoured.getAll().catch(() => [] as Array<any>)
-			const status = error && !((Array.isArray(rebuilt) && rebuilt.length) || (afterAll ?? []).length) ? 'failed'
-				: ((Array.isArray(rebuilt) && rebuilt.length) || (afterAll ?? []).length ? 'completed' : 'no-fill')
+			let afterAll: Array<any>
+			try {
+				afterAll = validatePouredList(await eda.pcb_PrimitivePoured.getAll(), 'getAll(after)')
+				remainingRebuildMs('getAll(after)', { fillCountBefore: beforeAll.length, mode: fallbackLoop ? 'per-pour-loop' : 'static' })
+			}
+			catch (err) {
+				throw writeOutcomeError('getAll(after)', err, 'failed', { fillCountBefore: beforeAll.length, mode: fallbackLoop ? 'per-pour-loop' : 'static' })
+			}
+			const status = rebuilt.length && afterAll.length ? 'completed' : 'no-fill'
 			return {
 				status,
-				fillCountBefore: (beforeAll ?? []).length,
-				fillCountAfter: (afterAll ?? []).length,
+				fillCountBefore: beforeAll.length,
+				fillCountAfter: afterAll.length,
 				rebuiltFills: Array.isArray(rebuilt) ? rebuilt.length : 0,
 				pourCount: (allPours ?? []).length,
 				...(fallbackLoop ? { mode: 'per-pour-loop' } : {}),
-				...(error ? { error } : {}),
+				freshnessVerified: false,
 			}
 		},
 	},
@@ -2444,7 +2651,7 @@ export const pcbCommands: Array<ICommandDef> = [
 	},
 	{
 		name: 'pcb.autoRouteStart',
-		summary: '【宏】启动 FreeRouting 自动布线（0.10.0 起；需本地 FreeRouting 服务运行：bridge/start-freerouting.bat 或官方脚本，端口 37864）。流程：导出 DSN → 创建会话 → 上传 → 启动。⚠️ 回灌时会清除全部未锁定走线/过孔：电源主路径必须先 pcb.setNetLock 锁定！启动后用 pcb.autoRouteStatus 轮询，完成自动回灌+DRC',
+		summary: '【宏】启动 FreeRouting 自动布线（0.10.0 起；需本地 FreeRouting 服务运行：bridge/start-freerouting.bat 或官方脚本，端口 37864）。流程：导出 DSN → 创建会话 → 上传 → 启动。⚠️ 回灌会清除全部未锁定线段、圆弧与过孔：电源主路径必须先 pcb.setNetLock 锁定！启动后用 pcb.autoRouteStatus 轮询，完成自动回灌+DRC',
 		params: [
 			{ name: 'maxPasses', type: 'number', description: '最大布线轮数，默认 50' },
 			{ name: 'viaCosts', type: 'number', description: '过孔成本权重（越高越少过孔），默认 50' },
@@ -2487,13 +2694,13 @@ export const pcbCommands: Array<ICommandDef> = [
 			return {
 				jobId: job.id,
 				state: 'RUNNING',
-				note: '布线已启动，用 pcb.autoRouteStatus 轮询（完成会自动回灌结果并跑 DRC）；pcb.autoRouteStop 可随时停止',
+				note: '布线已启动；完成回灌会清除全部未锁定线段、圆弧与过孔。用 pcb.autoRouteStatus 轮询（完成会自动回灌结果并跑 DRC）；pcb.autoRouteStop 可随时停止',
 			}
 		},
 	},
 	{
 		name: 'pcb.autoRouteStatus',
-		summary: '查询自动布线进度；任务 COMPLETED 时自动回灌 SES 结果（清除未锁定走线后导入）并可选自动 DRC，返回布线统计',
+		summary: '查询自动布线进度；任务 COMPLETED 时自动回灌 SES 结果（清除全部未锁定线段、圆弧与过孔后导入）并可选自动 DRC，返回布线统计',
 		params: [
 			{ name: 'jobId', type: 'string', description: '任务 ID（留空取最近启动的任务）' },
 			{ name: 'noImport', type: 'boolean', description: '完成时不自动回灌（只查状态），默认 false' },
@@ -2517,42 +2724,73 @@ export const pcbCommands: Array<ICommandDef> = [
 			}
 			if (status.state !== 'COMPLETED' || params.noImport)
 				return base
-			// 0.10.65 修复：任务消费幂等——COMPLETED 的清线+回灌每任务只执行一次。
-			// 旧版 currentRouteJobId 只在 import 成功后才清，中途任何一步抛错都会带未消费状态上抛，
-			// 重复轮询会再次「清全部未锁定走线+导入」，可能叠加重复布线。
-			if (consumedRouteJobs.has(jobId))
-				return { ...base, imported: false, note: '该任务的回灌已消费过（成功或失败均只一次），不会重复清线/导入；如需重新布线请先 pcb.autoRouteStart' }
-			// 复审补强（0.10.65）：消费标记放在 output 拉取校验之后——output 是只读幂等操作，
-			// 标记在前时一次瞬时空响应会把任务永久锁死（已消费+当前任务已清，无重试通道）
+			const unresolvedJob = [...routeJobRecoveryState].find(([, state]) => state === 'recoveryRequired')
+			if (unresolvedJob)
+				throw new Error(`任务 ${unresolvedJob[0]} 的原文档恢复未确认；已拒绝新的清线或导入`, {
+					cause: { partial: true, restored: false, retryable: false },
+				})
+			const routeState = routeJobRecoveryState.get(jobId)
+			if (routeState === 'recoveryRequired')
+				throw new Error(`任务 ${jobId} 的原文档恢复未确认；已拒绝再次清线或导入`, {
+					cause: { partial: true, restored: false, retryable: false },
+				})
+			if (routeState === 'applying')
+				throw new Error(`任务 ${jobId} 的回灌仍在执行，已拒绝重入`)
+			if (routeState === 'applied' || consumedRouteJobs.has(jobId))
+				return { ...base, imported: false, note: '该任务已成功回灌，不会重复清线或导入；如需重新布线请先 pcb.autoRouteStart' }
+			// 同步占用完成任务，再开始任何可能挂起的输出或快照读取，防止并发查询双清线。
+			routeJobRecoveryState.set(jobId, 'applying')
+			let routeMayHaveWritten = false
+			try {
+			// 先验证输出格式，再枚举目标图元、落快照，之后才开始修改。
 			const output = await frRequest<{ data: string, filename?: string }>('GET', `/jobs/${jobId}/output`)
 			if (!output?.data)
 				throw new Error('布线完成但结果为空')
-			consumedRouteJobs.add(jobId)
-			currentRouteJobId = undefined
-			// 清除全部未锁定走线/圆弧/过孔（锁定的不动——电源保护就靠 setNetLock）
-			const unlockedLines = await eda.pcb_PrimitiveLine.getAllPrimitiveId(undefined, undefined, false)
-			const unlockedVias = await eda.pcb_PrimitiveVia.getAllPrimitiveId(undefined, false)
-			let unlockedArcs: Array<string> = []
-			try {
-				unlockedArcs = await (eda.pcb_PrimitiveArc as any).getAllPrimitiveId(undefined, undefined, false) ?? []
-			}
-			catch { /* 忽略 */ }
-			await eda.pcb_Document.startCalculatingRatline()
-			if (unlockedLines?.length)
-				await eda.pcb_PrimitiveLine.delete(unlockedLines)
-			if (unlockedArcs.length)
-				await (eda.pcb_PrimitiveArc as any).delete(unlockedArcs)
-			if (unlockedVias?.length)
-				await eda.pcb_PrimitiveVia.delete(unlockedVias)
-			const bin = atob(output.data)
+			let bin: string
+			try { bin = atob(output.data) }
+			catch (error) { throw new Error(`布线输出不是有效 Base64 SES：${error instanceof Error ? error.message : String(error)}`) }
+			if (!bin.trim() || !bin.includes('(session'))
+				throw new Error('布线输出不是非空 SES session 文件')
 			const u8 = new Uint8Array(bin.length)
 			for (let i = 0; i < bin.length; i++)
 				u8[i] = bin.charCodeAt(i)
 			const sesFile = new File([u8], output.filename || 'autoroute.ses')
-			const imported = await eda.pcb_Document.importAutoRouteSesFile(sesFile)
-			currentRouteJobId = undefined
+
+			const snapshot = await captureDocumentSnapshot('pcb.autoRouteStatus', 3)
+			await assertSnapshotFocused(snapshot)
+			const unlockedLines = await eda.pcb_PrimitiveLine.getAllPrimitiveId(undefined, undefined, false)
+			if (!Array.isArray(unlockedLines))
+				throw new Error('无法完整枚举未锁定走线，已拒绝清线')
+			await assertSnapshotFocused(snapshot)
+			const unlockedVias = await eda.pcb_PrimitiveVia.getAllPrimitiveId(undefined, false)
+			if (!Array.isArray(unlockedVias))
+				throw new Error('无法完整枚举未锁定过孔，已拒绝清线')
+			await assertSnapshotFocused(snapshot)
+			const unlockedArcs = await (eda.pcb_PrimitiveArc as any).getAllPrimitiveId(undefined, undefined, false)
+			if (!Array.isArray(unlockedArcs))
+				throw new Error('无法完整枚举未锁定圆弧，已拒绝清线')
+
+			let cleared: { lines: number, vias: number, arcs: number }
+			cleared = await withDocumentRecovery(snapshot, async (write) => {
+				const markMayWrite = () => { routeMayHaveWritten = true }
+				await write(() => eda.pcb_Document.startCalculatingRatline(), markMayWrite)
+				if (unlockedLines.length && await write(() => eda.pcb_PrimitiveLine.delete(unlockedLines), markMayWrite) !== true)
+					throw new Error('删除未锁定走线返回 false')
+				if (unlockedArcs.length && await write(() => (eda.pcb_PrimitiveArc as any).delete(unlockedArcs), markMayWrite) !== true)
+					throw new Error('删除未锁定圆弧返回 false')
+				if (unlockedVias.length && await write(() => eda.pcb_PrimitiveVia.delete(unlockedVias), markMayWrite) !== true)
+					throw new Error('删除未锁定过孔返回 false')
+				const imported = await write(() => eda.pcb_Document.importAutoRouteSesFile(sesFile), markMayWrite)
+				if (imported !== true)
+					throw new Error('SES 导入返回 false')
+				return { lines: unlockedLines.length, vias: unlockedVias.length, arcs: unlockedArcs.length }
+			})
+			routeJobRecoveryState.set(jobId, 'applied')
+			consumedRouteJobs.add(jobId)
+			if (currentRouteJobId === jobId)
+				currentRouteJobId = undefined
 			let drc: Record<string, unknown> | undefined
-			if (imported && !routeSkipDrc) {
+			if (!routeSkipDrc) {
 				try {
 					const errors = await eda.pcb_Drc.check(true, true, false)
 					const groups = Array.isArray(errors) ? errors : []
@@ -2562,9 +2800,18 @@ export const pcbCommands: Array<ICommandDef> = [
 			}
 			return {
 				...base,
-				imported: Boolean(imported),
-				cleared: { lines: unlockedLines?.length ?? 0, vias: unlockedVias?.length ?? 0, arcs: unlockedArcs.length },
+				imported: true,
+				cleared,
 				...(drc ? { drc } : {}),
+			}
+			}
+			catch (error) {
+				const cause = (error as any)?.cause
+				if (cause?.partial === true && cause?.restored === false || (routeMayHaveWritten && cause?.restored !== true))
+					routeJobRecoveryState.set(jobId, 'recoveryRequired')
+				else
+					routeJobRecoveryState.delete(jobId)
+				throw error
 			}
 		},
 	},

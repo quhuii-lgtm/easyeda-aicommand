@@ -466,7 +466,7 @@ export const libCommands: Array<ICommandDef> = [
 		params: [
 			{ name: 'libraryUuid', type: 'string', required: false, description: '库 UUID，默认个人库' },
 			{ name: 'name', type: 'string', required: true, description: '器件名称' },
-			{ name: 'symbolUuid', type: 'string', required: false, description: '要绑定的符号 UUID（不绑定符号也不新建符号将无法创建器件）' },
+			{ name: 'symbolUuid', type: 'string', required: true, description: '必填：要绑定的符号 UUID（不新建符号时必须提供）' },
 			{ name: 'footprintUuid', type: 'string', required: false, description: '要绑定的封装 UUID' },
 			{ name: 'model3DUuid', type: 'string', required: false, description: '要绑定的 3D 模型 UUID' },
 			{ name: 'model3DLibraryUuid', type: 'string', required: false, description: '3D 模型所在库 UUID，默认同器件库' },

@@ -6,7 +6,7 @@
 
 ## 版本与组成
 
-当前发布插件为 [v0.10.73](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.10.73)。代理与技能随仓库代码分发，请同时记录所用仓库提交；插件版本相同不表示代理和技能也相同。后续文档及助手修订见 [CHANGELOG](CHANGELOG.md)。
+当前发布插件为 [v0.10.87](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.10.87)。本版已通过本地回归与构建，完整宿主安装验收仍待完成，见 [版本说明](docs/releases/v0.10.87.md)。代理与技能随仓库代码分发，请同时记录所用仓库提交；插件版本相同不表示代理和技能也相同。后续文档及助手修订见 [CHANGELOG](CHANGELOG.md)。
 
 | 路径 | 内容 |
 | --- | --- |
@@ -31,7 +31,7 @@ ZIP 用户在解压后的仓库目录运行后两条命令。保留代理终端�
 
 默认地址为 `http://127.0.0.1:49720`。代理启动后再验证 `/health` 与 `/connections`，按工程名核对目标实例。完整 PowerShell 请求和预期结果见 [第一次只读调用](docs/QUICKSTART.md#3-完成第一次只读调用)。
 
-**默认手动启动代理。**`ai-command-proxy://` 自动拉起只有在用户已自行注册协议时才有效；仓库没有协议注册脚本。不要只修改代理端口，发布插件和配套工具默认使用 49720。
+**Windows 可按需注册自动启动。**运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\bridge\install-url-scheme.ps1` 后，插件可通过 `ai-command-proxy://start` 唤起本仓库启动器；该命令只对本次脚本运行绕过执行策略，不修改机器策略。注册只作用于当前用户，移动仓库后需重新注册。默认端口为 49720。启动、停止、重连以及兼容限制见 [桥接生命周期说明](docs/BRIDGE-LIFECYCLE.md)。
 
 ## 安装 AI 技能
 
@@ -63,7 +63,7 @@ node build/dist/docGuardRegression.cjs
 python -B -m unittest discover -s skills/ai-command-engine/tests -v
 ```
 
-构建产物位于 `build/dist/ai-command-engine_v*.eext`。代理回归使用独立端口 49799 和假扩展；运行前确认该端口空闲。Python 测试使用模拟 HTTP，不连接 EDA。真实客户端安装与绘图仍需单独验收。
+构建产物位于 `build/dist/ai-command-engine_v*.eext`。桥接回归使用独立端口和假扩展：`node bridge/mock-host-test.mjs`、`node bridge/lifecycle-mock-test.mjs`；客户端状态机测试为 `node test/bridge-client-lifecycle.mjs`。Python 测试使用模拟 HTTP，不连接 EDA。真实客户端安装与绘图仍需单独验收。
 
 ## 反馈与许可
 

@@ -11,8 +11,8 @@
 
 ## 整理已有原理图
 
-- 器件乱/连线乱：`autoLayout`（先 dryRun 看 plan/connections，确认后真跑；跑前保存，跑完看 moved/moveFailed/rewired/drc）。
-- 标签问题：`fixNetLabels` 全科体检（dryRun 默认 true）；浮标残留 `pruneFloatingLabels`（分批，看 batches/unprocessed）。
+- 器件乱/连线乱：`autoLayout`（先 dryRun 看 plan/connections，确认后真跑；跑前保存，跑完检查 moved、失败 error.cause（partial、moved、phase、stateDifferences）、rewired、drc。部分移动失败时停止后续写入并检查现场，依据 moved 和备份受控恢复；不承诺 UI undo 可用）。
+- 标签问题：`fixNetLabels` 全科体检（dryRun 默认 true）；浮标残留 `pruneFloatingLabels`（dryRun 默认 `false`；预览须显式传 `true`；分批看 batches/unprocessed）。
 - 网络碎（人工拖标签等）：`repairNet` 收尾。
 
 ## 元器件摆放与表达（以项目及器件要求为准）
@@ -47,4 +47,4 @@
 7. **不盲目重试**：读 `error.message`/`suggestion` 修正再发；同一指令连错 3 次停下换方案。
 8. **专业知识先查库**：阻抗/等长/载流先 `knowledge.query`，按 constraints/guidance 执行。
 9. **扩展开发另行处理**：普通绘图使用本插件指令。任意原生 API 调试不属于本技能安装流程；作者曾用的 49620 网关未包含在此仓库，不能假定用户已安装或据此执行代码。
-10. **插件不越权**：指令只检查如实反馈，**不擅自修复/删除/回滚**——异常返回状态码+warning+建议，由操作者决定（主动调 `pruneFloatingLabels`/`dedupeWireNets`/`delete` 才是授权清理）。官方创建类接口有假失败（返回空但实际已创建），不信返回值，以文档实际内容为准。
+10. **按指令授权范围操作**：不超出被调用指令的授权范围修复、删除或恢复。`dedupeWireNets` 与 `autoRouteStatus` 在已写入后失败时会尝试整页快照恢复并读回；恢复失败或未确认仍报错，不保证成功。`autoLayout` 本身不自动恢复。官方创建类接口有假失败（返回空但实际已创建），不信返回值，以文档实际内容为准。

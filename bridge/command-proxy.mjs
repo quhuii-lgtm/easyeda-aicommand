@@ -134,6 +134,8 @@ function autoSelectIfSingleProject() {
 	console.log(`[ai-command-proxy] 单工程自动选窗: 实例 ${c.instanceId} v${c.version} 工程 ${c.info?.project ?? '未知'}`)
 }
 const pending = new Map()
+/** graceful stop requests keyed by instanceId; only the owning socket may receive completion */
+const stoppingInstances = new Map()
 
 /** 空闲自杀状态 */
 let everConnected = false
@@ -201,12 +203,13 @@ function forwardToExtension(message, instanceId, isWrite = false) {
 		const id = randomUUID()
 		const timeoutMs = COMMAND_TIMEOUT_OVERRIDES[message.cmd] ?? COMMAND_TIMEOUT_MS
 		const targetId = target.instanceId ?? target.info?.instanceId
-		const entry = { resolve, timer: null, lastProgress: undefined, timeoutMs, write: isWrite, cmd: message.cmd, id, instanceId: targetId }
+		const entry = { resolve, timer: null, lastProgress: undefined, timeoutMs, write: isWrite, cmd: message.cmd, id, instanceId: targetId, owner: target.ws }
 		entry.timer = setTimeout(() => {
 			pending.delete(id)
 			// 0.10.72：写指令超时 = 结果不确定，标记写保护（拒绝后续写直到自愈/确认）
 			// 0.10.73：保护按实例号键并记录本指令 id，迟到结果只认这个 id
-			if (isWrite) markWriteUncertain(targetId, message.cmd, '指令超时', id)
+			if (isWrite) markWriteUncertain(targetId, message.cmd, '指令超时', id, target.ws)
+			tryCompleteStop(targetId)
 			// 0.10.37：超时只是代理放弃等待，扩展侧可能仍在后台执行（EDA API 无取消机制）——如实告知边界
 			// 0.10.49：附最后收到的进度心跳，客户端可据此判断任务实际推进到哪
 			const prog = entry.lastProgress !== undefined ? `；最后进度：${JSON.stringify(entry.lastProgress).slice(0, 500)}` : ''
@@ -253,17 +256,67 @@ const MAX_QUEUED_WRITES = 50
 // 解除只有两条路：id 匹配且非 partial 的迟到 result（=该指令真实跑完），或 write.acknowledge
 // （调用方只读核对现场后的显式确认）。永不返回的任务不会被自动放行，读指令始终可用。
 const writeUncertain = new Map() // key: instanceId；value: { since, cmd, reason, id }
-function markWriteUncertain(instanceId, cmd, reason, id) {
+function markWriteUncertain(instanceId, cmd, reason, id, owner = null) {
 	if (!instanceId) return
 	// 已标记则不覆盖首次触发记录（保留最早的"现场开始不确定"时点与原始指令 id）
 	if (writeUncertain.has(instanceId)) return
-	writeUncertain.set(instanceId, { since: Date.now(), cmd, reason, id })
+	writeUncertain.set(instanceId, { since: Date.now(), cmd, reason, id, owner })
 	laneLog({ event: 'write-uncertain-set', instanceId, cmd, reason, id })
 }
 function clearWriteUncertain(instanceId, why) {
 	if (!writeUncertain.has(instanceId)) return
 	writeUncertain.delete(instanceId)
 	laneLog({ event: 'write-uncertain-cleared', instanceId, why })
+	const stop = stoppingInstances.get(instanceId)
+	if (stop?.blocked)
+		stop.blocked = false
+	tryCompleteStop(instanceId)
+}
+function queueDepthFor(instanceId) {
+	let depth = 0
+	for (const [ws, q] of writeQueues) {
+		if (connections.get(ws)?.instanceId === instanceId)
+			depth += q.depth
+	}
+	return depth
+}
+function pendingFor(instanceId) {
+	for (const entry of pending.values()) {
+		if (entry.instanceId === instanceId)
+			return true
+	}
+	return false
+}
+function tryCompleteStop(instanceId) {
+	const stop = stoppingInstances.get(instanceId)
+	if (!stop || stop.readySent || pendingFor(instanceId) || queueDepthFor(instanceId) > 0)
+		return
+	if (writeUncertain.has(instanceId)) {
+		if (stop.blocked)
+			return
+		stop.blocked = true
+		try { stop.ws.send(JSON.stringify({ type: 'stop-blocked', requestId: stop.requestId, reason: 'writeUncertain' })) }
+		catch {}
+		return
+	}
+	stop.readySent = true
+	try { stop.ws.send(JSON.stringify({ type: 'stop-ready', requestId: stop.requestId })) }
+	catch {}
+	refreshDisconnectedAt()
+}
+function lifecycleBusy() {
+	return [...connections.values()].some(c => !pausedIds.has(c.instanceId))
+		|| pending.size > 0
+		|| [...writeQueues.values()].some(q => q.depth > 0)
+		|| writeUncertain.size > 0
+}
+function refreshDisconnectedAt() {
+	if (!everConnected || lifecycleBusy()) {
+		disconnectedAt = 0
+		return
+	}
+	if (!disconnectedAt)
+		disconnectedAt = Date.now()
 }
 /** 写保护闸：返回非空字符串 = 拒绝原因（HTTP 200 + { ok:false } 由调用方组装）；null = 放行 */
 async function assertWriteCertain(routeId) {
@@ -317,9 +370,11 @@ function acquireWriteLane(routeId) {
 		q.tail = run.then(() => {
 			q.depth--
 			laneLog({ event: 'done', cmd: fn.cmd, depth: q.depth })
+			tryCompleteStop(target.instanceId)
 		}, () => {
 			q.depth--
 			laneLog({ event: 'done-failed', cmd: fn.cmd, depth: q.depth })
+			tryCompleteStop(target.instanceId)
 		})
 		return run
 	}
@@ -547,22 +602,39 @@ const DESTRUCTIVE_COMMANDS = new Set([
 	'project.deletePcb',
 	'project.deleteBoard',
 ])
-let lastBackupAt = 0
+const lastBackupAt = new Map()
 const BACKUP_INTERVAL_MS = 60000 // 批量删除场景 60 秒内只备一次
 
 async function autoBackupBeforeDestructive(cmdName, instanceId) {
-	if (Date.now() - lastBackupAt < BACKUP_INTERVAL_MS)
-		return null
 	try {
+		// .epro 是整份工程备份；用工程 UUID 隔离同实例切换工程及不同实例，不能用可重复的显示名。
+		const identityBefore = await forwardToExtension({ cmd: 'project.getInfo' }, instanceId)
+		const projectUuidBefore = identityBefore?.ok === true && typeof identityBefore?.data?.uuid === 'string' && identityBefore.data.uuid
+			? identityBefore.data.uuid
+			: null
+		const backupKey = projectUuidBefore ? JSON.stringify([instanceId, projectUuidBefore]) : null
+		if (backupKey && Date.now() - (lastBackupAt.get(backupKey) ?? 0) < BACKUP_INTERVAL_MS)
+			return null
+
 		const result = await forwardToExtension({ cmd: 'project.exportFile' }, instanceId)
 		const b64 = result?.data?.base64
 		if (!b64)
 			return null
 		fs.mkdirSync(BACKUP_DIR, { recursive: true })
 		const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-		const file = path.join(BACKUP_DIR, `backup_${stamp}_${cmdName.replace(/\W+/g, '_')}.epro`)
+		const file = path.join(BACKUP_DIR, `backup_${stamp}_${randomUUID()}_${cmdName.replace(/\W+/g, '_')}.epro`)
 		fs.writeFileSync(file, Buffer.from(b64, 'base64'))
-		lastBackupAt = Date.now()
+		// 工程可能在导出过程中切换；只有前后 UUID 相同，才把成功时间记给该身份。
+		if (backupKey) {
+			try {
+				const identityAfter = await forwardToExtension({ cmd: 'project.getInfo' }, instanceId)
+				if (identityAfter?.ok === true && identityAfter.data?.uuid === projectUuidBefore)
+					lastBackupAt.set(backupKey, Date.now())
+			}
+			catch (err) {
+				console.log(`[ai-command-proxy] 备份已保存但无法复核工程身份，不应用节流: ${err?.message ?? err}`)
+			}
+		}
 		console.log(`[ai-command-proxy] 破坏性指令 ${cmdName} 前已自动备份: ${file}`)
 		return file
 	}
@@ -795,6 +867,8 @@ const server = http.createServer(async (req, res) => {
 		if (req.method === 'GET' && url.pathname === '/health') {
 			json(res, 200, {
 				ok: true,
+				service: 'ai-command-proxy',
+				lifecycleProtocol: 1,
 				extensionConnected: Boolean(selectedConnection()),
 				extension: extensionInfo,
 				connections: [...connections.entries()].map(([ws, c]) => ({
@@ -1027,7 +1101,7 @@ wss.on('connection', (ws) => {
 					connectedAt: Date.now(),
 					info: null,
 				})
-				console.log(`[ai-command-proxy] 实例 ${instanceId} 处于暂停态（hello paused:true），登记后立即断开；连接归零后代理将自动退出`)
+				console.log(`[ai-command-proxy] 实例 ${instanceId} 处于暂停态（hello paused:true），登记后立即断开`)
 				try {
 					ws.send(JSON.stringify({ type: 'describe' }))
 					ws.close()
@@ -1044,6 +1118,7 @@ wss.on('connection', (ws) => {
 				const allowed = knownNonce === undefined ? frameNonce === undefined : frameNonce === knownNonce
 				if (allowed) {
 					pausedIds.delete(instanceId)
+					stoppingInstances.delete(instanceId)
 					laneLog({ event: 'resume', instanceId, via: 'hello' })
 					console.log(`[ai-command-proxy] 实例 ${instanceId} 通过 hello 恢复（口令校验通过），暂停已清除`)
 				}
@@ -1062,7 +1137,8 @@ wss.on('connection', (ws) => {
 				info: null,
 			})
 			everConnected = true
-			disconnectedAt = 0
+			if (!pausedIds.has(instanceId))
+				disconnectedAt = 0
 			// 仅在从未选定过目标时才自动接管；已选定则粘滞，重连由 selectedConnection() 自动恢复
 			if (!selectedInstanceId) {
 				selectedInstanceId = instanceId
@@ -1106,12 +1182,36 @@ wss.on('connection', (ws) => {
 		// 扩展改发 bye 帧，由代理侧主动关闭本连接。
 		if (msg?.type === 'bye') {
 			const entry = connections.get(ws)
+			const stop = entry && stoppingInstances.get(entry.instanceId)
+			if (stop && (!msg.requestId || msg.requestId !== stop.requestId)) {
+				laneLog({ event: 'bye-rejected-during-stop', instanceId: entry.instanceId })
+				return
+			}
+			if (entry && stop)
+				stoppingInstances.delete(entry.instanceId)
 			laneLog({ event: 'bye', instanceId: entry?.instanceId ?? null })
 			console.log(`[ai-command-proxy] 实例 ${entry?.instanceId ?? '?'} 发送 bye（菜单断开/强制重连），代理侧主动关闭连接`)
 			try {
 				ws.close()
 			}
 			catch {}
+			return
+		}
+
+		// 0.10.74: graceful stop. Pause the target immediately, but keep this owner socket
+		// alive until every already-dispatched result and queued write has settled.
+		if (msg?.type === 'stop') {
+			const entry = connections.get(ws)
+			if (!entry || !msg.requestId)
+				return
+			pausedIds.add(entry.instanceId)
+			if (typeof msg.nonce === 'string' && msg.nonce)
+				instanceNonces.set(entry.instanceId, msg.nonce)
+			stoppingInstances.set(entry.instanceId, { ws, requestId: msg.requestId, blocked: false, readySent: false })
+			laneLog({ event: 'stop-request', instanceId: entry.instanceId, requestId: msg.requestId })
+			try { ws.send(JSON.stringify({ type: 'stop-accepted', requestId: msg.requestId })) }
+			catch {}
+			tryCompleteStop(entry.instanceId)
 			return
 		}
 
@@ -1147,10 +1247,17 @@ wss.on('connection', (ws) => {
 				if (!frameOk) {
 					laneLog({ event: 'resume-rejected', instanceId: entry.instanceId, via: 'resume' })
 					console.log(`[ai-command-proxy] 实例 ${entry.instanceId} 的 resume 帧被口令校验拒绝，保持暂停`)
+					if (msg.requestId)
+						try { ws.send(JSON.stringify({ type: 'resume-rejected', requestId: msg.requestId })) } catch {}
 				}
-				else if (pausedIds.delete(entry.instanceId)) {
-					laneLog({ event: 'resume', instanceId: entry.instanceId, via: 'resume' })
-					console.log(`[ai-command-proxy] 实例 ${entry.instanceId} 已恢复（菜单「连接指令代理」，口令校验通过）`)
+				else {
+					stoppingInstances.delete(entry.instanceId)
+					if (pausedIds.delete(entry.instanceId)) {
+						laneLog({ event: 'resume', instanceId: entry.instanceId, via: 'resume' })
+						console.log(`[ai-command-proxy] 实例 ${entry.instanceId} 已恢复（菜单「连接指令代理」，口令校验通过）`)
+					}
+					if (msg.requestId)
+						try { ws.send(JSON.stringify({ type: 'resume-accepted', requestId: msg.requestId })) } catch {}
 				}
 			}
 			return
@@ -1158,9 +1265,16 @@ wss.on('connection', (ws) => {
 
 		if (msg?.type === 'result' && msg.id && pending.has(msg.id)) {
 			const entry = pending.get(msg.id)
+			if (entry.owner !== ws) {
+				laneLog({ event: 'foreign-result-rejected', instanceId: entry.instanceId, id: msg.id })
+				return
+			}
 			pending.delete(msg.id)
 			clearTimeout(entry.timer)
+			if (entry.write && msg.result?.error?.cause?.partial)
+				markWriteUncertain(entry.instanceId, entry.cmd ?? '(partial result)', '扩展返回 partial，底层操作是否结束未知', entry.id, ws)
 			entry.resolve(msg.result)
+			tryCompleteStop(entry.instanceId)
 			return
 		}
 
@@ -1168,13 +1282,14 @@ wss.on('connection', (ws) => {
 		// 时解除保护——其他无主 result（别的超时读请求、其他操作）一律不动保护
 		if (msg?.type === 'result' && msg.id && writeUncertain.size) {
 			for (const [iid, rec] of writeUncertain) {
-				if (rec.id !== msg.id) continue
+				if (rec.id !== msg.id || rec.owner !== ws || connections.get(ws)?.instanceId !== iid) continue
 				if (msg.result?.error?.cause?.partial) {
 					laneLog({ event: 'late-result-partial-ignored', instanceId: iid, id: msg.id })
 				}
 				else {
 					clearWriteUncertain(iid, 'late-result')
 				}
+				tryCompleteStop(iid)
 				break
 			}
 		}
@@ -1184,13 +1299,16 @@ wss.on('connection', (ws) => {
 		// 批量指令不会因总时长被误杀（单条指令不上报心跳，语义不变）
 		if (msg?.type === 'progress' && msg.id && pending.has(msg.id)) {
 			const entry = pending.get(msg.id)
+			if (entry.owner !== ws)
+				return
 			clearTimeout(entry.timer)
 			entry.lastProgress = msg.progress
 			entry.timer = setTimeout(() => {
 				pending.delete(msg.id)
 				// 0.10.72：心跳超时 = 写结果不确定（此分支只可能是写指令，读指令无心跳机制不走这），标记写保护
 				// 0.10.73：按实例号键并记录指令 id
-				if (entry.write) markWriteUncertain(entry.instanceId, entry.cmd ?? '(心跳超时)', '心跳超时', entry.id)
+				if (entry.write) markWriteUncertain(entry.instanceId, entry.cmd ?? '(心跳超时)', '心跳超时', entry.id, entry.owner)
+				tryCompleteStop(entry.instanceId)
 				const prog = entry.lastProgress !== undefined ? `；最后进度：${JSON.stringify(entry.lastProgress).slice(0, 500)}` : ''
 				entry.resolve({ ok: false, cmd: '(超时)', error: { message: `指令执行超时（${Math.round(entry.timeoutMs / 1000)}s 无进度心跳，代理已放弃等待）${prog}。这≠任务已取消，扩展可能仍在后台执行；重发同参数只回进度不重复执行，或用 task.get 查询` } })
 			}, entry.timeoutMs)
@@ -1217,10 +1335,7 @@ wss.on('connection', (ws) => {
 			// 选定目标断开：保持 selectedInstanceId 不变，绝不自动改选其他窗口（防止指令落到错误工程）
 			console.log(`[ai-command-proxy] 选定实例 ${closed.instanceId} 已断开，指令将报 TARGET_OFFLINE 直至其重连或手动 /select`)
 		}
-		if (connections.size === 0) {
-			disconnectedAt = Date.now()
-			console.log('[ai-command-proxy] 扩展已全部断开，60 秒无重连将自动退出')
-		}
+		refreshDisconnectedAt()
 	})
 })
 
@@ -1232,6 +1347,9 @@ const pingTimer = setInterval(() => {
 			continue
 		}
 		ws.isAlive = false
+		// Application-level ping: host SDKs may miss transport close/error callbacks,
+		// so the extension must be able to confirm the proxy is still responsive.
+		try { ws.send(JSON.stringify({ type: 'ping' })) } catch {}
 		ws.ping()
 	}
 }, WS_PING_INTERVAL_MS)
@@ -1240,11 +1358,12 @@ pingTimer.unref()
 // 空闲自动退出：扩展曾连接过，断开后超过 IDLE_SHUTDOWN_MS 未重连 → 认为 EDA 已关闭，自动退出
 // PROXY_IDLE_MS=0 时禁用自动退出（常驻）
 const idleTimer = setInterval(() => {
-	if (IDLE_SHUTDOWN_MS > 0 && everConnected && connections.size === 0 && disconnectedAt > 0 && Date.now() - disconnectedAt > IDLE_SHUTDOWN_MS) {
+	refreshDisconnectedAt()
+	if (IDLE_SHUTDOWN_MS > 0 && everConnected && !lifecycleBusy() && disconnectedAt > 0 && Date.now() - disconnectedAt > IDLE_SHUTDOWN_MS) {
 		console.log(`[ai-command-proxy] 扩展断开超过 ${Math.round(IDLE_SHUTDOWN_MS / 1000)} 秒，自动退出（下次打开 EDA 会自动拉起）`)
 		process.exit(0)
 	}
-}, 10000)
+}, IDLE_SHUTDOWN_MS > 0 ? Math.min(10000, Math.max(100, Math.floor(IDLE_SHUTDOWN_MS / 4))) : 10000)
 idleTimer.unref()
 
 server.listen(PORT, '127.0.0.1', () => {

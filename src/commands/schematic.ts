@@ -4,17 +4,23 @@
  * 注意：原理图坐标单位为 10mil
  */
 import type { ICommandDef } from '../engine/types'
+import { modifyComponentSafely, moveComponentSafely } from '../engine/componentMutation'
+import { assertSnapshotFocused, captureDocumentSnapshot, withDocumentRecovery } from '../engine/documentRecovery'
 import { fileToResult } from './util'
 import { beginTask, failTask, finishTask, taskProgress } from '../engine/tasks'
 import { serializeErrorDetail } from '../engine/registry'
 import { diag } from '../engine/diag'
+import { parseSourceLog, resolveRecords } from '../pcb/sourcelog'
 
 /** 0.10.42：给无保护 await 加超时（官方偶发永不 resolve，曾致整批删除挂死 300s 无结果） */
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
-	return Promise.race([
-		p,
-		new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`${label}超时（>${ms / 1000}s，官方无响应）`)), ms)),
-	])
+	return new Promise<T>((resolve, reject) => {
+		const timer = setTimeout(() => reject(new Error(`${label}超时（>${ms / 1000}s，官方无响应）`)), ms)
+		Promise.resolve(p).then(
+			value => { clearTimeout(timer); resolve(value) },
+			error => { clearTimeout(timer); reject(error) },
+		)
+	})
 }
 
 /** 防御性读取图元状态方法（不同图元类型支持的方法不同） */
@@ -28,6 +34,190 @@ function safeState<T>(obj: any, method: string): T | undefined {
 		// 忽略不支持的状态读取
 	}
 	return undefined
+}
+
+interface ITextSourceDeleteOptions {
+	beforeWrite?: () => void
+	shouldStop?: () => boolean
+	onWriteStart?: () => void
+	timeoutMs?: number
+}
+
+/** Remove exact live TEXT source rows and verify both effective source and model before reporting success. */
+async function deleteTextFromSourceSnapshot(ids: Array<string>, options: ITextSourceDeleteOptions = {}) {
+	const startedAt = performance.now()
+	const budgetMs = Math.min(290_000, Math.max(1000, Number.isFinite(options.timeoutMs) ? Number(options.timeoutMs) : 290_000))
+	const steps: Array<string> = []
+	let writeAttempted = false
+	const stopped = () => options.shouldStop?.() === true
+	const budgetExpired = () => performance.now() - startedAt >= budgetMs
+	const stableJson = (value: unknown): string => {
+		if (Array.isArray(value))
+			return `[${value.map(stableJson).join(',')}]`
+		if (value && typeof value === 'object') {
+			const object = value as Record<string, unknown>
+			return `{${Object.keys(object).sort().map(key => `${JSON.stringify(key)}:${stableJson(object[key])}`).join(',')}}`
+		}
+		return JSON.stringify(value)
+	}
+	const comparableHeader = (header: unknown): unknown => {
+		if (!header || typeof header !== 'object' || Array.isArray(header))
+			return header
+		const { ticket: _ticket, ...content } = header as Record<string, unknown>
+		return content
+	}
+	const sourceContentKey = (header: unknown, data: unknown): string => `${stableJson(comparableHeader(header))}||${stableJson(data)}`
+	const awaitWithinBudget = async <T>(promise: Promise<T>, label: string): Promise<T> => {
+		const remaining = budgetMs - (performance.now() - startedAt)
+		if (remaining <= 0)
+			throw new Error(`${label}前单指令时间预算已到期（${budgetMs}ms）`)
+		let timer: ReturnType<typeof setTimeout> | undefined
+		let result: T
+		try {
+			result = await Promise.race([
+				promise,
+				new Promise<T>((_, reject) => { timer = setTimeout(() => reject(new Error(`${label}超出单指令时间预算（${budgetMs}ms）；原调用可能仍在后台执行`)), remaining) }),
+			])
+		}
+		finally {
+			if (timer !== undefined)
+				clearTimeout(timer)
+		}
+		if (stopped())
+			throw new Error(`${label}返回后删除流程已停止，禁止继续依赖迟到结果`)
+		return result
+	}
+	try {
+		if (stopped())
+			throw new Error('前序写入状态不确定或时间预算到期，停止 TEXT 源码删除')
+		const focus = await awaitWithinBudget(eda.dmt_SelectControl.getCurrentDocumentInfo(), '读取焦点文档')
+		if (focus?.documentType !== 1 || typeof focus?.uuid !== 'string' || !focus.uuid.trim())
+			throw new Error(`焦点文档不是有效原理图（documentType=${focus?.documentType ?? '未知'}, uuid=${focus?.uuid ?? '无'}）`)
+		const source = await awaitWithinBudget(eda.sys_FileManager.getDocumentSource(), '读取原理图源码')
+		if (typeof source !== 'string' || !source.trim())
+			throw new Error('getDocumentSource 返回空或非法值')
+		const before = parseSourceLog(source)
+		if (before.docType !== 'SCH_PAGE' || before.uuid !== focus.uuid)
+			throw new Error(`源码身份与当前原理图不符（docType=${before.docType}, 源码 UUID=${before.uuid}, 焦点 UUID=${focus.uuid}）`)
+		const effectiveBefore = resolveRecords(before)
+		const liveText = new Map(Array.from(resolveRecords(before, 'TEXT'), ([key, record]) => [key.slice('TEXT\u0000'.length), record] as const))
+		const modelIdsValue = await awaitWithinBudget(eda.sch_PrimitiveText.getAllPrimitiveId(), '读取 TEXT 模型')
+		if (!Array.isArray(modelIdsValue) || modelIdsValue.some(id => typeof id !== 'string'))
+			throw new Error('TEXT 模型枚举返回非法结构')
+		const modelBefore = new Set<string>(modelIdsValue)
+		for (const [id] of liveText) {
+			if (!modelBefore.has(id))
+				throw new Error(`源码存在有效 TEXT ${id}，但模型枚举中缺失；拒绝基于不一致状态写入`)
+		}
+		for (const id of modelBefore) {
+			if (!liveText.has(id))
+				throw new Error(`模型存在 TEXT ${id}，但有效源码中缺失；拒绝基于不一致状态写入`)
+		}
+		const deleted: Array<string> = []
+		const skipped: Array<string> = []
+		const targetLines = new Set<number>()
+		for (const id of ids) {
+			const matchingRecords = before.records.filter(record => record.header.type === 'TEXT' && String(record.header.id ?? '') === id)
+			if (matchingRecords.length > 1)
+				throw new Error(`目标 TEXT ${id} 在源码中有 ${matchingRecords.length} 条同 ID 记录，快照删除存在歧义`)
+			const live = liveText.get(id)
+			if (!live) {
+				skipped.push(id)
+				steps.push(`${id}: 有效源码与模型均无现存 TEXT，跳过（已删除或从未存在）`)
+				continue
+			}
+			const record = matchingRecords[0]
+			if (!record || record.data === '')
+				throw new Error(`目标 TEXT ${id} 的有效记录无法唯一映射到源码行`)
+			targetLines.add(record.line)
+			deleted.push(id)
+			steps.push(`${id}: 将移除有效 TEXT 源码行 ${record.line}`)
+		}
+		if (!deleted.length)
+			return { deleted, skipped, strategy: 'source-snapshot' as const, steps, sourceVerified: true as const, modelVerified: true as const, persistenceVerified: false as const, modelGone: Object.fromEntries(ids.map(id => [id, true])), note: '没有现存 TEXT 需要移除' }
+		const patched = source.split('\n').filter((_line, index) => !targetLines.has(index + 1)).join('\n')
+		if (stopped())
+			throw new Error('源码快照写入前删除流程已停止')
+		options.beforeWrite?.()
+		if (budgetExpired())
+			throw new Error(`源码快照写入前单指令时间预算已到期（${budgetMs}ms）`)
+		const latestFocus = await awaitWithinBudget(eda.dmt_SelectControl.getCurrentDocumentInfo(), '写入前复核焦点文档')
+		if (latestFocus?.documentType !== 1 || latestFocus?.uuid !== focus.uuid)
+			throw new Error(`源码写入前焦点文档已变化（原页=${focus.uuid}, 当前=${latestFocus?.uuid ?? '未知'}）`)
+		if (stopped() || budgetExpired())
+			throw new Error('源码快照写入前删除流程已停止')
+		options.beforeWrite?.()
+		if (stopped() || budgetExpired())
+			throw new Error('源码快照写入前删除流程已停止或时间预算到期')
+		writeAttempted = true
+		options.onWriteStart?.()
+		let writeBack: unknown
+		try {
+			writeBack = await awaitWithinBudget(eda.sys_FileManager.setDocumentSource(patched), 'setDocumentSource')
+		}
+		catch (error) {
+			throw new Error(`setDocumentSource 结果未知或失败：${String((error as any)?.message ?? error)}`)
+		}
+		steps.push(`setDocumentSource 返回 ${JSON.stringify(writeBack)}`)
+		if (writeBack !== true)
+			throw new Error(`setDocumentSource 返回非 true（${JSON.stringify(writeBack)}），写入结果不能确认为成功`)
+		const backValue = await awaitWithinBudget(eda.sys_FileManager.getDocumentSource(), '读取写后源码')
+		if (typeof backValue !== 'string' || !backValue.trim())
+			throw new Error('写后 getDocumentSource 返回空或非法值')
+		const back = parseSourceLog(backValue)
+		if (back.docType !== before.docType || back.uuid !== before.uuid)
+			throw new Error(`写后源码身份改变（docType=${back.docType}, uuid=${back.uuid}）`)
+		const effectiveAfter = resolveRecords(back)
+		const textAfter = new Map(Array.from(resolveRecords(back, 'TEXT'), ([key, record]) => [key.slice('TEXT\u0000'.length), record] as const))
+		for (const id of deleted) {
+			if (textAfter.has(id))
+				throw new Error(`目标 TEXT ${id} 的有效源码仍存在（快照移除未生效）`)
+			if (effectiveAfter.has(`TEXT\u0000${id}`))
+				throw new Error(`目标 TEXT ${id} 仍是有效源码记录（快照移除未生效）`)
+		}
+		const deletedSet = new Set(deleted)
+		const sourceRows = (records: typeof before.records) => records.filter(record => record.header.type !== 'DOCHEAD' && !(record.header.type === 'TEXT' && deletedSet.has(String(record.header.id ?? ''))))
+		const expectedRows = new Map<string, number>()
+		for (const record of sourceRows(before.records)) {
+			const key = sourceContentKey(record.header, record.data)
+			expectedRows.set(key, (expectedRows.get(key) ?? 0) + 1)
+		}
+		const actualRows = new Map<string, number>()
+		for (const record of back.records.filter(record => record.header.type !== 'DOCHEAD')) {
+			const key = sourceContentKey(record.header, record.data)
+			actualRows.set(key, (actualRows.get(key) ?? 0) + 1)
+		}
+		if (expectedRows.size !== actualRows.size || [...expectedRows].some(([key, count]) => actualRows.get(key) !== count))
+			throw new Error('写后完整源码中非目标记录发生变化（包含无图元 ID 的记录）')
+		const expectedOther = new Map(effectiveBefore)
+		for (const id of deleted)
+			expectedOther.delete(`TEXT\u0000${id}`)
+		if (expectedOther.size !== effectiveAfter.size)
+			throw new Error(`写后有效源码记录数变化（预期 ${expectedOther.size}，实际 ${effectiveAfter.size}）`)
+		for (const [key, record] of expectedOther) {
+			const actual = effectiveAfter.get(key)
+			if (!actual || stableJson(comparableHeader(record.header)) !== stableJson(comparableHeader(actual.header)) || stableJson(record.data) !== stableJson(actual.data))
+				throw new Error(`写后非目标有效源码记录发生变化：${key.replace('\u0000', ':')}`)
+		}
+		steps.push('有效源码读回确认目标已移除且非目标记录未变')
+		const modelAfterValue = await awaitWithinBudget(eda.sch_PrimitiveText.getAllPrimitiveId(), '读取写后 TEXT 模型')
+		if (!Array.isArray(modelAfterValue) || modelAfterValue.some(id => typeof id !== 'string'))
+			throw new Error('写后 TEXT 模型枚举返回非法结构')
+		const modelAfter = new Set<string>(modelAfterValue)
+		const expectedModel = new Set(modelBefore)
+		for (const id of deleted)
+			expectedModel.delete(id)
+		if (expectedModel.size !== modelAfter.size || [...expectedModel].some(id => !modelAfter.has(id)))
+			throw new Error('写后 TEXT 模型内容与预期不符（目标须消失且非目标 ID 保持不变）')
+		const modelGone = Object.fromEntries(deleted.map(id => [id, !modelAfter.has(id)]))
+		steps.push('TEXT 模型读回确认目标消失且非目标 ID 未变')
+		return { deleted, skipped, strategy: 'source-snapshot' as const, steps, sourceVerified: true as const, modelVerified: true as const, persistenceVerified: false as const, modelGone }
+	}
+	catch (cause) {
+		const error = new Error(`TEXT 源码删除失败：${String((cause as any)?.message ?? cause)}`)
+		;(error as any).cause = { partial: writeAttempted, operation: 'schematic.delete', writeAttempted, steps: [...steps], error: String((cause as any)?.message ?? cause) }
+		throw error
+	}
 }
 
 /**
@@ -569,9 +759,17 @@ function stripFloatingAttrsFromSource(source: string, ids: Set<string>): { text:
  *  末通道 ③ 文档源码改写【默认禁用】：仅显式 allowSourceRewrite:true 才执行（最后手段，执行时带醒目 warning）。
  * 每通道后都用文档源码读回判定，返回真实 deleted / failed / 逐通道诊断。
  */
-async function deleteFloatingLabels(ids: Array<string>, opts?: { allowSourceRewrite?: boolean, batchSize?: number }): Promise<{ deleted: Array<string>, failed: Array<string>, method?: string, diagnostics?: Array<string>, warning?: string, batches?: Array<{ batch: number, attempted: number, deleted: number, failed: number }>, unprocessed?: Array<string> }> {
+async function deleteFloatingLabels(ids: Array<string>, opts?: { allowSourceRewrite?: boolean, batchSize?: number, beforeWrite?: () => void, shouldStop?: () => boolean, onTimeout?: () => void }): Promise<{ deleted: Array<string>, failed: Array<string>, method?: string, diagnostics?: Array<string>, warning?: string, batches?: Array<{ batch: number, attempted: number, deleted: number, failed: number }>, unprocessed?: Array<string> }> {
 	const alive = async (): Promise<Set<string>> => new Set((await scanFloatingNetLabels()).map(f => String(f.primitiveId)))
 	const diagnostics: Array<string> = []
+	let writeStopRequested = false
+	const beforeWrite = () => {
+		if (writeStopRequested)
+			throw new Error('浮标删除内部单项超时，已停止后续写入')
+		opts?.beforeWrite?.()
+	}
+	const shouldStop = () => writeStopRequested || Boolean(opts?.shouldStop?.())
+	const signalTimeoutStop = Boolean(opts?.beforeWrite || opts?.shouldStop || opts?.onTimeout)
 	let remaining = await alive()
 	let method: string | undefined
 	// 通道①：实例 delete()（官方实例无此方法，仅兜底；get 对盲区 ID 也可能返回空）
@@ -583,11 +781,17 @@ async function deleteFloatingLabels(ids: Array<string>, opts?: { allowSourceRewr
 				const attr = await eda.sch_PrimitiveAttribute.get(id)
 				if (attr) {
 					got++
-					if (typeof (attr as any).delete === 'function')
+					if (typeof (attr as any).delete === 'function') {
+						beforeWrite()
 						await (attr as any).delete()
+					}
 				}
 			}
-			catch { /* 单个失败交给下一通道 */ }
+			catch (e) {
+				if (shouldStop())
+					throw e
+				/* 单个失败交给下一通道 */
+			}
 		}
 		remaining = await alive()
 		diagnostics.push(`通道①实例delete: get命中${got}/${ch1.length}（官方标注属性图元不支持删除，预期无效）`)
@@ -598,10 +802,13 @@ async function deleteFloatingLabels(ids: Array<string>, opts?: { allowSourceRewr
 	const ch2 = ids.filter(id => remaining.has(id))
 	if (ch2.length) {
 		try {
+			beforeWrite()
 			const r = await (eda.sch_PrimitiveAttribute as any).delete(ch2)
 			diagnostics.push(`通道②类级delete: 返回 ${JSON.stringify(r)}（官方注释：属性图元不支持删除，调用无任何效果）`)
 		}
 		catch (e: any) {
+			if (shouldStop())
+				throw e
 			diagnostics.push(`通道②类级delete: 抛错 ${String(e?.message ?? e)}`)
 		}
 		remaining = await alive()
@@ -650,6 +857,7 @@ async function deleteFloatingLabels(ids: Array<string>, opts?: { allowSourceRewr
 			const ax = f.x
 			const ay = -f.y
 			let tmpWireId: string | undefined
+			beforeWrite()
 			const wire = await eda.sch_PrimitiveWire.create([ax, ay, ax + 20, ay])
 			tmpWireId = wire ? safeState<string>(wire, 'getState_PrimitiveId') : undefined
 			if (!tmpWireId)
@@ -657,22 +865,34 @@ async function deleteFloatingLabels(ids: Array<string>, opts?: { allowSourceRewr
 			try {
 				// ⚠️ 官方假失败前科：modify 可能返回 falsy 但实际已生效（0.10.12 实测 4/4"被拒"读回却已删），
 				// 故此处不再因 falsy 抛错回滚——继续删导线，最终生死由走完后源码重扫判定
+				beforeWrite()
 				const mod = await eda.sch_PrimitiveAttribute.modify(id, { parentId: tmpWireId } as any)
 				if (!mod)
 					diagnostics.push(`通道④借尸还魂: modify parentId 返回 falsy（${id}），按假失败处理继续删线，以源码重扫为准`)
 				// 删临时导线，期望属性级联删除；画布显示可能滞后，成败以删后源码重扫为准
+				beforeWrite()
 				await eda.sch_PrimitiveWire.delete([tmpWireId])
 				tmpWireId = undefined // 已成功删除，无需回滚
 			}
 			finally {
 				if (tmpWireId) {
 					// 回滚顺序修正：先把浮标 parentId 改回 $$root 还原（避免"持属性的无名导线"删不掉），再删临时导线
-					try { await eda.sch_PrimitiveAttribute.modify(id, { parentId: '$$root' } as any) }
-					catch { /* 忽略 */ }
 					try {
+						beforeWrite()
+						await eda.sch_PrimitiveAttribute.modify(id, { parentId: '$$root' } as any)
+					}
+					catch (e) {
+						if (shouldStop())
+							throw e
+						/* 忽略 */
+					}
+					try {
+						beforeWrite()
 						await eda.sch_PrimitiveWire.delete([tmpWireId])
 					}
 					catch (e: any) {
+						if (shouldStop())
+							throw e
 						// 回滚删线也失败：明确记录，不再静默吞掉（可能留下持属性孤儿线，需手动框选删除）
 						diagnostics.push(`通道④借尸还魂: ⚠️ 回滚删临时导线也失败（导线ID ${tmpWireId}，坐标 [${ax},${ay}]-[${ax + 20},${ay}]，${id}）：${String(e?.message ?? e)}——该线可能已持属性删不掉，请在 EDA 里按坐标手动框选删除`)
 					}
@@ -688,7 +908,7 @@ async function deleteFloatingLabels(ids: Array<string>, opts?: { allowSourceRewr
 			let bDeleted = 0
 			let bFailed = 0
 			for (const id of batch) {
-				if (circuitBroken)
+				if (circuitBroken || shouldStop())
 					break
 				if (Date.now() - startedAt > GLOBAL_BUDGET_MS) {
 					budgetExhausted = true
@@ -697,14 +917,25 @@ async function deleteFloatingLabels(ids: Array<string>, opts?: { allowSourceRewr
 				}
 				attempted.add(id)
 				let itemError: string | undefined
+				let itemTimeout: ReturnType<typeof setTimeout> | undefined
 				try {
 					await Promise.race([
 						reborrowOne(id),
-						new Promise((_, reject) => setTimeout(() => reject(new Error(`单条超时（>${PER_ITEM_TIMEOUT_MS / 1000}s，疑似官方弹模态框或卡绘制模式）`)), PER_ITEM_TIMEOUT_MS)),
+						new Promise((_, reject) => { itemTimeout = setTimeout(() => {
+							if (signalTimeoutStop) {
+								writeStopRequested = true
+								opts?.onTimeout?.()
+							}
+							reject(new Error(`单条超时（>${PER_ITEM_TIMEOUT_MS / 1000}s，疑似官方弹模态框或卡绘制模式）`))
+						}, PER_ITEM_TIMEOUT_MS) }),
 					])
 				}
 				catch (e: any) {
 					itemError = String(e?.message ?? e)
+				}
+				finally {
+					if (itemTimeout !== undefined)
+						clearTimeout(itemTimeout)
 				}
 				// 成败唯一判定：每条走完后源码重扫读回（官方 modify/delete 返回值不可信——假失败前科）
 				let gone = false
@@ -729,6 +960,8 @@ async function deleteFloatingLabels(ids: Array<string>, opts?: { allowSourceRewr
 						diagnostics.push(`通道④借尸还魂: ⚠️ 连续 ${MAX_CONSECUTIVE_FAILS} 条失败（均以源码重扫确认为准），熔断整批——会话创建功能可能已损坏（0.10.11 实测超时后创建类 API 全线失效且不自愈），建议【不保存重开页面】后再分批重试`)
 					}
 				}
+				if (shouldStop())
+					break
 			}
 			batches.push({ batch: batches.length + 1, attempted: batch.length, deleted: bDeleted, failed: bFailed })
 		}
@@ -752,6 +985,7 @@ async function deleteFloatingLabels(ids: Array<string>, opts?: { allowSourceRewr
 			if (source) {
 				const { text, removed } = stripFloatingAttrsFromSource(String(source), new Set(ch3))
 				if (removed > 0) {
+					beforeWrite()
 					const writeBack = await eda.sys_FileManager.setDocumentSource(text)
 					diagnostics.push(`通道③源码改写(显式允许): 切除${removed}条记录，setDocumentSource 返回 ${JSON.stringify(writeBack)}`)
 				}
@@ -1229,43 +1463,24 @@ export const schematicCommands: Array<ICommandDef> = [
 		name: 'schematic.getPageInfo',
 		summary: '获取原理图图页信息（含图框尺寸：titleBlockData 的 Width/Height，单位 10mil）',
 		params: [
-			{ name: 'pageUuid', type: 'string', description: '图页 UUID（也接受别名 uuid）；留空取工程树中第一个图页（⚠️ 不是焦点页，多图页工程务必显式传）' },
+			{ name: 'pageUuid', type: 'string', description: '图页 UUID（也接受别名 uuid）；留空读取当前焦点原理图图页' },
 		],
-		returns: '{ name, size, width, height }（width/height 单位 10mil，A4 为 1170×825）',
+		returns: '{ uuid, name, size, width, height, showTitleBlock, titleBlockData }（width/height 单位 10mil，A4 为 1170×825）',
 		example: { cmd: 'schematic.getPageInfo' },
 		handler: async (params) => {
 			let pageUuid = params.pageUuid ? String(params.pageUuid) : params.uuid ? String(params.uuid) : undefined
 			if (!pageUuid) {
-				const info = await eda.dmt_Project.getCurrentProjectInfo()
-				if (!info)
-					throw new Error('当前没有打开的工程')
-				const findPage = (node: any): string | undefined => {
-					if (node?.itemType === 'Schematic Page')
-						return node.uuid
-					for (const key of ['data', 'schematic', 'page', 'pcb', 'panel']) {
-						const child = node?.[key]
-						if (Array.isArray(child)) {
-							for (const item of child) {
-								const hit = findPage(item)
-								if (hit)
-									return hit
-							}
-						}
-						else if (child && typeof child === 'object') {
-							const hit = findPage(child)
-							if (hit)
-								return hit
-						}
-					}
-					return undefined
-				}
-				pageUuid = findPage(info)
-				if (!pageUuid)
-					throw new Error('工程中未找到原理图图页')
+				const focus: any = await eda.dmt_SelectControl.getCurrentDocumentInfo()
+				if (focus?.documentType !== 1 || typeof focus?.uuid !== 'string' || !focus.uuid.trim())
+					throw new Error('无法确认当前焦点是有效原理图图页，请显式提供 pageUuid')
+				pageUuid = focus.uuid
 			}
-			const page = await eda.dmt_Schematic.getSchematicPageInfo(pageUuid)
+			const targetPageUuid = String(pageUuid)
+			const page = await eda.dmt_Schematic.getSchematicPageInfo(targetPageUuid)
 			if (!page)
-				throw new Error(`图页不存在: ${pageUuid}`)
+				throw new Error(`图页不存在: ${targetPageUuid}`)
+			if (page.uuid !== targetPageUuid)
+				throw new Error(`图页读取结果 UUID 与目标不一致: 目标 ${targetPageUuid}，实际 ${page.uuid ?? '(缺失)'}`)
 			const tb = page.titleBlockData ?? {}
 			return {
 				uuid: page.uuid,
@@ -1273,6 +1488,8 @@ export const schematicCommands: Array<ICommandDef> = [
 				size: tb['Size']?.value ?? tb['Page Size']?.value,
 				width: tb['Width']?.value,
 				height: tb['Height']?.value,
+				showTitleBlock: page.showTitleBlock,
+				titleBlockData: tb,
 			}
 		},
 	},
@@ -2034,40 +2251,83 @@ export const schematicCommands: Array<ICommandDef> = [
 	},
 	{
 		name: 'schematic.dedupeWireNets',
-		summary: '一键清理"导线有多个网络名: X、X、X"警告（v2 重建法：NET 属性重复的导线拆段→无名重画→统一命名单一名称；官方 modify(net) 无法删除重复属性，唯一有效手段）',
+		summary: '清理导线重复网络名：识别NET/Name同名属性，冲突拒绝；按原导线整体带名重建并按返回ID立即读回验证',
 		params: [],
-		returns: '{ dupWires, rebuilt, renamed, skippedDiagonal, failed? }',
+		returns: '{ dupWires, rebuilt: 成功重建的原导线数, renamed: 独立modify次数(始终为0), skippedDiagonal, failed? }',
 		example: { cmd: 'schematic.dedupeWireNets' },
 		handler: async () => {
+			const startingDoc = await eda.dmt_SelectControl.getCurrentDocumentInfo()
+			if (!startingDoc?.uuid || startingDoc.documentType !== 1)
+				throw new Error('焦点文档不是有效的原理图页，已拒绝去重')
 			const wires = await eda.sch_PrimitiveWire.getAll()
 			// 1. 找出 NET 属性重复的导线（每根导线正常只应有 1 个 NET 属性）
 			const dup: Array<{ id: string, net: string, line: Array<number> }> = []
+			const formatValues = (values: unknown[]) => {
+				try { return JSON.stringify(values) ?? String(values) }
+				catch { return `[无法序列化的${values.length}个值]` }
+			}
 			for (const w of wires ?? []) {
 				const id = w.getState_PrimitiveId?.()
 				const line = w.getState_Line?.()
 				if (!id || !line)
 					continue
-				const attrs = await eda.sch_PrimitiveAttribute.getAll(id)
-				const netAttrs = (attrs ?? []).filter(a => a.getState_Key?.() === 'NET')
+				let attrs: Array<any>
+				try {
+					const result = await eda.sch_PrimitiveAttribute.getAll(id)
+					if (!Array.isArray(result))
+						throw new Error('属性接口未返回数组')
+					attrs = result
+				}
+				catch (error) {
+					const detail = error instanceof Error ? error.message : String(error)
+					throw new Error(`导线 ${id} NET/Name 属性读取失败（values=[]）：${detail}`)
+				}
+				let netAttrs: Array<any>
+				try {
+					netAttrs = []
+					for (const attr of attrs) {
+						if (typeof attr?.getState_Key !== 'function')
+							throw new Error('属性条目缺少 getState_Key')
+						if (/^(NET|Name)$/i.test(String(attr.getState_Key() ?? '')))
+							netAttrs.push(attr)
+					}
+				}
+				catch (error) {
+					const detail = error instanceof Error ? error.message : String(error)
+					throw new Error(`导线 ${id} NET/Name 属性键读取失败（values=[]）：${detail}`)
+				}
 				if (netAttrs.length > 1) {
+					const values: unknown[] = []
+					try {
+						for (const attr of netAttrs)
+							values.push(attr.getState_Value?.())
+					}
+					catch (error) {
+						const detail = error instanceof Error ? error.message : String(error)
+						throw new Error(`候选导线 ${id} NET/Name 属性值读取失败（values=${formatValues(values)}）：${detail}`)
+					}
+					if (values.some(value => typeof value !== 'string' || value.length === 0)
+						|| values.some(value => value !== values[0]))
+						throw new Error(`候选导线 ${id} 的 NET/Name 属性值必须是相同的非空字符串（values=${formatValues(values)}）`)
 					dup.push({
 						id,
-						net: netAttrs[0].getState_Value?.() ?? w.getState_Net?.() ?? '',
+						net: values[0] as string,
 						line: line as Array<number>,
 					})
 				}
 			}
 			if (!dup.length)
 				return { dupWires: 0, rebuilt: 0, renamed: 0, skippedDiagonal: 0 }
-			// 2. 折线拆成简单段（去重归一；跳过非水平/垂直的 T 形分支编码伪段）
+			// 2. 每条原导线单独保留一组正交线段；跳过非水平/垂直的 T 形分支编码伪段。
 			let skippedDiagonal = 0
-			const segsByNet = new Map<string, Array<[number, number, number, number]>>()
+			const rebuilds: Array<{ id: string, net: string, segs: Array<Array<number>> }> = []
 			for (const w of dup) {
 				const pts: Array<[number, number]> = []
 				for (let i = 0; i + 1 < w.line.length; i += 2)
 					pts.push([Number(w.line[i]), Number(w.line[i + 1])])
 				const norm = new Set<string>()
-				const list = segsByNet.get(w.net) ?? []
+				const segs: Array<Array<number>> = []
+				let wireSegmentCount = 0
 				for (let i = 0; i + 1 < pts.length; i++) {
 					const [x1, y1] = pts[i]
 					const [x2, y2] = pts[i + 1]
@@ -2081,63 +2341,63 @@ export const schematicCommands: Array<ICommandDef> = [
 					if (norm.has(key))
 						continue
 					norm.add(key)
-					list.push([x1, y1, x2, y2])
+					segs.push([x1, y1, x2, y2])
+					wireSegmentCount++
 				}
-				segsByNet.set(w.net, list)
+				if (!wireSegmentCount)
+					throw new Error(`候选导线 ${w.id} 没有可重建的水平或垂直线段，原图未改动`)
+				rebuilds.push({ id: w.id, net: w.net, segs })
 			}
-			// 3. 删除重复导线
-			await eda.sch_PrimitiveWire.delete(dup.map(w => w.id))
-			// 4. 无名重画（官方会自动把相连段合并成新导线）
+			const focusedAgain = await eda.dmt_SelectControl.getCurrentDocumentInfo()
+			if (focusedAgain?.uuid !== startingDoc.uuid || focusedAgain?.documentType !== 1)
+				throw new Error('枚举导线期间焦点原理图页发生变化，原图未改动')
+			const snapshot = await captureDocumentSnapshot('schematic.dedupeWireNets', 1)
+			if (snapshot.documentUuid !== startingDoc.uuid)
+				throw new Error('快照与候选导线所属的原理图页不一致，原图未改动')
 			let rebuilt = 0
-			const failedSegs: Array<Array<number>> = []
-			for (const segs of segsByNet.values()) {
-				for (const [x1, y1, x2, y2] of segs) {
-					const wire = await eda.sch_PrimitiveWire.create([x1, y1, x2, y2])
-					if (wire)
-						rebuilt += 1
-					else
-						failedSegs.push([x1, y1, x2, y2])
+			const renamed = 0
+			await withDocumentRecovery(snapshot, async (write) => {
+				// 删除整组旧线；失败统一恢复完整原文，绝不按新 ID 逐个回滚。
+				if (await write(() => eda.sch_PrimitiveWire.delete(dup.map(w => w.id))) !== true)
+					throw new Error('删除重复属性导线返回 false')
+				for (const original of rebuilds) {
+					const created = await write(() => eda.sch_PrimitiveWire.create(original.segs, original.net))
+					if (!created)
+						throw new Error(`原导线 ${original.id} 带名重建失败（create未返回图元）`)
+					const id = created.getState_PrimitiveId?.()
+					if (typeof id !== 'string' || !id)
+						throw new Error(`原导线 ${original.id} 带名重建失败（create未返回有效ID）`)
+					await assertSnapshotFocused(snapshot)
+					const readback = await eda.sch_PrimitiveWire.get(id)
+					await assertSnapshotFocused(snapshot)
+					if (!readback)
+						throw new Error(`重建导线 ${id} 按ID立即读回不存在`)
+					const actualNet = readback.getState_Net?.()
+					if (actualNet !== original.net)
+						throw new Error(`重建导线 ${id} 网络读回不一致（期望=${JSON.stringify(original.net)}, 实际=${JSON.stringify(actualNet)}）`)
+					await assertSnapshotFocused(snapshot)
+					let readbackAttrs: Array<any>
+					try {
+						const attrs = await eda.sch_PrimitiveAttribute.getAll(id)
+						if (!Array.isArray(attrs))
+							throw new Error('属性接口未返回数组')
+						readbackAttrs = attrs
+					}
+					catch (error) {
+						const detail = error instanceof Error ? error.message : String(error)
+						throw new Error(`重建导线 ${id} 网络属性读回失败：${detail}`)
+					}
+					await assertSnapshotFocused(snapshot)
+					const networkAttrs = readbackAttrs.filter(attr => /^(NET|Name)$/i.test(String(attr.getState_Key?.() ?? '')))
+					if (networkAttrs.length !== 1)
+						throw new Error(`重建导线 ${id} NET/Name属性数量不为1（实际=${networkAttrs.length}）`)
+					const actualName = networkAttrs[0].getState_Value?.()
+					if (actualName !== original.net)
+						throw new Error(`重建导线 ${id} 网络属性读回不一致（期望=${JSON.stringify(original.net)}, 实际=${JSON.stringify(actualName)}）`)
+					rebuilt += 1
 				}
-			}
-			// 5. 按几何归属给无名新导线命名（点集唯一命中某网络才命名）
-			const netPts = new Map<string, Set<string>>()
-			for (const [net, segs] of segsByNet) {
-				const s = netPts.get(net) ?? new Set<string>()
-				for (const [x1, y1, x2, y2] of segs) {
-					s.add(`${x1},${y1}`)
-					s.add(`${x2},${y2}`)
-				}
-				netPts.set(net, s)
-			}
-			let renamed = 0
-			const unnamedLeft: Array<string> = []
-			const after = await eda.sch_PrimitiveWire.getAll()
-			for (const w of after ?? []) {
-				if (w.getState_Net?.())
-					continue
-				const line = w.getState_Line?.() ?? []
-				const pts = new Set<string>()
-				for (let i = 0; i + 1 < line.length; i += 2)
-					pts.add(`${line[i]},${line[i + 1]}`)
-				const hits = [...netPts.entries()].filter(([, s]) =>
-					[...pts].every(p => s.has(p)))
-				if (hits.length === 1 && pts.size) {
-					const id = w.getState_PrimitiveId?.()
-					if (id && await eda.sch_PrimitiveWire.modify(id, { net: hits[0][0] }))
-						renamed += 1
-				}
-				else if (pts.size) {
-					unnamedLeft.push(w.getState_PrimitiveId?.() ?? '?')
-				}
-			}
-			return {
-				dupWires: dup.length,
-				rebuilt,
-				renamed,
-				skippedDiagonal,
-				...(failedSegs.length ? { failedSegs } : {}),
-				...(unnamedLeft.length ? { unnamedLeft } : {}),
-			}
+			})
+			return { dupWires: dup.length, rebuilt, renamed, skippedDiagonal }
 		},
 	},
 	{
@@ -2811,8 +3071,23 @@ export const schematicCommands: Array<ICommandDef> = [
 		},
 	},
 	{
+		name: 'schematic.modifyComponent',
+		summary: '安全修改器件属性。property 必须明确包含官方全部 14 个字段；缺项或不完整 otherProperty 会在写入前拒绝。',
+		params: [
+			{ name: 'primitiveId', type: 'string', required: true, description: '器件图元 ID' },
+			{ name: 'property', type: 'object', required: true, description: '必须含 x,y,rotation,mirror,addIntoBom,addIntoPcb,designator,name,uniqueId,manufacturer,manufacturerId,supplier,supplierId,otherProperty 全部字段' },
+		],
+		returns: '{ modified, readback: { ..., verified } }',
+		example: { cmd: 'schematic.modifyComponent', params: { primitiveId: 'xxx', property: { x: 400, y: 300, rotation: 0, mirror: false, addIntoBom: true, addIntoPcb: true, designator: 'R4', name: 'Resistor', uniqueId: 'uuid', manufacturer: null, manufacturerId: null, supplier: null, supplierId: null, otherProperty: { Resistance: '10k' } } } },
+		handler: async (params) => {
+			if (typeof params.primitiveId !== 'string' || !params.primitiveId)
+				throw new Error('primitiveId 必须是非空字符串')
+			return await modifyComponentSafely(eda as any, params.primitiveId, params.property)
+		},
+	},
+	{
 		name: 'schematic.moveComponent',
-		summary: '移动 / 旋转 / 镜像原理图器件',
+		summary: '安全移动 / 旋转 / 镜像原理图器件，保留并验证全部可读非几何属性',
 		params: [
 			{ name: 'primitiveId', type: 'string', required: true, description: '器件图元 ID' },
 			{ name: 'x', type: 'number', description: '新坐标 X（单位 10mil）' },
@@ -2820,88 +3095,27 @@ export const schematicCommands: Array<ICommandDef> = [
 			{ name: 'rotation', type: 'number', description: '旋转角度（0/90/180/270）' },
 			{ name: 'mirror', type: 'boolean', description: '是否镜像' },
 		],
-		returns: '{ modified }',
+		returns: '{ modified, readback: { ..., verified } }',
 		example: { cmd: 'schematic.moveComponent', params: { primitiveId: 'xxx', x: 400, y: 300, rotation: 90 } },
 		handler: async (params) => {
-			if (!params.primitiveId)
-				throw new Error('缺少参数 primitiveId')
-			const property: Record<string, any> = {}
-			if (params.x != null)
-				property.x = Number(params.x)
-			if (params.y != null)
-				property.y = Number(params.y)
-			if (params.rotation != null)
-				property.rotation = Number(params.rotation)
-			if (params.mirror != null)
-				property.mirror = Boolean(params.mirror)
-			if (Object.keys(property).length === 0)
-				throw new Error('至少提供一个要修改的属性（x / y / rotation / mirror）')
-			// 0.10.24 原子化（P10：官方 modify 多字段合并修改可能整体失效）——位置 / 旋转 / 镜像各自独立步骤
-			const compSteps: Array<Record<string, any>> = []
-			if (property.x != null || property.y != null) {
-				const s: Record<string, any> = {}
-				if (property.x != null)
-					s.x = property.x
-				if (property.y != null)
-					s.y = property.y
-				compSteps.push(s)
+			if (typeof params.primitiveId !== 'string' || !params.primitiveId)
+				throw new Error('primitiveId 必须是非空字符串')
+			const requested: Record<string, unknown> = {}
+			for (const field of ['x', 'y', 'rotation', 'mirror']) {
+				if (Object.prototype.hasOwnProperty.call(params, field))
+					requested[field] = params[field]
 			}
-			if (property.rotation != null)
-				compSteps.push({ rotation: property.rotation })
-			if (property.mirror != null)
-				compSteps.push({ mirror: property.mirror })
-			let result: any
-			for (const stepProps of compSteps) {
-				try {
-					const r = await eda.sch_PrimitiveComponent.modify(String(params.primitiveId), stepProps as any)
-					if (r)
-						result = r
-				}
-				catch { /* 假失败不轻信，读回为准 */ }
-			}
-			// 读回验证（0.10.23：官方返回值不可信，能读回的字段逐一核对，读回不符如实报）
-			const readback: Record<string, unknown> = {}
-			let verified = true
-			if (result) {
-				await new Promise(resolve => setTimeout(resolve, 300))
-				try {
-					const back = await eda.sch_PrimitiveComponent.get(String(params.primitiveId))
-					if (back) {
-						const checks: Array<[string, string, number]> = []
-						if (property.x != null)
-							checks.push(['x', 'getState_X', property.x])
-						if (property.y != null)
-							checks.push(['y', 'getState_Y', property.y])
-						if (property.rotation != null)
-							checks.push(['rotation', 'getState_Rotation', property.rotation])
-						for (const [field, getter, want] of checks) {
-							const actual = safeState<number>(back as any, getter)
-							readback[field] = actual ?? null
-							if (actual == null || Math.abs(actual - want) > 0.5)
-								verified = false
-						}
-					}
-					else {
-						verified = false
-					}
-				}
-				catch {
-					verified = false
-				}
-			}
-			if (result && !verified)
-				throw new Error(`器件 ${params.primitiveId} 移动/旋转读回不匹配（读回 ${JSON.stringify(readback)}，目标 ${JSON.stringify(property)}）——官方 modify 假成功，请重试`)
-			return { modified: Boolean(result), ...(Object.keys(readback).length ? { readback: { ...readback, verified } } : {}) }
+			return await moveComponentSafely(eda as any, params.primitiveId, requested)
 		},
 	},
 	{
 		name: 'schematic.delete',
-		summary: '删除原理图图元（器件 / 导线 / 文本 / 网络标签等属性，按 primitiveId，可批量）；先识别类型再删，删后读回验证，杜绝假成功。0.10.23 加固（GPT 现场：34 组删除首步 25s 超时假失败、后台继续删 3 分钟、2 个目标被越过残留）：逐项 8s 超时熔断、连续 3 失败熔断整批、batchSize 分批（默认 10，批间停 300ms）、全局时间预算 100s（耗尽停开新项、累积结果照常返回）、unprocessed 清单可续删',
+		summary: '删除原理图图元（器件 / 导线 / 文本 / 网络标签等属性，按 primitiveId，可批量）；先完整预检类型与父子关系，再删后读回验证，区分直接删除、级联删除、原本不存在、仍存在和读回未知。TEXT 使用精确源码快照移除并验证源码与模型；逐项 8s 超时熔断、连续 3 项确认仍存在熔断整批、batchSize 分批（默认 10，批间停 300ms）、全局时间预算 100s；不完整结果通过 error.cause.partial 供宏停止后续写入。源码与模型读回不代表关闭重开持久性验证',
 		params: [
 			{ name: 'primitiveIds', type: 'string[]', required: true, description: '要删除的图元 ID 列表（也兼容单数 primitiveId，自动转数组）' },
 			{ name: 'batchSize', type: 'number', description: '分批大小，默认 10：每批之间停 300ms 并记录分批进度。大批删除建议保持默认多次调用，不要一次调大硬跑' },
 		],
-		returns: '{ taskId, deleted: [...], failed: [...], deletedBy: { id: type }, reconciled?, sessionHealth?, batches?, unprocessed?, failedNote? }（taskId 可配合 task.get 在客户端超时后查进度/补取结果——0.10.42 起同参数任务在跑时重发只回进度不重复执行；unprocessed 为熔断/预算退出时未轮到的 ID，再次调用接着删；0.10.25 起整批结束后终扫对账：报失败但实际已被后台删除的项挪入 deleted 并在 reconciled 注明，终扫仍存在的 failed 附 failedNote 续删提示；0.10.27 起出现过 reconciled/failed 时追加会话健康探针 sessionHealth: ok|degraded|inconclusive，degraded 建议只读复核后再决定是否不保存重开页面，inconclusive 为探针未得出可信结论（不采信）；0.10.40 起探针加固：焦点复核+3 次重试+创建/删除读回，删除异常时报 probeResidue 残留探针 ID）',
+		returns: '{ taskId, deleted: [...], failed: [...], outcomeBy: { id: directDeleted|cascadeDeleted|notFound|stillExists|unknown }, deletedBy: { id: type }, persistenceVerified?: false, reconciled?, sessionHealth?, probeDocumentUuid?, probeId?, probeStatus?, probeResidue?, batches?, unprocessed?, failedNote? }（TEXT 成功仅确认源码和模型当前读回，附 persistenceVerified:false；源码或模型读回异常保持 unknown 并停止后续写入。发生写操作后有未完成项时以 error.cause.partial=true 保留结果并阻止宏继续写入。健康探针单次创建与单次清理，按 ID+几何读回，清理前复核原文档焦点；只有删除前合法枚举见过探针且删除后合法枚举不含探针才报告 sessionHealth=ok，否则保留证据并报告 inconclusive/degraded）',
 		example: { cmd: 'schematic.delete', params: { primitiveIds: ['xxx', 'yyy'] } },
 		handler: async (params, ctx) => {
 			// 兼容单数 primitiveId（自动转数组）
@@ -2911,6 +3125,41 @@ export const schematicCommands: Array<ICommandDef> = [
 				: raw != null ? [String(raw)] : []
 			if (!ids.length)
 				throw new Error('缺少参数 primitiveIds（数组）或 primitiveId（单个 ID）')
+			const MAX_FUSE_MS = 2147483647
+			const requestedFuseMs = params._timeoutMs == null ? 290_000 : Number(params._timeoutMs)
+			if (!Number.isFinite(requestedFuseMs) || requestedFuseMs > MAX_FUSE_MS)
+				throw new Error(`_timeoutMs 必须是有限数值且不超过 ${MAX_FUSE_MS}ms`)
+			const GLOBAL_BUDGET_MS = 100000
+			const effectiveDeadlineMs = Math.min(GLOBAL_BUDGET_MS, Math.max(1000, requestedFuseMs))
+			const operationStartedAt = performance.now()
+			const deadlineExpired = () => performance.now() - operationStartedAt >= effectiveDeadlineMs
+			const PER_ITEM_TIMEOUT_MS = 8000
+			let stopAfterUncertainWrite = false
+			let deadlineStoppedWrites = false
+			const uncertainWriteIds = new Set<string>()
+			class DeleteItemTimeout extends Error {
+				readonly code = 'SCHEMATIC_DELETE_ITEM_TIMEOUT'
+				constructor(id: string, stage = 'unknown', sdkSettled = false, elapsedMs = 0, stageElapsedMs = 0) {
+					super(`图元 ${id} 单项删除全流程超时（>${PER_ITEM_TIMEOUT_MS / 1000}s；阶段=${stage}，SDK已结束=${sdkSettled}，累计=${Math.round(elapsedMs)}ms，阶段等待=${Math.round(stageElapsedMs)}ms；官方操作可能仍在后台执行）`)
+					this.name = 'DeleteItemTimeout'
+				}
+			}
+			class DeleteWriteStopped extends Error {
+				readonly code = 'SCHEMATIC_DELETE_WRITE_STOPPED'
+			}
+			class DeletePostWriteReadbackUnknown extends Error {
+				readonly code = 'SCHEMATIC_DELETE_POST_WRITE_READBACK_UNKNOWN'
+			}
+			const ensureDeleteWriteAllowed = () => {
+				if (stopAfterUncertainWrite)
+					throw new DeleteWriteStopped('前序写入结果不确定，停止后续删除写入')
+				if (deadlineExpired()) {
+					deadlineStoppedWrites = true
+					stopAfterUncertainWrite = true
+					throw new DeleteWriteStopped(`单指令熔断窗口到期（>${effectiveDeadlineMs}ms），停止后续删除写入`)
+				}
+			}
+			const shouldStopDeleteWrites = () => stopAfterUncertainWrite || deadlineExpired()
 			// 0.10.42 任务登记（KIMI-EDA-20261002-03）：客户端超时后可凭 taskId 查实时进度/补取结果；
 			// 相同 ID 清单的任务仍在跑时直接返回现有进度，不重复执行（防盲重发）
 			// 0.10.49：onUpdate 心跳——任务进度每次更新都推给代理，重置其超时计时器
@@ -2930,81 +3179,112 @@ export const schematicCommands: Array<ICommandDef> = [
 			const kinds: Array<{
 				type: string
 				list: () => Promise<Array<string>>
-				del: (list: Array<string>) => Promise<boolean>
+				del: (list: Array<string>, beforeWrite: () => void) => Promise<boolean>
 			}> = [
 				{ type: 'component', list: () => eda.sch_PrimitiveComponent.getAllPrimitiveId(), del: list => eda.sch_PrimitiveComponent.delete(list) },
 				{ type: 'wire', list: () => eda.sch_PrimitiveWire.getAllPrimitiveId(), del: list => eda.sch_PrimitiveWire.delete(list) },
-				// 文本：类级 delete 实测不持久（0.10.53 对照实验：删→save(saved:true)→关开重读 TEXT 复活，同批导线删除正常持久）——
-				// 0.10.54 改实例级 get+delete() 后实测仍复活（t_text_fix_verify.json）——两条官方路径都不落盘，根因在宿主文档模型。
-				// 0.10.55：两条路都试且全程诊断（通道A实例级/通道B类级，每步模型读回），结果进 lane-log 供根因定位
-				{ type: 'text', list: () => eda.sch_PrimitiveText.getAllPrimitiveId(), del: async (list) => {
-					let any = false
-					for (const id of list) {
-						let channel = 'none'
-						// 通道A：实例级 get + delete()
-						try {
-							const inst = await eda.sch_PrimitiveText.get(id)
-							if (inst && typeof (inst as any).delete === 'function') {
-								await (inst as any).delete()
-								channel = 'instance'
-							}
-							else
-								diag('schematic.delete', 'text-delete', `${id} 通道A: get 到实例但无 delete 方法`)
-						}
-						catch (e) {
-							diag('schematic.delete', 'text-delete', `${id} 通道A实例级抛错: ${String((e as any)?.message ?? e)}`)
-						}
-						// 通道A 模型读回
-						let gone = false
-						try {
-							gone = !(await eda.sch_PrimitiveText.getAllPrimitiveId()).includes(id)
-						}
-						catch { /* 读回失败按未知处理 */ }
-						diag('schematic.delete', 'text-delete', `${id} 通道A(${channel}) 后模型读回: ${gone ? '已消失' : '仍在'}`)
-						// 通道B：类级 delete([id])
-						if (!gone) {
-							try {
-								if (await eda.sch_PrimitiveText.delete([id]))
-									channel = 'class'
-								diag('schematic.delete', 'text-delete', `${id} 通道B类级 delete 返回 ${channel === 'class'}`)
-							}
-							catch (e) {
-								diag('schematic.delete', 'text-delete', `${id} 通道B类级抛错: ${String((e as any)?.message ?? e)}`)
-							}
-						}
-						if (channel !== 'none')
-							any = true
-					}
-					return any
+				// TEXT 删除走源码快照精确移除；每个 ID 都以最新源码为输入，避免覆盖前项写入。
+				{ type: 'text', list: () => eda.sch_PrimitiveText.getAllPrimitiveId(), del: async ([id], beforeWrite) => {
+					const result = await deleteTextFromSourceSnapshot([id], {
+						beforeWrite,
+						shouldStop: shouldStopDeleteWrites,
+						timeoutMs: effectiveDeadlineMs,
+						onWriteStart: () => { writeAttempted = true },
+					})
+					if (!result.deleted.includes(id))
+						throw new Error(`TEXT ${id} 未从源码快照删除（状态=${result.skipped.includes(id) ? '原本不存在' : '未知'}）`)
+					return true
 				} },
 				{ type: 'rectangle', list: () => eda.sch_PrimitiveRectangle.getAllPrimitiveId(), del: list => eda.sch_PrimitiveRectangle.delete(list) },
 				// 属性（网络标签等）：官方没有类级 delete，必须 get 到实例后调实例方法 delete()
-				{ type: 'attribute', list: () => eda.sch_PrimitiveAttribute.getAllPrimitiveId(), del: async (list) => {
+				{ type: 'attribute', list: () => eda.sch_PrimitiveAttribute.getAllPrimitiveId(), del: async (list, beforeWrite) => {
 					let any = false
 					for (const id of list) {
 						try {
 							const attr = await eda.sch_PrimitiveAttribute.get(id)
 							if (attr && typeof (attr as any).delete === 'function') {
-								(attr as any).delete()
+								beforeWrite()
+								await (attr as any).delete()
 								any = true
 							}
 						}
-						catch { /* 单个失败继续 */ }
+						catch (e) {
+							if (shouldStopDeleteWrites())
+								throw e
+							/* 单个失败继续 */
+						}
 					}
 					return any
 				} },
 			]
-			const detectType = async (id: string): Promise<(typeof kinds)[number] | undefined> => {
+			type DeletePresence = { state: 'present', kind: (typeof kinds)[number] } | { state: 'missing' } | { state: 'unknown', reason: string }
+			const readPresence = async (id: string): Promise<DeletePresence> => {
+				const errors: string[] = []
 				for (const kind of kinds) {
 					try {
-						if ((await kind.list()).includes(id))
-							return kind
+						const listed = await withTimeout(kind.list(), PER_ITEM_TIMEOUT_MS, `删除前后读回 ${kind.type}`)
+						if (!Array.isArray(listed))
+							throw new Error(`${kind.type} 清单不是数组`)
+						if (listed.map(String).includes(id))
+							return { state: 'present', kind }
 					}
-					catch {
-						// 查询失败则尝试下一种类型
+					catch (e: any) {
+						errors.push(`${kind.type}: ${String(e?.message ?? e)}`)
 					}
 				}
-				return undefined
+				try {
+					if ((await withTimeout(scanFloatingNetLabels(), PER_ITEM_TIMEOUT_MS, '浮标源码扫描')).some(f => String(f.primitiveId) === id))
+						return { state: 'present', kind: { type: 'floatingAttribute', list: async () => [], del: async () => false } }
+				}
+				catch (e: any) {
+					errors.push(`浮标源码扫描: ${String(e?.message ?? e)}`)
+				}
+				return errors.length ? { state: 'unknown', reason: errors.join('；') } : { state: 'missing' }
+			}
+			// 先读全体目标和属性父级，再开始写操作；只有所有枚举与浮标扫描都成功，才能把未命中认定为原本不存在。
+			const initialById = new Map<string, DeletePresence>()
+			const parentByAttribute = new Map<string, string>()
+			let parentEvidenceComplete = true
+			for (const id of ids) {
+				initialById.set(id, await readPresence(id))
+			}
+			try {
+				const attrs = await withTimeout(eda.sch_PrimitiveAttribute.getAll(), PER_ITEM_TIMEOUT_MS, '属性父级读回')
+				if (!Array.isArray(attrs))
+					throw new Error('属性清单不是数组')
+				for (const attr of attrs) {
+					const attrId = safeState<string>(attr, 'getState_PrimitiveId')
+					const parentId = safeState<string>(attr, 'getState_ParentPrimitiveId')
+					if (attrId && parentId)
+						parentByAttribute.set(attrId, parentId)
+				}
+			}
+			catch {
+				parentEvidenceComplete = false
+			}
+			for (const id of ids) {
+				const initial = initialById.get(id)
+				if (initial?.state === 'present' && initial.kind.type === 'attribute' && !parentByAttribute.has(id))
+					parentEvidenceComplete = false
+			}
+			if (!parentEvidenceComplete && ids.some(id => {
+				const state = initialById.get(id)
+				return state?.state === 'present' && state.kind.type === 'wire'
+			})) {
+				for (const id of ids) {
+					const initial = initialById.get(id)
+					if (initial?.state === 'present' && initial.kind.type === 'attribute')
+						initialById.set(id, { state: 'unknown', reason: '属性父级读回失败，无法区分独立属性与导线级联属性' })
+				}
+			}
+			const outcomeBy: Record<string, 'directDeleted' | 'cascadeDeleted' | 'notFound' | 'stillExists' | 'unknown'> = {}
+			const attempted = new Set<string>()
+			let writeAttempted = false
+			const targetSet = new Set(ids)
+			const pendingCascade = new Set<string>()
+			const isKnownWire = (id: string) => {
+				const state = initialById.get(id)
+				return state?.state === 'present' && state.kind.type === 'wire'
 			}
 			const deleted: Array<string> = []
 			const failed: Array<string> = []
@@ -3016,59 +3296,111 @@ export const schematicCommands: Array<ICommandDef> = [
 			//  ③ 分批执行（batchSize 默认 10，批间停 300ms），返回分批进度，unprocessed 可再次调用续删；
 			//  ④ 全局时间预算 100s：耗尽即停开新项，已累积结果照常返回（部分结果不丢）；
 			//  ⑤ 每项成败一律以删后读回为准，不信 delete 布尔返回值（原有机制保留）。
-			const PER_ITEM_TIMEOUT_MS = 8000
 			const MAX_CONSECUTIVE_FAILS = 3
-			const GLOBAL_BUDGET_MS = 100000 // 扩展侧该指令超时已放宽到 140s，留 40s 余量给收尾与传输
 			const batchSize = Math.max(1, Number(params.batchSize) || 10)
 			const startedAt = Date.now()
 			const batches: Array<{ batch: number, attempted: number, deleted: number, failed: number }> = []
-			const attempted = new Set<string>()
 			const diagnostics: Array<string> = []
 			const failReason = new Map<string, string>() // 0.10.41：记录每项失败原因，终扫对账排除「从不存在」的 ID
 			let consecutiveFails = 0
 			let circuitBroken = false
+			let deadlineStoppedWrites = false
 			let budgetExhausted = false
 			diag('schematic.delete', 'delete-start', `total=${ids.length}`)
 			// 单项删除全流程（类型识别 → 删除 → 读回验证），包 8s 超时熔断
-			const deleteOne = async (id: string): Promise<void> => {
-				let kind = await detectType(id)
-				if (!kind) {
-					// 浮空标签盲区补检：getAllPrimitiveId 各类清单都不含 parentId=$$root 的浮标，走源码扫描判定 + 浮标专用删除通道
-					let isFloat = false
+			type DeleteItemProgress = { stage: string, stageStartedAt: number, sdkSettled: boolean, itemStartedAt: number, timedOut: boolean }
+			const setItemStage = (progress: DeleteItemProgress, stage: string) => {
+				progress.stage = stage
+				progress.stageStartedAt = performance.now()
+			}
+			const ensureItemLive = (id: string, progress: DeleteItemProgress) => {
+				if (progress.timedOut)
+					throw new DeleteItemTimeout(id, progress.stage, progress.sdkSettled, performance.now() - progress.itemStartedAt, performance.now() - progress.stageStartedAt)
+			}
+			const deleteOne = async (id: string, progress: DeleteItemProgress): Promise<'directDeleted' | 'cascadePending' | 'notFound' | 'unknown'> => {
+				const initial = initialById.get(id)!
+				if (initial.state === 'missing')
+					return 'notFound'
+				if (initial.state === 'unknown')
+					return 'unknown'
+				const parentId = parentByAttribute.get(id)
+				if (parentEvidenceComplete && parentId && targetSet.has(parentId) && isKnownWire(parentId))
+					return 'cascadePending'
+				const kind = initial.kind
+				if (kind.type === 'floatingAttribute') {
+					ensureDeleteWriteAllowed()
+					writeAttempted = true
+					setItemStage(progress, 'floating-source-delete')
+					progress.sdkSettled = false
+					let r: Awaited<ReturnType<typeof deleteFloatingLabels>>
 					try {
-						isFloat = (await scanFloatingNetLabels()).some(f => String(f.primitiveId) === id)
+						r = await deleteFloatingLabels([id], {
+							beforeWrite: ensureDeleteWriteAllowed,
+							shouldStop: shouldStopDeleteWrites,
+							onTimeout: () => {
+								uncertainWriteIds.add(id)
+								stopAfterUncertainWrite = true
+								outcomeBy[id] = 'unknown'
+							},
+						})
 					}
-					catch { /* 扫描失败按未识别处理 */ }
-					if (isFloat) {
-						const r = await deleteFloatingLabels([id])
-						if (r.deleted.length) {
-							deletedBy[id] = 'floatingAttribute'
-							return
-						}
-						floatDiag = r.diagnostics
-						throw new Error('浮空标签删除通道未生效（读回仍在）')
+					finally {
+						progress.sdkSettled = true
 					}
-					throw new Error('图元不存在或类型暂不支持（各类型清单均未命中）')
+					ensureItemLive(id, progress)
+					if (uncertainWriteIds.has(id))
+						return 'unknown'
+					if (r.deleted.length) {
+						deletedBy[id] = 'floatingAttribute'
+						return 'directDeleted'
+					}
+					floatDiag = r.diagnostics
+					outcomeBy[id] = 'stillExists'
+					throw new Error('浮空标签删除通道未生效（读回仍在）')
 				}
-				await kind.del([id])
-				// 删后读回验证（官方查询有缓存，递增等待重试；delete 布尔值不可信）
-				let stillThere = true
-				for (const waitMs of [400, 600, 1000]) {
+				ensureDeleteWriteAllowed()
+				writeAttempted = true
+				setItemStage(progress, 'sdk-delete')
+				progress.sdkSettled = false
+				try {
+					await kind.del([id], ensureDeleteWriteAllowed)
+				}
+				finally {
+					progress.sdkSettled = true
+				}
+				ensureItemLive(id, progress)
+				// 删除调用返回后立即读回；仍存在时按原间隔复核（删除布尔值不可信）。
+				let verification: DeletePresence = { state: 'unknown', reason: '尚未读回' }
+				setItemStage(progress, 'immediate-readback')
+				verification = await readPresence(id)
+				ensureItemLive(id, progress)
+				for (const waitMs of verification.state === 'present' ? [400, 600, 1000] : []) {
+					setItemStage(progress, `delayed-readback-${waitMs}ms`)
 					await new Promise(resolve => setTimeout(resolve, waitMs))
-					stillThere = Boolean(await detectType(id))
-					if (!stillThere)
+					ensureItemLive(id, progress)
+					verification = await readPresence(id)
+					ensureItemLive(id, progress)
+					if (verification.state !== 'present')
 						break
 				}
-				if (stillThere) {
+				if (verification.state === 'unknown') {
+					outcomeBy[id] = 'unknown'
+					uncertainWriteIds.add(id)
+					stopAfterUncertainWrite = true
+					throw new Error(`删除后读回未知：${verification.reason}`)
+				}
+				if (verification.state === 'present') {
+					outcomeBy[id] = 'stillExists'
 					// 0.10.26（终验实锤：drawWire 命名自动落的 NET 属性标签删不掉，用户误以为 delete 失灵）——属性类给明确处置指引
 					if (kind.type === 'attribute')
 						throw new Error('属性图元官方不支持单独删除（pro-api-types 标注 @internal，导线持有的 NET/Name 属性随父导线存亡）——要消除这个标签请删整根父导线后重画（drawWire 不传 net 画无名线 + 需要时 placeNetLabel 补标签）')
 					throw new Error('删后读回验证仍在（假成功）')
 				}
 				deletedBy[id] = kind.type
+				return 'directDeleted'
 			}
 			for (let bi = 0; bi < ids.length; bi += batchSize) {
-				if (circuitBroken || budgetExhausted)
+				if (circuitBroken || budgetExhausted || stopAfterUncertainWrite)
 					break
 				if (bi > 0)
 					await new Promise(resolve => setTimeout(resolve, 300)) // 批间停顿，给官方编辑器喘息
@@ -3076,23 +3408,51 @@ export const schematicCommands: Array<ICommandDef> = [
 				let bDeleted = 0
 				let bFailed = 0
 				for (const id of batch) {
-					if (circuitBroken)
+					if (circuitBroken || stopAfterUncertainWrite)
 						break
 					if (Date.now() - startedAt > GLOBAL_BUDGET_MS) {
 						budgetExhausted = true
 						diagnostics.push(`全局时间预算耗尽（>${GLOBAL_BUDGET_MS / 1000}s），停止开新项，已累积结果照常返回；剩余 ID 请再次调用本指令续删`)
 						break
 					}
+					if (deadlineExpired()) {
+						deadlineStoppedWrites = true
+						budgetExhausted = true
+						diagnostics.push(`单指令熔断窗口到期（>${effectiveDeadlineMs}ms），停止开新项`)
+						break
+					}
 					attempted.add(id)
 					let itemError: string | undefined
+					let itemTimeout: ReturnType<typeof setTimeout> | undefined
+					const itemStartedAt = performance.now()
+					const progress: DeleteItemProgress = { stage: 'starting', stageStartedAt: itemStartedAt, sdkSettled: true, itemStartedAt, timedOut: false }
 					try {
-						await Promise.race([
-							deleteOne(id),
-							new Promise((_, reject) => setTimeout(() => reject(new Error(`单项超时（>${PER_ITEM_TIMEOUT_MS / 1000}s，疑似官方弹模态框或卡死）`)), PER_ITEM_TIMEOUT_MS)),
-						])
-						deleted.push(id)
-						bDeleted++
-						consecutiveFails = 0
+						const outcome = await Promise.race([
+							deleteOne(id, progress),
+							new Promise((_, reject) => { itemTimeout = setTimeout(() => {
+								progress.timedOut = true
+								uncertainWriteIds.add(id)
+								stopAfterUncertainWrite = true
+								outcomeBy[id] = 'unknown'
+								const elapsedMs = performance.now() - itemStartedAt
+								const stageElapsedMs = performance.now() - progress.stageStartedAt
+								diag('schematic.delete', 'item-timeout', `${id}: stage=${progress.stage} sdkSettled=${progress.sdkSettled} elapsedMs=${Math.round(elapsedMs)} stageElapsedMs=${Math.round(stageElapsedMs)}`)
+								reject(new DeleteItemTimeout(id, progress.stage, progress.sdkSettled, elapsedMs, stageElapsedMs))
+							}, PER_ITEM_TIMEOUT_MS) }),
+						]) as Awaited<ReturnType<typeof deleteOne>>
+						if (outcome === 'directDeleted') {
+							outcomeBy[id] = 'directDeleted'
+							deleted.push(id)
+							bDeleted++
+							consecutiveFails = 0
+						}
+					else if (outcome === 'cascadePending')
+						pendingCascade.add(id)
+					else {
+						outcomeBy[id] = outcome
+						failed.push(id)
+						bFailed++
+					}
 					}
 					catch (e: any) {
 						itemError = String(e?.message ?? e)
@@ -3100,12 +3460,30 @@ export const schematicCommands: Array<ICommandDef> = [
 						diag('schematic.delete', 'item-failed', `${id}: ${itemError}`)
 						failed.push(id)
 						bFailed++
-						consecutiveFails++
+						outcomeBy[id] ??= 'unknown'
+						if (e instanceof DeleteItemTimeout || e instanceof DeleteWriteStopped || e instanceof DeletePostWriteReadbackUnknown || e?.cause?.partial === true) {
+							uncertainWriteIds.add(id)
+							stopAfterUncertainWrite = true
+							circuitBroken = true
+							outcomeBy[id] = 'unknown'
+							if (e instanceof DeleteItemTimeout)
+								diagnostics.push(`单项删除超时（${itemError}）后立即停止后续写入；原官方调用可能仍在后台执行`)
+							else
+								diagnostics.push(`单项删除写入或读回状态未确认（${itemError}），立即停止后续写入`)
+						}
+						if (outcomeBy[id] === 'stillExists')
+							consecutiveFails++
+						else
+							consecutiveFails = 0
 						diagnostics.push(`${id}: ${itemError}`)
 						if (consecutiveFails >= MAX_CONSECUTIVE_FAILS) {
 							circuitBroken = true
 							diagnostics.push(`⚠️ 连续 ${MAX_CONSECUTIVE_FAILS} 项失败（均以读回确认为准），熔断整批——会话可能已损坏，建议【不保存重开页面】后再分批重试`)
 						}
+					}
+					finally {
+						if (itemTimeout !== undefined)
+							clearTimeout(itemTimeout)
 					}
 				}
 				batches.push({ batch: batches.length + 1, attempted: batch.length, deleted: bDeleted, failed: bFailed })
@@ -3119,170 +3497,271 @@ export const schematicCommands: Array<ICommandDef> = [
 			// 0.10.41 口径修复：失败原因是「图元不存在/类型不支持」的 ID 从不存在，终扫必然查不到——
 			// 不能当成「后台已删」对账进 deleted（0.10.40 装机实测：假 ID 被误挪），保持 failed 原样
 			const reconciled: Array<{ id: string, note: string }> = []
-			if (failed.length) {
-				try {
-					taskProgress(task, { stage: 'final-sweep' })
-					diag('schematic.delete', 'final-sweep-start', `failed=${failed.length}`)
-					await new Promise(resolve => setTimeout(resolve, 1500)) // 给后台删除一点落地时间
-					const alive = new Set<string>()
-					// 0.10.42：终扫枚举整体 20s 超时（旧版无保护，官方挂起时整批无返回）
-					await withTimeout(Promise.all(kinds.map(async (k) => {
-						try {
-							for (const id of await k.list())
-								alive.add(id)
-						}
-						catch { /* 单类清单失败不阻断 */ }
-					})), 20000, '终扫枚举')
-					// 浮空标签不在任何类清单里，需源码扫描补判（否则会误判浮标「已删」）
-					let floatIds = new Set<string>()
-					try {
-						floatIds = new Set((await withTimeout(scanFloatingNetLabels(), 15000, '浮标源码扫描')).map(f => String(f.primitiveId)))
+			if (failed.length || pendingCascade.size) {
+				taskProgress(task, { stage: 'final-sweep' })
+				diag('schematic.delete', 'final-sweep-start', `failed=${failed.length} cascadeCandidates=${pendingCascade.size}`)
+				await new Promise(resolve => setTimeout(resolve, 1500))
+				const finalById = new Map<string, DeletePresence>()
+				for (const id of new Set([...failed, ...pendingCascade]))
+					finalById.set(id, await readPresence(id))
+				for (const id of new Set([...failed, ...pendingCascade])) {
+					if (uncertainWriteIds.has(id)) {
+						outcomeBy[id] = 'unknown'
+						if (!failed.includes(id))
+							failed.push(id)
+						continue
 					}
-					catch { /* 扫描失败按无浮标处理 */ }
-					for (const id of [...failed]) {
-						if ((failReason.get(id) ?? '').includes('不存在'))
-							continue // 从不存在的 ID 不参与对账，保持 failed
-						if (!alive.has(id) && !floatIds.has(id)) {
-							failed.splice(failed.indexOf(id), 1)
+					const initial = initialById.get(id)!
+					const final = finalById.get(id)!
+					const parentId = parentByAttribute.get(id)
+					if (initial.state === 'missing') {
+						outcomeBy[id] = 'notFound'
+						if (!failed.includes(id))
+							failed.push(id)
+						continue
+					}
+					if (initial.state === 'unknown' || final.state === 'unknown') {
+						outcomeBy[id] = 'unknown'
+						if (!failed.includes(id))
+							failed.push(id)
+						continue
+					}
+					if (final.state === 'present') {
+						outcomeBy[id] = 'stillExists'
+						if (!failed.includes(id))
+							failed.push(id)
+						continue
+					}
+					const parentWasDeleted = Boolean(parentId && targetSet.has(parentId) && parentEvidenceComplete && isKnownWire(parentId) && (outcomeBy[parentId] === 'directDeleted' || outcomeBy[parentId] === 'cascadeDeleted' || finalById.get(parentId)?.state === 'missing'))
+					if (parentWasDeleted) {
+						outcomeBy[id] = 'cascadeDeleted'
+						deletedBy[id] = 'attribute'
+						if (!deleted.includes(id))
 							deleted.push(id)
-							reconciled.push({ id, note: '超时返回但后台已删除，经终扫确认' })
-						}
 					}
-					if (reconciled.length)
-						diagnostics.push(`终扫对账：${reconciled.length} 个原报失败的 ID 已确认被后台删除（挪入 deleted）：${reconciled.map(r => r.id).join('、')}`)
+					else if (attempted.has(id)) {
+						outcomeBy[id] = 'directDeleted'
+						deletedBy[id] = initial.kind.type
+						if (!deleted.includes(id))
+							deleted.push(id)
+						if (failed.includes(id))
+							reconciled.push({ id, note: '终扫完整读回确认已删除' })
+					}
+					else {
+						outcomeBy[id] = 'unknown'
+						if (!failed.includes(id))
+							failed.push(id)
+						continue
+					}
+					if (failed.includes(id))
+						failed.splice(failed.indexOf(id), 1)
 				}
-				catch { /* 终扫失败保持保守口径（failed 原样） */ }
+				if (reconciled.length)
+					diagnostics.push(`终扫对账：${reconciled.length} 个原报失败的 ID 经完整读回确认已删除：${reconciled.map(r => r.id).join('、')}`)
 			}
 			// 0.10.52（KIMI-EDA-20261003-09）：终扫对账后刷新进度——此前 progress 停留在
 			// final-sweep 前最后一帧 deleting，对账挪入 deleted 的进度不可见，调用方只见旧数
 			taskProgress(task, { stage: 'final-sweep-done', deleted: deleted.length, failed: failed.length, reconciled: reconciled.length })
 			diag('schematic.delete', 'final-sweep-done', `deleted=${deleted.length} failed=${failed.length} reconciled=${reconciled.length}`)
-			// 0.10.27 会话健康探针 / 0.10.40 加固（GPT KIMI-EDA-20261002-02：单次 create 被官方 reject「create failed!」
-			// 即判 degraded 过重——主机忙/模态框等瞬态也会失败，误报会逼调用方停摆）。加固：
-			// ① 焦点文档复核：焦点不在原理图页时探针结果不可信 → inconclusive，不误报 degraded
-			// ② create 最多 3 次重试（间隔 2s，多组候选坐标），全部失败才判 degraded
-			// ③ 创建后读回验证（防假成功），删除后也读回；删除失败报 probeResidue 供定点清理
-			// 0.10.52（KIMI-EDA-20261003-09）再加固：
-			// ④ 假成功分支的清理 delete 补墙钟保护（原裸 await，官方挂起时永久停在本阶段）
-			// ⑤ 探针清理有上限（最多 3 次删除+读回），仍残留则结构化返回 probeResidueDetail
-			// ⑥ 各阶段/候选坐标/探针 ID/清理尝试 全部经 diag() 写代理 lane-log，可离线对账
+			// 健康探针单链执行：创建/删除各一次，不使用内层超时后丢弃的 Promise；ID 立即记录进度。
+			// 只有删除前合法枚举见过 ID 且删除后合法枚举不含 ID 才确认清理；未知状态保留 ID 与原文档证据。
 			let sessionHealth: 'ok' | 'degraded' | 'inconclusive' | undefined
 			let probeResidue: string | undefined
 			let probeResidueDetail: { id: string, cleanupAttempts: number, lastError: string } | undefined
-			if (reconciled.length || failed.length) {
+			let probeWriteUncertain = false
+			let probeDocumentUuid: string | undefined
+			let probeId: string | undefined
+			let probeError = ''
+			let cleanupAttempts = 0
+			const stillPresentIds = Object.entries(outcomeBy).filter(([, outcome]) => outcome === 'stillExists').map(([id]) => id)
+			if (!deadlineStoppedWrites && deadlineExpired()) {
+				deadlineStoppedWrites = true
+				diagnostics.push(`单指令熔断窗口到期（>${effectiveDeadlineMs}ms），跳过健康探针写入`)
+			}
+			if (!stopAfterUncertainWrite && !deadlineStoppedWrites && (reconciled.length || stillPresentIds.length)) {
+				taskProgress(task, { stage: 'health-probe' })
+				diag('schematic.delete', 'health-probe-start', `reconciled=${reconciled.length} stillExists=${stillPresentIds.length}`)
+				let probeWasEnumerated = false
+				let probeGeometryVerified = false
+				let probeCreateAttempted = false
+				const expectedLine = [0, 0, 10, 0]
+				const sameLine = (line: unknown) => {
+					if (!Array.isArray(line) || line.length < 4)
+						return false
+					const actual = line.slice(0, 4).map(Number)
+					return actual.every(Number.isFinite)
+						&& ((actual[0] === expectedLine[0] && actual[1] === expectedLine[1] && actual[2] === expectedLine[2] && actual[3] === expectedLine[3])
+							|| (actual[0] === expectedLine[2] && actual[1] === expectedLine[3] && actual[2] === expectedLine[0] && actual[3] === expectedLine[1]))
+				}
 				try {
-					taskProgress(task, { stage: 'health-probe' })
-					diag('schematic.delete', 'health-probe-start', `reconciled=${reconciled.length} failed=${failed.length}`)
-					const doc = await withTimeout(eda.dmt_SelectControl.getCurrentDocumentInfo().catch(() => undefined), 5000, '焦点文档查询')
-					if (doc?.documentType !== 1) {
+					const doc = await eda.dmt_SelectControl.getCurrentDocumentInfo()
+					probeDocumentUuid = String(doc?.uuid ?? '') || undefined
+					if (doc?.documentType !== 1 || !probeDocumentUuid) {
 						sessionHealth = 'inconclusive'
-						diagnostics.push(`会话健康探针未执行：焦点文档不是原理图（documentType=${doc?.documentType ?? '无焦点'}），探针结果不可信未采信——请激活原理图页后用只读指令（schematic.listWires 等）复核写通道`)
+						probeError = `焦点文档信息不完整或不是原理图（documentType=${doc?.documentType ?? '无焦点'}, uuid=${probeDocumentUuid ?? '无'}）`
 					}
 					else {
-						const candidates: number[][] = [[0, 0, 10, 0], [500, 500, 510, 500], [2000, 2000, 2010, 2000]]
-						let pid: string | undefined
-						let probeErr = ''
-						for (let attempt = 0; attempt < candidates.length && !pid; attempt++) {
-							if (attempt)
-								await new Promise(resolve => setTimeout(resolve, 2000))
-							diag('schematic.delete', 'probe-create-attempt', `第${attempt + 1}次 候选=${JSON.stringify(candidates[attempt])}`)
+						if (deadlineExpired()) {
+							deadlineStoppedWrites = true
+							throw new Error(`单指令熔断窗口到期（>${effectiveDeadlineMs}ms），跳过健康探针创建`)
+						}
+						probeCreateAttempted = true
+						probeWriteUncertain = true
+						diag('schematic.delete', 'probe-create-start', `doc=${probeDocumentUuid} line=${JSON.stringify(expectedLine)}`)
+						const probeWire = await eda.sch_PrimitiveWire.create(expectedLine) as any
+						probeId = safeState<string>(probeWire, 'getState_PrimitiveId')
+						if (!probeId)
+							throw new Error('创建调用已返回但未提供探针图元 ID')
+						taskProgress(task, { stage: 'health-probe-created', probeDocumentUuid, probeId })
+						diag('schematic.delete', 'probe-created', `doc=${probeDocumentUuid} id=${probeId}`)
+						for (let check = 1; check <= 3; check++) {
 							try {
-								const probeWire = await Promise.race([
-									eda.sch_PrimitiveWire.create(candidates[attempt]),
-									new Promise((_, reject) => setTimeout(() => reject(new Error('探针创建超时 10s')), 10000)),
-								]) as any
-								const got = safeState<string>(probeWire, 'getState_PrimitiveId')
-								if (!got)
-									throw new Error('探针创建未返回图元 ID')
-								await new Promise(resolve => setTimeout(resolve, 400))
-								const allIds = await withTimeout(eda.sch_PrimitiveWire.getAllPrimitiveId().catch(() => undefined), 10000, '探针读回') as any
-								if (Array.isArray(allIds) && !allIds.map(String).includes(got)) {
-									// 0.10.52：假成功分支的清理补墙钟保护（原裸 await 无超时，官方挂起时
-									// 整个 health-probe 阶段永久卡住——现场 task35/36 实测卡 4 分钟+）
-									try {
-										await withTimeout(eda.sch_PrimitiveWire.delete([got]), 10000, '探针假成功清理')
-										diag('schematic.delete', 'probe-fake-success-cleaned', `候选${attempt + 1} 假成功已清理 ${got}`)
-									}
-									catch (cleanErr: any) {
-										diag('schematic.delete', 'probe-fake-success-cleanup-failed', `候选${attempt + 1} id=${got} 错误=${cleanErr instanceof Error ? cleanErr.message : JSON.stringify(cleanErr)}`)
-									}
-									throw new Error('探针创建读回不存在（假成功）')
-								}
-								pid = got
-								diag('schematic.delete', 'probe-created', `候选${attempt + 1} id=${pid}`)
+								const instance = await eda.sch_PrimitiveWire.get(probeId) as any
+								const returnedId = instance ? safeState<string>(instance, 'getState_PrimitiveId') : undefined
+								const line = instance ? safeState<Array<number>>(instance, 'getState_Line') : undefined
+								if (returnedId === probeId && sameLine(line))
+									probeGeometryVerified = true
+								else
+									probeError = '按 ID 读回的探针 ID 或几何不匹配'
 							}
 							catch (e: any) {
-								probeErr = e instanceof Error ? e.message : JSON.stringify(e)
-								diag('schematic.delete', 'probe-create-failed', `候选${attempt + 1} 错误=${probeErr}`)
+								probeError = `按 ID 读回失败：${String(e?.message ?? e)}`
 							}
+							try {
+								const allIds = await eda.sch_PrimitiveWire.getAllPrimitiveId()
+								if (!Array.isArray(allIds))
+									throw new Error('导线枚举不是数组')
+								if (allIds.map(String).includes(probeId))
+									probeWasEnumerated = true
+							}
+							catch (e: any) {
+								probeError = `探针创建后枚举失败：${String(e?.message ?? e)}`
+							}
+							if (probeGeometryVerified && probeWasEnumerated)
+								break
 						}
-						if (!pid) {
-							sessionHealth = 'degraded'
-							diagnostics.push(`🛑 会话健康探针失败：创建阶段 3 次重试均失败（最后错误：${probeErr}）——读通道正常而创建持续失败才算写通道劣化，建议先只读复核（listWires/listNetLabels）再决定是否【不保存重开页面】`)
+						if (!probeGeometryVerified)
+							throw new Error(probeError || '三次按 ID 读回均未确认探针几何')
+						const focused = await eda.dmt_SelectControl.getCurrentDocumentInfo()
+						if (focused?.documentType !== 1 || String(focused?.uuid ?? '') !== probeDocumentUuid) {
+							sessionHealth = 'inconclusive'
+							probeError = `清理前焦点已变化，保留探针 ID 不跨页删除（原页=${probeDocumentUuid}, 当前=${String(focused?.uuid ?? '无')})`
 						}
 						else {
-							// 0.10.52：清理有上限（3 次删除+读回），每次都有墙钟保护；仍残留则结构化上报
-							let cleanupAttempts = 0
-							let lastCleanupErr = ''
-							while (cleanupAttempts < 3) {
-								cleanupAttempts++
+							try {
+								const beforeDelete = await eda.sch_PrimitiveWire.getAllPrimitiveId()
+								if (!Array.isArray(beforeDelete))
+									throw new Error('清理前导线枚举不是数组')
+								if (beforeDelete.map(String).includes(probeId))
+									probeWasEnumerated = true
+							}
+							catch (e: any) {
+								probeError = `清理前导线枚举失败：${String(e?.message ?? e)}`
+							}
+							const latestFocus = await eda.dmt_SelectControl.getCurrentDocumentInfo()
+							if (latestFocus?.documentType !== 1 || String(latestFocus?.uuid ?? '') !== probeDocumentUuid)
+								throw new Error(`删除前焦点文档已变化，停止清理（原页=${probeDocumentUuid}, 当前=${String(latestFocus?.uuid ?? '无')}）`)
+							if (deadlineExpired()) {
+								deadlineStoppedWrites = true
+								throw new Error(`单指令熔断窗口到期（>${effectiveDeadlineMs}ms），跳过健康探针清理`)
+							}
+							cleanupAttempts = 1
+							taskProgress(task, { stage: 'health-probe-cleanup', probeDocumentUuid, probeId, cleanupAttempts, probeWasEnumerated })
+							diag('schematic.delete', 'probe-cleanup-start', `doc=${probeDocumentUuid} id=${probeId} enumeratedBefore=${probeWasEnumerated}`)
+							try {
+								await eda.sch_PrimitiveWire.delete([probeId])
+							}
+							catch (e: any) {
+								probeError = `探针删除调用异常：${String(e?.message ?? e)}`
+							}
+							let absentAfterDelete = false
+							let stillPresentAfterDelete = false
+							for (let check = 1; check <= 3; check++) {
 								try {
-									diag('schematic.delete', 'probe-cleanup-attempt', `第${cleanupAttempts}次 id=${pid}`)
-									await withTimeout(eda.sch_PrimitiveWire.delete([pid]), 10000, `探针导线删除(第${cleanupAttempts}次)`)
-									await new Promise(resolve => setTimeout(resolve, 400))
-									const left = await withTimeout(eda.sch_PrimitiveWire.getAllPrimitiveId().catch(() => undefined), 10000, '探针读回') as any
-									if (!Array.isArray(left) || !left.map(String).includes(pid)) {
-										sessionHealth = 'ok'
-										diag('schematic.delete', 'probe-cleaned', `第${cleanupAttempts}次清理成功 id=${pid}`)
-										break
-									}
-									lastCleanupErr = `第${cleanupAttempts}次删除后读回仍存在`
+									const left = await eda.sch_PrimitiveWire.getAllPrimitiveId()
+									if (!Array.isArray(left))
+									throw new Error('清理后导线枚举不是数组')
+									if (!left.map(String).includes(probeId))
+										absentAfterDelete = true
+									else
+										stillPresentAfterDelete = true
 								}
 								catch (e: any) {
-									lastCleanupErr = e instanceof Error ? e.message : JSON.stringify(e)
+									probeError = `清理后读回失败：${String(e?.message ?? e)}`
 								}
+								if (absentAfterDelete)
+									break
 							}
-							if (sessionHealth !== 'ok') {
+							if (probeWasEnumerated && absentAfterDelete) {
+								sessionHealth = 'ok'
+								probeWriteUncertain = false
+								diag('schematic.delete', 'probe-cleaned', `enumeratedBefore=true id=${probeId}`)
+							}
+							else if (stillPresentAfterDelete) {
 								sessionHealth = 'degraded'
-								probeResidue = pid
-								probeResidueDetail = { id: pid, cleanupAttempts, lastError: lastCleanupErr }
-								diagnostics.push(`🛑 会话健康探针失败：探针导线 ${cleanupAttempts} 次清理后仍残留（最后错误：${lastCleanupErr}）——残留无名探针短线 ${pid}，会话恢复后用 schematic.delete 定点删除（返回里 probeResidue/probeResidueDetail 已结构化给出）`)
+								probeError = `清理后完整导线枚举仍含探针 ID（删除前曾枚举=${probeWasEnumerated}）`
+							}
+							else {
+								sessionHealth = 'inconclusive'
+								probeError = `探针未能通过“删除前合法枚举含 ID、删除后合法枚举不含 ID”确认清理（此前见到=${probeWasEnumerated}, 删除后缺失读回=${absentAfterDelete}）`
 							}
 						}
 					}
-					diag('schematic.delete', 'health-probe-done', `sessionHealth=${sessionHealth}${probeResidue ? ` residue=${probeResidue}` : ''}`)
 				}
 				catch (e: any) {
 					sessionHealth = 'inconclusive'
-					diagnostics.push(`会话健康探针自身异常（${e instanceof Error ? e.message : JSON.stringify(e)}），不采信也不影响删除结果`)
+					probeError = String(e?.message ?? e)
 				}
+				if (sessionHealth !== 'ok') {
+					probeWriteUncertain = probeCreateAttempted
+					if (sessionHealth === 'degraded' && probeId) {
+						probeResidue = probeId
+						probeResidueDetail = { id: probeId, cleanupAttempts, lastError: probeError || '探针清理状态未知' }
+					}
+					diagnostics.push(`会话健康探针状态=${sessionHealth}（${probeError || '未知'}）${probeId ? `，ID=${probeId}` : ''}${probeResidue ? '；合法读回确认探针仍存在' : '；未确认探针仍存在，不报告残留'}`)
+				}
+				diag('schematic.delete', 'health-probe-done', `sessionHealth=${sessionHealth} doc=${probeDocumentUuid ?? 'unknown'} id=${probeId ?? 'unknown'}`)
 			}
-			if (!deleted.length)
-				throw new Error(`删除失败：${ids.join(', ')}（图元不存在、被锁定或类型暂不支持；已读回验证）${floatDiag?.length ? `。浮标删除通道诊断：${floatDiag.join('；')}` : ''}${diagnostics.length ? `。逐项诊断：${diagnostics.join('；')}` : ''}`)
+			if (!deadlineStoppedWrites && deadlineExpired()) {
+				deadlineStoppedWrites = true
+				diagnostics.push(`单指令熔断窗口在健康探针完成后到期（>${effectiveDeadlineMs}ms），保留 partial 结果并停止后续宏步骤`)
+			}
+			if (!deleted.length && failed.length)
+				diagnostics.push('没有图元被确认删除；请依据 outcomeBy 区分原本不存在、仍存在或读回未知，不要把未知当作成功')
 			const deleteResult = {
 				deleted,
 				failed,
+				outcomeBy,
 				deletedBy,
+				...(Object.values(deletedBy).includes('text') ? { persistenceVerified: false } : {}),
 				...(reconciled.length ? { reconciled } : {}),
 				...(sessionHealth ? { sessionHealth } : {}),
 				...(sessionHealth === 'degraded' ? {
-					warning: '🛑 会话健康探针失败（探针图元创建 3 次重试均败/删除异常）——EDA 写通道可能已损坏，本次删除结果仍有效；建议先用只读指令复核现场，再决定是否【不保存重开页面】后继续操作',
+					warning: '🛑 健康探针删除后仍有完整枚举证明探针存在，或探针状态未能确认；请按 probeResidue/probeResidueDetail 里的原文档 UUID 与 ID 只读复核后再继续写入',
 				} : {}),
 				...(sessionHealth === 'inconclusive' ? {
-					note: '会话健康探针未能得出可信结论（inconclusive，见 diagnostics），删除结果本身已经读回验证、不受影响',
+					note: '会话健康探针未能得出可信结论（inconclusive，见 diagnostics）；删除项以 outcomeBy 分类，unknown/unprocessed 项仍未确认',
 				} : {}),
 				...(probeResidue ? { probeResidue } : {}),
 				...(probeResidueDetail ? { probeResidueDetail } : {}),
+				...(sessionHealth ? { probeDocumentUuid, probeId, probeCleanupAttempts: cleanupAttempts, probeStatus: sessionHealth === 'ok' ? 'cleaned' : 'unconfirmed' } : {}),
 				...(batches.length > 1 ? { batches } : {}),
 				...(unprocessed.length ? {
 					unprocessed,
 					resumeNote: `有 ${unprocessed.length} 个图元因熔断/时间预算未轮到处理——确认 EDA 会话健康后再次调用本指令即可接着删（已删的不会重复）`,
 				} : {}),
-				...(failed.length ? {
-					failedNote: `${failed.length} 个图元经终扫确认仍存在（真失败，非后台已删）——确认会话健康后再次调用本指令续删：${failed.join('、')}`,
+				...(stillPresentIds.length ? {
+					failedNote: `${stillPresentIds.length} 个图元经完整读回确认仍存在——确认会话健康后再次调用本指令续删：${stillPresentIds.join('、')}`,
 				} : {}),
 				...(diagnostics.length ? { diagnostics } : {}),
 				...(floatDiag?.length ? { floatDiagnostics: floatDiag } : {}),
+			}
+			if (failed.length || unprocessed.length || probeWriteUncertain || deadlineStoppedWrites) {
+				const error = new Error(`删除结果包含未完成项：deleted=${deleted.length} failed=${failed.length} unprocessed=${unprocessed.length}（分类：${JSON.stringify(outcomeBy)}）`)
+				;(error as any).cause = writeAttempted || probeWriteUncertain
+					? { partial: true, taskId: task.id, result: deleteResult }
+					: { taskId: task.id, result: deleteResult }
+				throw error
 			}
 			finishTask(task, deleteResult)
 			return { taskId: task.id, ...deleteResult }
@@ -3291,81 +3770,6 @@ export const schematicCommands: Array<ICommandDef> = [
 				failTask(task, e)
 				throw e
 			}
-		},
-	},
-	{
-		name: 'schematic.deleteTextViaSource',
-		summary: '【实验性·TEXT 专项】文档源码 append-only 墓碑删除 TEXT。背景：官方 PrimitiveText 类级/实例级 delete 都不落盘（0.10.53/0.10.54 双路实测：删→save→关开重读必复活，同页导线删除正常），本指令绕开官方删除 API，直接往文档变更日志追加删除墓碑（空 data 记录，重放时 ticket 大的赢）。append-only 纪律：不改旧行、ticket 从 max+1 递增',
-		params: [
-			{ name: 'primitiveIds', type: 'string[]', required: true, description: '要删除的 TEXT 图元 ID 列表（单数 primitiveId 亦可）' },
-			{ name: 'save', type: 'boolean', description: '墓碑写入并读回验证后是否 save，默认 true' },
-		],
-		returns: '{ tombstoned: [...], skipped: [...], steps: [...] }',
-		example: { cmd: 'schematic.deleteTextViaSource', params: { primitiveIds: ['xxx'] } },
-		handler: async (params) => {
-			const raw = params.primitiveIds ?? params.primitiveId
-			const ids = Array.isArray(raw) ? raw.map(String) : raw != null ? [String(raw)] : []
-			if (!ids.length)
-				throw new Error('缺少参数 primitiveIds（数组）或 primitiveId（单个 ID）')
-			const steps: Array<string> = []
-			const source = await eda.sys_FileManager.getDocumentSource()
-			if (!source)
-				throw new Error('getDocumentSource 返回空（需先打开目标文档页签）')
-			const src = String(source)
-			// 现有 TEXT 记录里有的才需要墓碑；同时取全局 max ticket
-			const maxTicket = Math.max(0, ...Array.from(src.matchAll(/"ticket":(\d+)/g)).map(m => Number(m[1]) || 0))
-			const tombstoned: Array<string> = []
-			const skipped: Array<string> = []
-			let ticket = maxTicket
-			const lines: Array<string> = []
-			for (const id of ids) {
-				const live = new RegExp(`\\{"type":"TEXT","ticket":\\d+,"id":"${id}"\\}\\|\\|`).test(src)
-				if (!live) {
-					skipped.push(id)
-					steps.push(`${id}: 源码日志中无现存 TEXT 记录（可能已删或从未存在），跳过`)
-					continue
-				}
-				ticket += 1
-				lines.push(`${JSON.stringify({ type: 'TEXT', ticket, id })}||${JSON.stringify('')}`)
-				tombstoned.push(id)
-				steps.push(`${id}: 追加墓碑 ticket=${ticket}`)
-			}
-			if (!lines.length)
-				return { tombstoned, skipped, steps, note: '没有需要墓碑的 TEXT' }
-			const body = src.trimEnd()
-			const sep = body.endsWith('|') ? '' : '|'
-			const patched = `${body}${sep}\n${lines.join('|\n')}`
-			const writeBack = await eda.sys_FileManager.setDocumentSource(patched)
-			steps.push(`setDocumentSource 返回 ${JSON.stringify(writeBack)}`)
-			if (writeBack === false)
-				throw new Error('setDocumentSource 返回 false（官方运行时校验拒绝）——文档未改动')
-			// 回读验证：墓碑在日志里
-			const back = String(await eda.sys_FileManager.getDocumentSource())
-			for (const id of tombstoned) {
-				const ok = new RegExp(`\\{"type":"TEXT","ticket":\\d+,"id":"${id}"\\}\\|\\|""`).test(back)
-				steps.push(`${id}: 墓碑读回${ok ? '确认' : '缺失！'}`)
-			}
-			// 模型读回：官方枚举里还看不看得见（判断 setDocumentSource 是否触发模型重解析）
-			let modelGone: Record<string, boolean> = {}
-			try {
-				const liveIds = await eda.sch_PrimitiveText.getAllPrimitiveId()
-				for (const id of tombstoned)
-					modelGone[id] = !liveIds.includes(id)
-			}
-			catch {
-				steps.push('模型枚举读回失败')
-			}
-			let saved: boolean | undefined
-			if (params.save !== false) {
-				try {
-					saved = Boolean(await eda.sch_Document.save())
-					steps.push(`save 返回 ${saved}`)
-				}
-				catch (e) {
-					steps.push(`save 抛错 ${String((e as any)?.message ?? e)}`)
-				}
-			}
-			return { tombstoned, skipped, steps, modelGone, saved }
 		},
 	},
 	{
@@ -3379,7 +3783,7 @@ export const schematicCommands: Array<ICommandDef> = [
 			{ name: 'force', type: 'boolean', description: '跳过"附近导线已同名"防呆检查（默认 false；0.10.0 起同名重复放置会被拒绝）' },
 			{ name: 'rotation', type: 'number', description: '标签文字方向（0.10.16）：0=文字向右（默认）、180=向左、90=向上、270=向下。引脚朝左的器件短桩标签应传 180 让文字朝外；设置后读回验证，失败在返回里注明' },
 		],
-		returns: '{ primitiveId, attached }（attached=false 时标签已自动删除并报错）',
+		returns: '{ primitiveId, attached: true|false|undefined }（true 经标签属性 ID/父导线与同 ID 属性读回确认；false 表示已确认浮空但保留标签并以 partial 报错；undefined 表示 noVerify 未验证。读取异常或状态不完整按 unknown/partial 报错）',
 		example: { cmd: 'schematic.placeNetLabel', params: { net: 'NRST', x: 464, y: 455 } },
 		handler: async (params) => {
 			if (!params.net || params.x == null || params.y == null)
@@ -3414,6 +3818,8 @@ export const schematicCommands: Array<ICommandDef> = [
 			// 官方签名是 createNetLabel(x, y, net)，参数顺序与直觉相反，别搞错。
 			// 实测锚点正好压在线体上常被拒绝，偏移 ±2 却能成功且电气附着正常——自动微偏重试
 			let label: any
+			let labelId: string | undefined
+			let ghostAdopted = false
 			let usedX = ax
 			let usedY = ay
 			for (const [dx, dy] of [[0, 0], [0, 2], [0, -2], [2, 0], [-2, 0]] as Array<[number, number]>) {
@@ -3426,56 +3832,84 @@ export const schematicCommands: Array<ICommandDef> = [
 				// 源头防双份：返回空不代表没创建（官方偶发假失败），确认锚点处真的没标签才换下一个偏移
 				const ghost = await findGhostNetLabel(net, ax + dx, ay + dy)
 				if (ghost) {
-					const ghostRotation = wantRotation ? await applyLabelRotation(ghost.id, wantRotation) : undefined
-					return { primitiveId: ghost.id, attached: ghost.attached, ...(wantRotation ? { labelRotation: ghostRotation } : {}), note: '官方创建接口返回空但标签实际已生成（假失败），已直接采用该标签' }
+					labelId = ghost.id
+					ghostAdopted = true
+					usedX = ax + dx
+					usedY = ay + dy
+					break
 				}
 			}
-			if (!label)
+			if (!label && !labelId)
 				throw new Error('网络标签创建失败：官方返回空（已自动尝试 ±2 微偏）。标签要贴在导线边上而不是压在线上，可把锚点偏移 2~5 个单位再试')
-			const labelId = safeState<string>(label, 'getState_PrimitiveId')
+			labelId ??= safeState<string>(label, 'getState_PrimitiveId')
+			if (!labelId) {
+				const error = new Error('网络标签创建或 ghost 命中但没有可核对的 primitiveId；附着结果未知，标签已保留')
+				;(error as any).cause = { partial: true, primitiveId: 'unknown', parentId: 'unknown', usedX, usedY, reason: '标签读回对象未提供 primitiveId' }
+				throw error
+			}
 			// 文字方向（0.10.16）：modify rotation + 读回验证（官方假失败前科，成败以读回为准）
 			const labelRotation = labelId && wantRotation ? await applyLabelRotation(labelId, wantRotation) : undefined
 			const rotationResult = wantRotation
 				? { labelRotation, ...(labelRotation == null ? { rotationNote: `标签旋转 ${wantRotation}° 设置失败（读回不匹配），文字仍为默认朝右` } : {}) }
 				: {}
 			if (params.noVerify)
-				return { primitiveId: labelId, attached: undefined, ...rotationResult }
-			// 附着验证：锚点附近（±5 单位）存在网络变为该名的导线即视为附着。
-			// 实测锚点稍微偏离线体能创建成功但电气上不附着（网表丢名），
-			// 且 moveLabel 不会重算附着，必须放置时验证
-			const checkAttached = async (): Promise<boolean> => {
-				// getAll(net) 过滤参数运行时不可靠，全量取回后手动过滤
-				const wires = (await eda.sch_PrimitiveWire.getAll()) ?? []
-				for (const w of wires) {
-					if (safeState<string>(w, 'getState_Net') !== net)
-						continue
-					const line = safeState<Array<number>>(w, 'getState_Line') ?? []
-					for (let i = 0; i + 3 < line.length + 1 && i + 1 < line.length; i += 2) {
-						const x1 = line[i]
-						const y1 = line[i + 1]
-						const x2 = line[i + 2] ?? x1
-						const y2 = line[i + 3] ?? y1
-						// 点到（水平/垂直）线段距离
-						const dx = Math.max(Math.min(x1, x2) - ax, 0, ax - Math.max(x1, x2))
-						const dy = Math.max(Math.min(y1, y2) - ay, 0, ay - Math.max(y1, y2))
-						if (Math.hypot(dx, dy) <= 5)
-							return true
-					}
+				return { primitiveId: labelId, attached: undefined, ...rotationResult, ...(ghostAdopted ? { note: '官方创建接口返回空但标签实际已生成（假失败），已直接采用该标签；attached 未验证' } : {}) }
+			// 只核对本次标签 ID 和其父级关系；不以邻近同名导线的网络名传播状态代替附着证据。
+			const checkAttached = async (): Promise<{ state: 'attached' | 'floating' | 'unknown', parentId?: string, reason?: string }> => {
+				try {
+					const attr = await eda.sch_PrimitiveAttribute.get(labelId!) as any
+					if (!attr)
+						return { state: 'unknown', reason: '按标签 ID 未读到属性' }
+					const returnedId = safeState<string>(attr, 'getState_PrimitiveId')
+					const key = safeState<string>(attr, 'getState_Key')
+					const value = safeState<string>(attr, 'getState_Value')
+					const parentId = safeState<string>(attr, 'getState_ParentPrimitiveId')
+					if (returnedId !== labelId)
+						return { state: 'unknown', parentId, reason: `属性 ID 不匹配（读回 ${returnedId ?? '缺失'}）` }
+					if (!/^(NET|Name)$/i.test(key ?? '') || value !== net)
+						return { state: 'unknown', parentId, reason: `属性键值不符（key=${key ?? '缺失'}, value=${value ?? '缺失'}）` }
+					if (parentId === '$$root')
+						return { state: 'floating', parentId, reason: '标签 parentId=$$root，已确认浮空' }
+					if (typeof parentId !== 'string' || !parentId.trim())
+						return { state: 'unknown', reason: '标签 parentId 缺失或非法' }
+					const wire = await eda.sch_PrimitiveWire.get(parentId) as any
+					if (!wire || safeState<string>(wire, 'getState_PrimitiveId') !== parentId)
+						return { state: 'unknown', parentId, reason: '父导线缺失或 ID 不匹配' }
+					const attrs = await eda.sch_PrimitiveAttribute.getAll(parentId) as any
+					if (!Array.isArray(attrs))
+						return { state: 'unknown', parentId, reason: '父导线属性读回不是数组' }
+					const same = attrs.find((item: any) => safeState<string>(item, 'getState_PrimitiveId') === labelId)
+					if (!same)
+						return { state: 'unknown', parentId, reason: '父导线属性读回缺少本标签 ID' }
+					const sameKey = safeState<string>(same, 'getState_Key')
+					const sameValue = safeState<string>(same, 'getState_Value')
+					const sameParent = safeState<string>(same, 'getState_ParentPrimitiveId')
+					if (!/^(NET|Name)$/i.test(sameKey ?? '') || sameValue !== net || sameParent !== parentId)
+						return { state: 'unknown', parentId, reason: `父导线属性与标签读回不一致（key=${sameKey ?? '缺失'}, value=${sameValue ?? '缺失'}, parentId=${sameParent ?? '缺失'}）` }
+					return { state: 'attached', parentId }
 				}
-				return false
+				catch (error: any) {
+					return { state: 'unknown', reason: `附着读回异常：${String(error?.message ?? error)}` }
+				}
 			}
+			let lastFloating: { parentId?: string, reason?: string } | undefined
 			for (let attempt = 0; attempt < 3; attempt++) {
-				await new Promise(resolve => setTimeout(resolve, 500))
-				if (await checkAttached())
-					return { primitiveId: labelId, attached: true, ...rotationResult }
+				if (attempt > 0)
+					await new Promise(resolve => setTimeout(resolve, 500))
+				const checked = await checkAttached()
+				if (checked.state === 'attached')
+					return { primitiveId: labelId, attached: true, wireId: checked.parentId, ...rotationResult, ...(ghostAdopted ? { note: '官方创建接口返回空但标签实际已生成（假失败），已直接采用该标签' } : {}) }
+				if (checked.state === 'unknown') {
+					const error = new Error(`网络标签附着状态未知：${checked.reason ?? '读回证据不完整'}`)
+					;(error as any).cause = { partial: true, primitiveId: labelId, parentId: checked.parentId ?? 'unknown', usedX, usedY, reason: checked.reason ?? '读回证据不完整' }
+					throw error
+				}
+				lastFloating = checked
 			}
-			// 原则：插件不擅自修复/删除——标签保留，如实报告未附着，由操作者决定处置
-			return {
-				primitiveId: labelId,
-				attached: false,
-				...rotationResult,
-				warning: `标签未电气附着（锚点 ${ax},${ay} 附近没有可归入 ${net} 的导线）。标签已保留未删除：可用 schematic.moveLabel 挪到导线自由端，或 schematic.delete 删除`,
-			}
+			const reason = lastFloating?.reason ?? '连续三次读回确认 parentId=$$root'
+			const error = new Error(`标签未电气附着（primitiveId=${labelId}, 锚点 ${usedX},${usedY}, ${reason}）。标签已保留未删除，请按需用 schematic.moveLabel 调整或 schematic.delete 删除`)
+			;(error as any).cause = { partial: true, primitiveId: labelId, parentId: lastFloating?.parentId, usedX, usedY, reason }
+			throw error
 		},
 	},
 	{
@@ -3936,6 +4370,9 @@ export const schematicCommands: Array<ICommandDef> = [
 			const dryRun = params.dryRun !== false
 			const rewire = params.rewire !== false
 			// ---------- ① 收集目标器件 ----------
+			const layoutFocus = await eda.dmt_SelectControl.getCurrentDocumentInfo()
+			if (!layoutFocus?.uuid || layoutFocus.documentType !== 1)
+				throw new Error('焦点文档不是有效的原理图页，已拒绝 autoLayout')
 			const all = (await eda.sch_PrimitiveComponent.getAll()) ?? []
 			const comps = all.map(c => ({
 				primitiveId: safeState<string>(c, 'getState_PrimitiveId'),
@@ -4060,25 +4497,25 @@ export const schematicCommands: Array<ICommandDef> = [
 			}
 			// ---------- ⑤ 移动器件（读回验证，假失败前科不信返回值） ----------
 			const moved: Array<Record<string, unknown>> = []
-			const moveFailed: Array<Record<string, unknown>> = []
 			for (const item of plan) {
 				try {
-					await eda.sch_PrimitiveComponent.modify(item.primitiveId, { x: item.to.x, y: item.to.y } as any)
-					const back = (await eda.sch_PrimitiveComponent.getAll()) ?? []
-					const hit = back.find(c => safeState<string>(c, 'getState_PrimitiveId') === item.primitiveId)
-					const bx = hit ? safeState<number>(hit, 'getState_X') : undefined
-					const by = hit ? safeState<number>(hit, 'getState_Y') : undefined
-					if (bx != null && by != null && Math.hypot(bx - Number(item.to.x), by - Number(item.to.y)) <= 2)
-						moved.push({ designator: item.designator, from: item.from, to: item.to })
-					else
-						moveFailed.push({ designator: item.designator, to: item.to, reason: `移动读回不匹配（读回 ${bx},${by}）` })
+					await moveComponentSafely(eda as any, item.primitiveId, { x: item.to.x, y: item.to.y }, layoutFocus)
+					moved.push({ designator: item.designator, from: item.from, to: item.to })
 				}
 				catch (e: any) {
-					moveFailed.push({ designator: item.designator, to: item.to, reason: String(e?.message ?? e) })
+					const message = e instanceof Error ? e.message : String(e)
+					const partial = moved.length > 0 || e?.cause?.partial === true
+					const cause = e?.cause && typeof e.cause === 'object' ? e.cause : {}
+					const error = new Error(`autoLayout 在移动 ${item.designator} 时停止：${message}`, { cause: { ...cause, partial, retryable: false, moved, phase: 'schematic.autoLayout component movement', operationError: message } }) as Error & { partial?: boolean, retryable?: boolean, moved?: unknown, phase?: string }
+					error.partial = partial
+					error.retryable = false
+					error.phase = 'schematic.autoLayout component movement'
+					error.moved = moved
+					throw error
 				}
 			}
 			if (!rewire) {
-				return { dryRun: false, moved, ...(moveFailed.length ? { moveFailed } : {}), note: '已按方案移动器件（rewire:false 未重建连线；旧导线/标签原地未动——官方移动不跟随，需要时用 rewire:true 重跑）' }
+				return { dryRun: false, moved, note: '已按方案移动器件（rewire:false 未重建连线；旧导线/标签原地未动——官方移动不跟随，需要时用 rewire:true 重跑）' }
 			}
 			// ---------- ⑥ rewire：删碰旧引脚的导线（级联删标签）→ 清浮标 → batchWire 重建 ----------
 			const segDist = (px: number, py: number, x1: number, y1: number, x2: number, y2: number): number => {
@@ -4272,7 +4709,6 @@ export const schematicCommands: Array<ICommandDef> = [
 			return {
 				dryRun: false,
 				moved,
-				...(moveFailed.length ? { moveFailed } : {}),
 				deletedWires,
 				...(deleteFailed.length ? { deleteFailed } : {}),
 				prunedLabels,
@@ -4693,7 +5129,7 @@ export const schematicCommands: Array<ICommandDef> = [
 		name: 'schematic.getNetlist',
 		summary: '直接读取原理图网表字符串（0.10.44，GPT KIMI-EDA-20261002-04）——官方 sch_Netlist.getNetlist（已标 deprecated 但仍公开）的薄封装；用于 exportNetlist 返空时的连通性审计备选，只读不写',
 		params: [
-			{ name: 'netlistType', type: 'string', description: '网表格式：Protel2/PADS/Allegro/DISA/DSNET 实测可用（4.1.60）；JLCEDA/EasyEDA 官方实现有宿主级缺陷（JLCEDA 挂起/EasyEDA 返空），0.10.45 起直接拒绝并提示改用可用格式；默认官方默认格式' },
+			{ name: 'netlistType', type: 'string', description: '网表格式：Protel2/PADS/Allegro/DISA/DSNET 实测可用（4.1.60）；JLCEDA/EasyEDA 官方实现有宿主级缺陷（JLCEDA 挂起/EasyEDA 返空），0.10.45 起直接拒绝并提示改用可用格式；未传时默认 Protel2，显式传入值原样使用' },
 		],
 		returns: '{ netlistType, length, netlist }',
 		example: { cmd: 'schematic.getNetlist', params: { netlistType: 'Protel2' } },
@@ -4702,7 +5138,7 @@ export const schematicCommands: Array<ICommandDef> = [
 			// JLCEDA 在测试工程挂起 >120s（你方现场报 "i is not iterable"，同一代码路径不同数据形态），
 			// EasyEDA 返空。前置拒绝，避免挂死扩展命令队列 300s；其余格式 45s 超时保护。
 			const KNOWN_BROKEN = new Set(['jlceda', 'easyeda'])
-			const rawType = params.netlistType ? String(params.netlistType) : undefined
+			const rawType = params.netlistType == null ? 'Protel2' : String(params.netlistType)
 			if (rawType && KNOWN_BROKEN.has(rawType.trim().toLowerCase()))
 				throw new Error(`网表格式 "${rawType}" 的官方 getNetlist 实现存在宿主级缺陷（JLCEDA：挂起或报 "i is not iterable"；EasyEDA：返空——0.10.45 实测，EDA 4.1.60）。请改用实测可用格式：Protel2 / PADS / Allegro / DISA / DSNET`)
 			const netlist = await withTimeout(

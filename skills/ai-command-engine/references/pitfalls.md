@@ -23,21 +23,21 @@
 - **NC 引脚禁止接线**（画短桩抛 `create failed!`）——插件预检给中文报错。
 - **共线合并陷阱**：官方把共线重叠/相接的导线自动合并——① 相邻短桩同间隙重叠合并挂两个标签直接串网；② 直线穿中间引脚把它并进网；③ 不同网横腿同深度共线合并。labelWire/linkWire/buildBlock 已防，**手画 drawWire 同样避开**。
 - connectPin 端点落引脚原点、不探入本体；EDA 只认与引脚线段非零重叠的导线——端点对端点重合、网标直贴引脚=致命"引脚端点重叠且未连接"。
-- **标签 rotation 恒 0、锚点压导线/桩末端**（附着看锚点，离线 5 单位即浮标；文字自锚点右伸）；rotation 180=反字（装机实锤），镜像同反字且官方属性接口不支持 mirror——被转/镜像的标签只能转正或删了重放。文字宽≈4.4×字符数+5 单位。短桩默认 60、最小 20。
-- placeNetLabel：压线被拒（自动 ±2 微偏重试）；未附着保留标签返回 `attached:false`；已带网名的导线别再放同名标签（插件拒，force 强行）。
+- **标签 rotation 默认 0、锚点压导线/桩末端**（附着看锚点，离线 5 单位即浮标；文字自锚点右伸）；显式传入 rotation 时尝试设置并读回核对。rotation 180=反字（装机实锤），镜像同反字且官方属性接口不支持 mirror——被转/镜像的标签只能转正或删了重放。文字宽≈4.4×字符数+5 单位。短桩默认 60、最小 20。
+- placeNetLabel：压线被拒（自动 ±2 微偏重试）；只有指定标签 ID、父导线和父导线属性三处读回一致才确认附着，ghost 标签也同样验证。读回未知或确认浮空以 partial 异常返回并保留标签及 ID；`noVerify` 不确认附着。附近同名导线或负坐标不能证明附着；已带网名的导线别再放同名标签（插件拒，force 强行）。
 - **drawWire 带 net 会自动在导线中点落 NET 属性标签**（与 placeNetLabel 两套，同网并存即重复，导线持有属性删不掉）——要标签收尾就"无名线+placeNetLabel"，别两边命名。
 - 导线持有的 Name/NET 属性**删不掉**（官方无类级删除）——唯一可靠办法：**删线重画**（listWires 留几何→delete→drawWire 重画命名→exportNetlist 审计）。
-- `createNetLabel` 假失败复查按**属性值+坐标**匹配，别依赖导线网名异步传播；**文档源码与 API 的 Y 轴符号相反**（API y=-600 ↔ 源码 y=+600），从源码读坐标发指令必须**先翻转 Y**，否则图元画到镜像位置且批量返回全 OK 不易察觉（刹车板实测踩过）；placeNetLabel 附着校验对 Y 符号不敏感（翻转前也报 attached:true），别用它判断坐标对错，一律以源码重扫为准。
+- `createNetLabel` 假失败复查按**属性值+坐标**匹配，别依赖导线网名异步传播；**文档源码与 API 的 Y 轴符号相反**（API y=-600 ↔ 源码 y=+600），从源码读坐标发指令必须**先翻转 Y**，否则图元画到镜像位置且批量返回全 OK 不易察觉（刹车板实测踩过）。附着以指定标签及父导线关系读回为准，坐标正负本身不能证明附着。
 - 人工在 EDA 界面**拖网络标签会丢附着甚至删标签、碎网**——拖后 listNetLabels 查 attached+网表审计成员。
 - 碎网流程：① exportNetlist 审计期望成员；② 缺标签的导线补同名标签（锚点取线段中点）；③ 删不掉的重复/错误属性→删线重画；④ 补完网表审计+runDrc 双确认。
 
 ## 4. 批量删除与浮标清理
 
 - **大批量删除分批多次跑**（原理图 delete batchSize 10 / prune 5），看 `batches`/`unprocessed` 续删，别调大硬跑。
-- 超时返回失败**不代表没删**（官方后台可能继续删）——插件终扫对账把"超时但已删"挪入 `deleted`（`reconciled` 注明）。
-- **会话损坏迹象**：创建类指令（drawWire/placeNetLabel/placeText/placeDevice/labelWire/linkWire）突然全失败/超时而读类正常 → 停止写入，**不保存关页面重开**还原，重开后分批继续。delete 批末探针返回 `sessionHealth:ok|degraded|inconclusive`（0.10.40 起 3 次重试+读回加固）：degraded 先只读复核再决定重开；inconclusive 不采信、不必停摆；`probeResidue` 是残留探针图元 ID，恢复后定点删。
+- `schematic.delete` 在删除调用后立即读回；只有仍存在才按既有 400/600/1000ms 间隔复核。超时不代表没删；读回未知则保留 partial 并停止后续写入，不据此判断宿主根因。
+- 创建连续失败或超时时停止写入并核对现场；删除存在未知写入时跳过健康探针。非未知路径的探针仅单次串行创建/清理，失败或残留必须保留证据。不要依据一次超时直接判断页面损坏或自动关页。
 - 浮标（parentId=$$root）删除主通道借尸还魂（临时线→挂 parentId→删线级联→源码重扫）；官方 modify parentId 假失败（返回 falsy 但已生效）——以源码重扫为准。
-- **文档源码改写默认禁用**（离线验证通过 ≠ 运行时安全，官方写回有额外格式校验）：仅 `allowSourceRewrite:true` 最后手段，先保存，看 warning。
+- **浮空标签处理的源码改写第三兜底默认禁用**（离线验证通过 ≠ 运行时安全，官方写回有额外格式校验）：`allowSourceRewrite` 仅用于此路径，须明确传 `true` 才尝试；先保存并检查 warning。此开关与普通 `TEXT` 删除使用的内部快照路径分开。
 
 ## 5. PCB 布局与分组
 
@@ -66,7 +66,7 @@
 - `project.modifyTitleBlock` 只能改图框**已存在**的字段；纸张切换让用户在 EDA 界面手动改。
 - `project.createPcb`/`project.createSchematic` 的 boardName **必须是已存在的板子名**；新建省略 boardName，之后 `project.associateBoard` 关联。
 - 历史开发环境另有 49620 原生 API 网关，但未随本仓库发布，不是使用前置条件。普通调用先查正式指令帮助；扩展开发需单独确认调试环境和授权。
-- **插件不越权**：指令只检查如实反馈，不擅自修复/删除/回滚；异常返回状态码+warning+建议，由操作者决定（主动调 pruneFloatingLabels/dedupeWireNets/delete 才是授权清理）。
+- **按指令授权范围操作**：不超出被调用指令的授权范围修复、删除或恢复。`dedupeWireNets` 与 `autoRouteStatus` 在已写入后失败时会尝试整页快照恢复并读回；恢复失败或未确认仍报错，不保证成功。`autoLayout` 本身不自动恢复。
 
 ## 桥接开关与多实例（0.10.66~0.10.70 实测，K5~K8）
 
@@ -92,29 +92,30 @@
 - **Footprint 属性 = 空串 → 网表双路径全死**：getNetlist 报"官方返回非字符串或空"、exportNetlist 报"官方返回空（File|undefined）"，Protel2/PADS 一起死，可逆（恢复非空值即恢复）。attr=null（未绑定）反而正常，FOOTPRINT 列自动用器件自带封装。**诊断 XLink 式网表返空先查有没有空串封装**。
 - **Footprint 裸名绑定无效**：setAttribute 写 `R0603` 这类裸名，导出能成功但 FOOTPRINT 列输出 `undefined`（PCB 导入会炸）；正确格式疑为带 uuid 的 JSON（同 DeviceName 格式），未验证。别用裸名补封装。
 - **网表范围 = 整个工程**（跨全部原理图），不是活动页；某页器件属性损坏会把整个工程导出拖死。
+- 网表首个坏快照缺失的根因尚未确认；外部逐页脚本仅用于补充并留存证据，不代表 `getNetlist` 算法已修复。
 - **空串封装失败循环 + save 后，器件全部 ATTR 记录可能丢失**（器件还在，位号/封装/Convert 全没，getAttributes 返空），网表转为**静默剔除**该器件——比报错更危险，导出"成功"但少了器件。时点未隔离，写空串属性是高危操作。
 - `project.save` 不存在，保存用 `schematic.save`（返回 `{saved:true}`）。
 - `getDocumentSource` 读**未打开**的页可能返回当前活动页数据——读源码前先 `editor.openDocument` 激活目标页再核 DOCHEAD.uuid。
 - Convert to PCB 只能改**已存在**的属性；属性丢失后 setAttribute 报"器件上没有属性 X"。
 
-## TEXT 删除不持久（0.10.53 独立复现，0.10.54 修）
+## TEXT 删除与持久性（0.10.85 隔离工程安装验证，EDA 4.1.60）
 
-- **`sch_PrimitiveText` 类级 delete 不持久**：删后源码立刻查不到、save 返回 saved:true，但关开页签/重载后 TEXT 复活；同批 wire 删除正常持久。文档源码是变更日志，类级 TEXT 删除**没追加墓碑**。0.10.54 起插件 TEXT 删除改实例级 get+delete()（同 attribute 分支——attribute 删除在 XLink 千级删除后未复活，证明实例级落盘可靠）。
+- 历史故障：旧类级/实例级和源码墓碑路径曾失败；不代表当前路径。
+- 当前统一使用 `schematic.delete`：源码快照移除后核对源码与模型；内容比较仅忽略两层记录的 `header.ticket`，回放仍保留原 ticket，其余 header、data、记录数、有效记录与模型继续严格核对。0.10.85 隔离工程安装版经 save→close→open 后确认目标未复活。
+- 普通删除不自动保存；`persistenceVerified:false` 表示命令本身没有执行关闭重开验证，并不否定任务级独立验收。按任务另行 save→close→open 并重扫目标。0.10.86 候选移除旧实验入口；隔离工程安装版 0.10.85 仍显示该入口，日常操作统一用 `schematic.delete`。
 - 验证删除持久性不能只看即时读回，必须 **save → `editor.closeDocument` → `editor.openDocument` → 重扫源码**（close 是异步的，关掉后轮询页签列表确认真关了再开）。
 - `editor.closeDocument` 官方关闭异步生效（约 2 秒内页签消失）；脏文档会弹确认框 AI 点不了，返回 closed:false——**关前必须先 schematic.save**。
 
-## TEXT 官方 API 层只读（0.10.55 终局实测，EDA 4.1.60）
+## TEXT 官方 API 层历史实测（0.10.55，EDA 4.1.60）
 
-- **TEXT 创建能持久，但创建后的修改和删除都不落盘**：类级/实例级 delete 即时读回消失，save 后关开必复活（原始 ticket 原样回来）；modifyText 改坐标/内容同理弹回。保存时宿主按内存模型重写日志，TEXT 永远按加载快照写回。
-- **插件侧所有绕路均无效**：搭车其他操作的 save 带不动；append-only 墓碑 setDocumentSource 返回 true 但保存时被压缩覆盖。**TEXT 视为只读**：可创建，不修改、不删除；要清理 TEXT 如实告知用户手动在 EDA 界面删（UI 路径不走 pro API，预期有效，删一页验证一页）。
+- 当时观察到 TEXT 创建可持久，而修改和类级/实例级删除会在保存重开后弹回；`setDocumentSource` 墓碑实验虽返回 true 也未持久。这是 0.10.55 的历史结论，不代表当前源码快照候选已经通过宿主持久性验收。
 - 判定删除是否持久必须 save → `editor.closeDocument`（轮询确认真关）→ `editor.openDocument` → 重扫，只看即时读回会被骗（TEXT 假删除即时读回也是消失的）。
-- `schematic.deleteTextViaSource`（0.10.55 墓碑实验指令）实测无效，保留作诊断用途，勿用于生产。
 
 ## 工程切换与改名（0.10.59~0.10.61 实测）
 
 - **project.open 遇脏页直接失败**：当前工程有未保存修改时，官方 openProject 返回 false（报"工程打开失败"，uuid 明明正确）。先 `schematic.save`（返回 `{saved:true}`）再切工程。
 - **renameSchematicPage 三前置**（独立工程多窗口实测）：①目标页文档须在本窗口打开激活；②页所在文档须在本窗口 save 过一次；③改名异步提交读回 >800ms。缺任一则官方返回 false 且不排队=假失败。隐藏规律：全新窗口从未成功改过页名时，其他窗口创建的旧页被永远拒绝；对本窗口新建页成功改名一次即解锁全部页。renameBoard 按名匹配会误改 Panel——改名前后快照比对，只信快照。
-- **placeNetLabel 附着回读判浮空**（验证两次）：附着成功的标签回读 y 为正，浮空（没挂到线）回读 y 为负——负 y 标签 = 浮空，不是坐标错误；rot270 本身无毛病。
+- placeNetLabel 的附着要按指定标签 ID、父导线和父导线属性交叉读回；单看标签坐标正负不能判定附着。
 - **deleteBoard 可能删不掉**：空板删除返回 `deleted:false` 且重试无效（实例：XLink 误建空板 Schematic8），只能请用户手动删。
 
 ## structuralAudit 宿主语义边界（0.10.60/0.10.61 故障注入实测）
