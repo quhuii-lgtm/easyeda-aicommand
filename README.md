@@ -67,6 +67,6 @@ python -B -m unittest discover -s skills/ai-command-engine/tests -v
 
 ## 反馈与许可
 
-问题请提交到 [Issues](https://github.com/quhuii-lgtm/easyeda-aicommand/issues)，附版本、仓库提交、复现步骤及脱敏错误。升级、密钥迁移与卸载见 [指南](docs/QUICKSTART.md#升级停止与卸载)。
+问题请提交到 [Issues](https://github.com/quhuii-lgtm/easyeda-aicommand/issues)。AI 可按统一格式整理问题，提交前告知使用者，再通过本机 GitHub CLI 登录身份自动提交并返回链接；无需逐条再次确认。首次登录、报告格式和失败处理见 [问题上报流程](skills/ai-command-engine/references/issue-reporting.md)。升级、密钥迁移与卸载见 [指南](docs/QUICKSTART.md#升级停止与卸载)。
 
 [Apache-2.0](LICENSE)。构建框架原有历史保留在 [SDK changelog](docs/SDK-CHANGELOG.md)。
