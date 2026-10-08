@@ -7,6 +7,8 @@ description: 通过简易 JSON 指令操作嘉立创 EDA 专业版（EasyEDA Pro
 
 本技能可独立安装，不依赖作者本机的其他技能或调试网关。首次装机见仓库 README；连接细节见 setup。
 
+配套代理和技能从[项目仓库](https://github.com/quhuii-lgtm/easyeda-aicommand)获取，并按所用版本/提交保持一致；插件市场安装不会替使用者部署本地代理或向 AI 工具安装技能。v0.10.88 目前是未发布候选，当前公开版为 [v0.10.87](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.10.87)；候选状态和有限验证范围见[候选说明](https://github.com/quhuii-lgtm/easyeda-aicommand/blob/main/docs/releases/v0.10.88.md)。使用仍需另行安装 Node.js >=20.17.0、运行本地代理、安装本技能，并在 EDA 启用扩展和允许外部交互。
+
 HTTP 发 JSON 到 `http://localhost:49720` 操作 EasyEDA Pro；禁止自编 `eda.*` API。
 
 ## 新手必读（首次操作前读一遍，熟悉后跳过）

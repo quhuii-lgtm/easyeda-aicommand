@@ -25,3 +25,4 @@ debug.log
 /bridge/proxy-restart.log
 __pycache__/
 *.tsbuildinfo
+/images/logo.png
