@@ -2,26 +2,26 @@
 	"name": "ai-command-engine",
 	"uuid": "29aa51f0bed4411d866cb7a7a249231a",
 	"displayName": "AI Command Engine",
-	"description": "AI 指令引擎：为 AI 编程工具提供简易 JSON 指令接口，内部封装嘉立创 EDA 专业版扩展 API，支持宏指令组合与布线知识库",
-	"version": "0.10.87",
+	"description": "通过本地代理与 AI 技能驱动嘉立创 EDA 专业版的原理图、PCB、工程及元件库操作；需另行安装本地代理并启用 AI 技能。",
+	"version": "0.10.88",
 	"publisher": "ai-command-engine",
 	"engines": {
 		"eda": "^3.2.0"
 	},
 	"license": "Apache-2.0",
 	"repository": {
-		"type": "extension-store",
-		"url": ""
+		"type": "github",
+		"url": "https://github.com/quhuii-lgtm/easyeda-aicommand"
 	},
-	"categories": "Other",
+	"categories": ["Schematic", "PCB", "Library", "Project"],
 	"keywords": [
 		"Tool"
 	],
 	"images": {
-		"logo": "./images/logo.png"
+		"logo": "./images/logo-marketplace.png"
 	},
-	"homepage": "",
-	"bugs": "",
+	"homepage": "https://github.com/quhuii-lgtm/easyeda-aicommand",
+	"bugs": "https://github.com/quhuii-lgtm/easyeda-aicommand/issues",
 	"activationEvents": {
 		"onStartupFinished": true
 	},
