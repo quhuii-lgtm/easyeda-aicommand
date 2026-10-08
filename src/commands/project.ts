@@ -390,25 +390,14 @@ export const projectCommands: Array<ICommandDef> = [
 					catch { /* 激活失败不阻断，openDocument 本身通常已激活 */ }
 					await new Promise(resolve => setTimeout(resolve, 800))
 				}
-				// 0.10.65 修复：官方对已打开文档可能返回空 tabId，此时 sch_Document.save() 保存的是
-				// 「当前焦点文档」而非目标页——save 前置没真正满足（改名必 false），还会误保存别的文档。
-				// 空 tabId 时先轮询确认焦点就是目标页（最多 ~1.5s），不符再 openDocument 重试一次；
-				// 仍不符就跳过 save，绝不再盲保存焦点文档（改名仍尝试，失败重试路径会给出可执行建议）。
-				let focusOk = Boolean(tabId)
-				if (!focusOk) {
-					for (let i = 0; i < 5 && !focusOk; i++) {
-						const focus: any = await eda.dmt_SelectControl.getCurrentDocumentInfo().catch(() => undefined)
-						focusOk = focus?.uuid === pageUuid
-						if (!focusOk)
-							await new Promise(r => setTimeout(r, 300))
-					}
-					if (!focusOk) {
-						try { await eda.dmt_EditorControl.openDocument(pageUuid) }
-						catch { }
-						await new Promise(r => setTimeout(r, 500))
-						const focus: any = await eda.dmt_SelectControl.getCurrentDocumentInfo().catch(() => undefined)
-						focusOk = focus?.uuid === pageUuid
-					}
+				// openDocument 返回的 tabId 只能标识标签，不能证明当前焦点；save() 无目标参数，
+				// 每次保存前都必须读取焦点 UUID 并确认它就是目标页。
+				let focusOk = false
+				for (let i = 0; i < 5 && !focusOk; i++) {
+					const focus: any = await eda.dmt_SelectControl.getCurrentDocumentInfo().catch(() => undefined)
+					focusOk = focus?.uuid === pageUuid
+					if (!focusOk)
+						await new Promise(r => setTimeout(r, 300))
 				}
 				if (focusOk) {
 					try { await eda.sch_Document.save() }
@@ -494,62 +483,67 @@ export const projectCommands: Array<ICommandDef> = [
 	},
 	{
 		name: 'project.modifyTitleBlock',
-		summary: '修改当前原理图图页的标题栏（图框）显示与内容。⚠️ data 的键必须是当前图框里已存在的字段名（先用 schematic.getPageInfo 查 titleBlockData 看可用键）；传了不存在的键官方会抛 TypeError。纸张大小（Page Size）/图框符号（Symbol）实测不能通过此接口切换，请让用户在界面手动改',
+		summary: '修改当前原理图图页的标题栏（图框）显示与内容。data 的键必须是当前图框里已存在的字段名（先用 schematic.getPageInfo 查 titleBlockData）；省略的字段状态沿用当前值。modified=true 仅代表宿主接受提交，不代表已保存或读回确认。纸张大小（Page Size）/图框符号（Symbol）实测不能通过此接口切换，请让用户在界面手动改',
 		params: [
 			{ name: 'showTitleBlock', type: 'boolean', description: '是否显示标题栏' },
-			{ name: 'data', type: 'object', description: '标题栏字段，如 { "Title": { value: "主控板" } }；键必须先存在' },
+			{ name: 'data', type: 'object', description: '标题栏字段，如 { "Title": { value: "主控板" } }；键必须先存在，省略的 showTitle/showValue/value 沿用当前值' },
 		],
-		returns: '{ modified }',
+		returns: '{ modified, submitted, readback?: { uuid, verified: false }, note? }（modified=true 仅代表宿主接受提交，不代表已保存或读回确认）',
 		example: { cmd: 'project.modifyTitleBlock', params: { showTitleBlock: true } },
 		handler: async (params) => {
-			// 官方 API 对不存在的字段键直接抛 TypeError（setting 'value' of undefined），
-			// 先读当前图框字段做预检，把裸异常变成可行动的报错
-			if (params.data && typeof params.data === 'object') {
-				try {
-					const info = await eda.dmt_Project.getCurrentProjectInfo()
-					const findPage = (node: any): string | undefined => {
-						if (node?.itemType === 'Schematic Page')
-							return node.uuid
-						for (const child of Object.values(node ?? {})) {
-							if (Array.isArray(child)) {
-								for (const item of child) {
-									const hit = findPage(item)
-									if (hit)
-										return hit
-								}
-							}
-							else if (child && typeof child === 'object') {
-								const hit = findPage(child)
-								if (hit)
-									return hit
-							}
-						}
-						return undefined
-					}
-					const pageUuid = findPage(info)
-					const page = pageUuid ? await eda.dmt_Schematic.getSchematicPageInfo(pageUuid) : undefined
-					const available = Object.keys((page as any)?.titleBlockData ?? {})
-					if (available.length) {
-						const unknown = Object.keys(params.data).filter(k => !available.includes(k))
-						if (unknown.length)
-							throw new Error(`标题栏不存在字段: ${unknown.join('、')}（当前图框可用字段: ${available.join('、')}）。注意：Page Size / Symbol 不能用此接口切换纸张，请在 EDA 界面手动修改`)
-					}
-				}
-				catch (err) {
-					if (err instanceof Error && err.message.includes('标题栏不存在字段'))
-						throw err
-					// 预检失败不阻断，交给官方调用
+			if (!params || typeof params !== 'object' || Array.isArray(params))
+				throw new Error('标题栏请求参数必须是对象')
+			if (params.showTitleBlock != null && typeof params.showTitleBlock !== 'boolean')
+				throw new Error('showTitleBlock 必须是布尔值')
+			if (params.data !== undefined && (!params.data || typeof params.data !== 'object' || Array.isArray(params.data)))
+				throw new Error('data 必须是包含标题栏字段对象的对象')
+			// 此接口只修改当前图页，先确认实际焦点是有效原理图页，再读取该页字段。
+			const focus: any = await eda.dmt_SelectControl.getCurrentDocumentInfo()
+			if (focus?.documentType !== 1 || !focus?.uuid)
+				throw new Error('无法确认当前焦点是有效原理图图页，未修改标题栏')
+			const page: any = await eda.dmt_Schematic.getSchematicPageInfo(String(focus.uuid))
+			if (!page || page.uuid !== focus.uuid)
+				throw new Error(`无法读取当前焦点图页 ${String(focus.uuid)}，未修改标题栏`)
+			const mergedData: Record<string, any> | undefined = params.data === undefined ? undefined : {}
+			if (params.data !== undefined) {
+				const available = Object.keys(page.titleBlockData ?? {})
+				const unknown = Object.keys(params.data).filter(k => !available.includes(k))
+				if (unknown.length)
+					throw new Error(`标题栏不存在字段: ${unknown.join('、')}（当前图框可用字段: ${available.join('、')}）。注意：Page Size / Symbol 不能用此接口切换纸张，请在 EDA 界面手动修改`)
+				for (const [key, requested] of Object.entries(params.data)) {
+					if (!requested || typeof requested !== 'object' || Array.isArray(requested))
+						throw new Error(`标题栏字段 ${key} 的值必须是对象`)
+					const current = page.titleBlockData?.[key]
+					if (!current || typeof current !== 'object' || Array.isArray(current))
+						throw new Error(`当前图框字段 ${key} 没有可沿用的状态，无法完整修改`)
+					const merged = { ...current, ...requested }
+					if (typeof merged.showTitle !== 'boolean' || typeof merged.showValue !== 'boolean' || merged.value === undefined)
+						throw new Error(`当前图框字段 ${key} 缺少 showTitle/showValue/value 状态，无法完整修改`)
+					mergedData![key] = merged
 				}
 			}
+			const writeFocus: any = await eda.dmt_SelectControl.getCurrentDocumentInfo()
+			if (writeFocus?.documentType !== 1 || writeFocus?.uuid !== focus.uuid)
+				throw new Error(`标题栏校验期间焦点已从图页 ${String(focus.uuid)} 切换，未修改标题栏`)
+			let modified: boolean
 			try {
-				const modified = await eda.dmt_Schematic.modifySchematicPageTitleBlock(
-					params.showTitleBlock != null ? Boolean(params.showTitleBlock) : undefined,
-					params.data as any,
+				modified = await eda.dmt_Schematic.modifySchematicPageTitleBlock(
+					params.showTitleBlock ?? undefined,
+					mergedData,
 				)
-				return { modified: Boolean(modified) }
 			}
 			catch (err) {
-				throw new Error(`标题栏修改失败：${(err as any)?.message ?? err}。常见原因：data 含当前图框不存在的字段键，或试图用此接口切换 Page Size / Symbol（不支持，需界面手动操作）`)
+				throw new Error(`标题栏修改失败：${(err as any)?.message ?? err}。常见原因：data 含当前图框不存在的字段键，或试图用此接口切换 Page Size / Symbol（不支持，需界面手动操作）`, {
+					cause: { partial: true, retryable: false, phase: 'project.modifyTitleBlock write', operationError: (err as any)?.message ?? String(err) },
+				})
+			}
+			if (!modified)
+				return { modified: false, submitted: false }
+			return {
+				modified: true,
+				submitted: true,
+				readback: { uuid: focus.uuid, verified: false },
+				note: '宿主已接受修改，内容尚待独立读回确认',
 			}
 		},
 	},

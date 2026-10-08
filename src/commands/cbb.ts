@@ -17,17 +17,11 @@
 import type { ICommandDef } from '../engine/types'
 import { fileToResult } from './util'
 
-/** 0.10.62：按名精确回搜 CBB（消官方创建类假失败——返回空但实际已建）。只认精确同名，找不到返回 null。 */
-async function searchCbbByName(name: string, libraryUuid: string): Promise<{ uuid: string } | null> {
-	try {
-		const results = await eda.lib_Cbb.search(name, libraryUuid, undefined, 20, 1)
-		const list: Array<any> = Array.isArray(results) ? results : []
-		const hit = list.find(it => it && String(it.name ?? '') === name && it.uuid)
-		return hit ? { uuid: String(hit.uuid) } : null
-	}
-	catch {
-		return null
-	}
+function unconfirmedCbbWriteError(action: string): Error {
+	return new Error(
+		`${action}结果未确认：官方接口返回空，操作可能已完成也可能未完成。请先检查目标库；勿直接使用同名模块或重复执行`,
+		{ cause: { partial: true, retryable: false } },
+	)
 }
 
 export const cbbCommands: Array<ICommandDef> = [
@@ -110,7 +104,7 @@ export const cbbCommands: Array<ICommandDef> = [
 			{ name: 'name', type: 'string', required: true, description: '模块名称' },
 			{ name: 'description', type: 'string', required: false, description: '描述' },
 		],
-		returns: '{ cbbUuid, verify? }——官方返回空时自动按名回搜一次，区分"真失败"与"假失败（实际已创建，0.10.62 起）"',
+		returns: '{ cbbUuid, verify? }——仅官方直接返回 UUID 时确认创建成功；空返回标记为结果未确认',
 		example: { cmd: 'cbb.create', params: { libraryUuid: 'xxx', name: 'STM32F103最小系统' } },
 		handler: async (params) => {
 			if (!params.libraryUuid || !params.name)
@@ -125,13 +119,8 @@ export const cbbCommands: Array<ICommandDef> = [
 			)
 			if (cbbUuid)
 				return { cbbUuid, verify: 'official' }
-			// 0.10.62：官方创建类接口有假失败（返回空但实际已创建，事务不回滚）——按名回搜再判定，防重试建重名
-			const found = await searchCbbByName(name, libraryUuid)
-			if (found) {
-				return { cbbUuid: found.uuid, verify: 'search',
-					warning: `官方 create 返回空，但按名「${name}」回搜到已存在模块——判定为假失败（实际已创建）。请勿重试，直接使用该 cbbUuid` }
-			}
-			throw new Error('创建失败（可能重名或无权限；已按名回搜确认不存在）')
+			// 官方接口返回空时不能把同名库对象判定为本次创建成功。
+			throw unconfirmedCbbWriteError('创建')
 		},
 	},
 	{
@@ -143,7 +132,7 @@ export const cbbCommands: Array<ICommandDef> = [
 			{ name: 'targetLibraryUuid', type: 'string', required: true, description: '目标库 UUID' },
 			{ name: 'newName', type: 'string', required: false, description: '新名称（目标库重名会失败）' },
 		],
-		returns: '{ cbbUuid, verify? }——官方返回空且带了 newName 时自动在目标库按名回搜一次，区分真失败与假失败（0.10.62 起）',
+		returns: '{ cbbUuid, verify? }——仅官方直接返回 UUID 时确认复制成功；空返回标记为结果未确认',
 		example: { cmd: 'cbb.copy', params: { cbbUuid: 'xxx', libraryUuid: 'sys', targetLibraryUuid: 'personal', newName: '我的模块' } },
 		handler: async (params) => {
 			if (!params.cbbUuid || !params.libraryUuid || !params.targetLibraryUuid)
@@ -157,15 +146,8 @@ export const cbbCommands: Array<ICommandDef> = [
 			)
 			if (newUuid)
 				return { cbbUuid: newUuid, verify: 'official' }
-			// 0.10.62：假失败回搜（须带 newName 才能按名定位）
-			if (params.newName) {
-				const found = await searchCbbByName(String(params.newName), String(params.targetLibraryUuid))
-				if (found) {
-					return { cbbUuid: found.uuid, verify: 'search',
-						warning: `官方 copy 返回空，但按名「${String(params.newName)}」在目标库回搜到已存在模块——判定为假失败（实际已复制）。请勿重试` }
-				}
-			}
-			throw new Error(`复制失败（可能目标库重名${params.newName ? '；已按名回搜目标库确认不存在' : '；未传 newName 无法按名回搜'}）`)
+			// 官方接口返回空时不能把同名库对象判定为本次复制成功。
+			throw unconfirmedCbbWriteError('复制')
 		},
 	},
 	{

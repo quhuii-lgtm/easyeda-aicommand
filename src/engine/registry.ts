@@ -308,6 +308,26 @@ async function executeMacro(
 		diag('macro', 'step-done', `第${index + 1}/${steps.length}步 ${step.cmd} ok=${result.ok}${result.ok ? '' : ` 错误=${result.error?.message ?? ''}`}`)
 		if (result.ok && step.id)
 			ctx.vars[step.id] = result.data
+		const partialCause = (result as any)?.error?.cause
+		// partial 表示包装层已停止等待，但官方调用可能还在后台改工程。即使 stopOnError=false
+		// 也必须停宏，避免后续写入与未确认的旧写交错；保留 cause 供代理写保护识别。
+		if (partialCause?.partial === true) {
+			const failed = results.filter(r => !r.ok).length
+			const unexecutedSteps = steps.length - index - 1
+			failTask(task, `第 ${index + 1} 步（${step.cmd}）结果不确定`)
+			diag('macro', 'stopped-partial', `第${index + 1}步 ${step.cmd} 返回 partial，跳过后续 ${unexecutedSteps} 步`)
+			return {
+				ok: false,
+				cmd: 'macro',
+				error: {
+					message: `宏在第 ${index + 1} 步（${step.cmd}）结果不确定：官方操作可能仍在后台执行；已停止并跳过后续 ${unexecutedSteps} 步。不要直接重发该宏。`,
+					suggestion: '先用只读指令核对现场并确认原操作已结束，再决定如何处理写保护。',
+					cause: partialCause,
+				},
+				data: { total: results.length, failed, steps: results, stoppedAtStep: index + 1, stoppedReason: 'partial', unexecutedSteps, taskId: task.id },
+				durationMs: Date.now() - started,
+			} as TCommandResult
+		}
 		// 0.10.52（KIMI-EDA-20261003-09）：健康降级传播——子步骤 sessionHealth=degraded 时
 		// 写通道可能已损坏，继续执行后续写入只会扩大残留/假成功，必须当作停止条件；
 		// 此前只认 result.ok，delete 返回 ok:true+degraded 被宏吞掉，最终 total8/failed0 掩盖降级。

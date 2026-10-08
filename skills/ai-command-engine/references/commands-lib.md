@@ -14,7 +14,7 @@
 | `lib.symbolUpdateSource` | 符号文档源码写回库 | `symbolUuid`, `documentSource` |
 | `lib.symbolSearch` / `symbolGet` / `symbolCopy` / `symbolModify` / `symbolDelete` | 同构五件套 | search: 无必填；get/delete: `symbolUuid`；copy: +`targetLibraryUuid` |
 | `lib.footprintCreate` / `footprintUpdateSource` / `footprintSearch` / `footprintGet` / `footprintCopy` / `footprintModify` / `footprintDelete` | 封装同构七件套 | 同上（uuid 名为 footprintUuid） |
-| `lib.deviceCreate` | **组装器件**：已有符号+封装(+3D) 绑成完整器件（不绑符号无法创建） | `name`；`symbolUuid?`、`footprintUuid?`、`model3DUuid?`、`property?`（designator/addIntoBom/addIntoPcb/manufacturer/supplier 等） |
+| `lib.deviceCreate` | **组装器件**：已有符号+封装(+3D) 绑成完整器件（不绑符号无法创建） | `name`, `symbolUuid`（必填）；`footprintUuid?`、`model3DUuid?`、`property?`（designator/addIntoBom/addIntoPcb/manufacturer/supplier 等） |
 | `lib.deviceSearch` / `deviceGet` / `deviceGetByLcscIds` / `deviceCopy` / `deviceModify` / `deviceDelete` | 器件六件套 | get/delete: `deviceUuid`；copy: +`targetLibraryUuid` |
 | `lib.symbolOpenInEditor` / `lib.footprintOpenInEditor` | 在符号/封装编辑器中打开库元件（编辑内容用；打开后配合 project.getDocumentSource 读源码） | `symbolUuid*`/`footprintUuid*`，`libraryUuid?` |
 

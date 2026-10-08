@@ -25,12 +25,14 @@
 
 已放好的器件重排+重建连线。`designators` 或 `region` 二选一框定器件。
 
-流程：导网表取连接表（NC/悬空跳过）→ 网络聚类贪心排序+行列排布（横距 60 行距 90，`template` 可改）→ 移动器件（官方 modify 读回验证）→ **rewire（默认开）**：删碰旧引脚的导线（级联删标签）+清浮标+连接表转 batchWire 重建。
+流程：导网表取连接表（NC/悬空跳过）→ 网络聚类贪心排序+行列排布（横距 60 行距 90，`template` 可改）→ 安全移动器件（读回几何并核对其他状态）→ **rewire（默认开）**：删碰旧引脚的导线（级联删标签）+清浮标+连接表转 batchWire 重建。
 
-- **dryRun 默认 true**：只出方案（plan 旧→新坐标；connections 连接表+link/label 风格），确认后 `dryRun:false` 才动。真跑不可逆，**跑前保存工程**。
+- **dryRun 默认 true**：只出方案（plan 旧→新坐标；connections 连接表+link/label 风格），确认后 `dryRun:false` 才动。真跑前先保存工程。自动布局本身不会自动恢复已发生的移动；
 - 官方移动器件后旧导线/标签不跟随（实测）；rewire 是删旧重建不是平移。
+- 移动失败的 `stateDifferences` 保留 `undefined`、`null`、空串等实际值并由 `autoLayout` 透传；非几何状态保护仍有效，现场属性变化的原因尚未确认。
+- 网表首个坏快照缺失的根因尚未确认；外部逐页脚本用于补充并留存证据，不据此声称 `getNetlist` 算法已修复。
 - rewire：link 直连先于 label；删线前按全页引脚分类——纯内部线照删；带 1 外部引脚的线删后自动补网（`externalRewired`）；穿 ≥3 引脚的复杂长线保留（`skippedWires`，可能留悬线需人工复核）；link 重建因穿第三方引脚失败自动降级两端 label（`fallbacks`）；仍未恢复进 `rewireFailed`（旧线已删、网断，须人工修）。
-- 跑完看 `moved`/`moveFailed`/`rewired`（含 wireAudit）/`drc`，并目测画布。
+- 跑完看 `moved`/失败 `error.cause` 中的 `partial`、`moved`、`phase`、`stateDifferences`/`rewired`（含 wireAudit）/`drc`；有部分移动失败时先停止后续写入并检查 `error.cause.moved` 指出的现场，再依据备份受控恢复，并目测画布。
 - 分工：**buildBlock 从零生成；autoLayout 整理已有**。
 
 ### `schematic.batchWire` — 批量连线
@@ -78,7 +80,7 @@
 - drawWire 智能命名：该网已在页面存在则自动画无名段。
 - connectPin 别让导线探入器件本体侧（端点落引脚线中段→T 形结点红点+"单网络"警告）；EDA 只认与引脚线段非零重叠的导线——端点对端点重合、网标直贴引脚都报致命"引脚端点重叠且未连接"。
 - **共线合并陷阱**：官方自动把几何共线重叠/相接的导线合并——勿画穿中间引脚的长直线（会把中间引脚并进网）；勿让不同网的导线/短桩/横腿共线重叠（串网）。批量指令内部已防，手画 drawWire 同样避开。
-- placeNetLabel：标签压线体上会被拒（自动 ±2 微偏重试）；未附着**不再自动删**，返回 `attached:false`+建议（`noVerify:true` 跳过）；附近导线已有该网名拒绝（`force:true` 强放）；rotation 恒 0。
+- placeNetLabel：标签压线体上会被拒（自动 ±2 微偏重试）；只有按本次标签 ID、父导线及父导线属性三处读回一致，才返回 `attached:true` 和 `wireId`，ghost 标签也走同一验证。读回未知或确认浮空时以 partial 异常返回并保留标签及 ID，不自动删除；`noVerify:true` 不证明已附着。附近同名导线或负坐标都不能证明附着；已有该网名的导线仍拒绝（`force:true` 强放）；`rotation` 默认 0，显式传入时尝试设置并读回核对。
 - 网格吸附：坐标取 10 的倍数，否则 DRC 报"网络图元不在格点上"。
 
 ### 修改类
@@ -99,20 +101,19 @@
 
 | 指令 | 说明 | 关键参数 |
 | --- | --- | --- |
-| `schematic.pruneFloatingLabels` | **【宏】清浮空标签**（附着残留、删线孤儿） | `dryRun?`, `batchSize?`, `allowSourceRewrite?` |
+| `schematic.pruneFloatingLabels` | **【宏】清浮空标签**（附着残留、删线孤儿） | `dryRun?`（默认 `false`；预览须显式传 `true`）, `batchSize?`, `allowSourceRewrite?`（仅控制浮空标签处理的源码改写兜底） |
 | `schematic.fixNetLabels` | **【宏】标签全科体检**：①浮空 ②重复 ③反字 ④位置不对 | `dryRun?`, `angle?`, `net?` |
 | `schematic.repairNet` | **碎网修复宏**：审计→收养无名残线→补标签→网表前后对比 | `net`, `adoptWireIds?`, `dryRun?` |
 | `schematic.dedupeWireNets` | 清"导线多个网络名"警告（仅历史图纸） | 无 |
-| `schematic.delete` | 删图元（批量；先识别类型+删后读回+终扫对账） | `primitiveIds`, `batchSize?` |
-| `schematic.deleteTextViaSource` | **【实验性·TEXT 专项】**官方 TEXT delete 不落盘（0.10.53/54 实测删后复活），本指令走源码 append-only 墓碑删除 | `primitiveIds*`, `save?` |
+| `schematic.delete` | 删图元（批量；先识别类型+删除后立即读回+终扫对账；仍在才按既有间隔复核；未知读回以 partial 停止后续写入） | `primitiveIds`, `batchSize?` |
 
 - **浮空标签（parentId=$$root）官方删除盲区**：属性图元不支持删除（@internal），主通道**借尸还魂**（建临时导线→modify 挂 parentId→删导线级联带走→源码重扫验证）；官方 modify parentId 有假失败——以走完后的源码重扫为准。
 - pruneFloatingLabels：dryRun 返回每个浮标世界坐标（**Y 已翻成 API 坐标**，便手动框选兜底）。每条 8s 熔断、连 3 败熔断整批、`batchSize` 默认 5（批间停 300ms，看 `batches`/`unprocessed` 分批续删，**不要调大硬跑**）。**大批量分多次跑**。
-- **文档源码改写默认禁用**（实机事故：离线字节级验证过 ≠ 运行时安全，官方写回有格式校验弹窗拒绝）：仅 `allowSourceRewrite:true` 才执行（最后手段），返回带 `warning`，操作前保存工程。全失败返回 `manualDelete` 世界坐标清单。
+- **浮空标签处理的源码改写第三兜底默认禁用**（实机事故：离线字节级验证过 ≠ 运行时安全，官方写回有格式校验弹窗拒绝）：仅显式传入 `allowSourceRewrite:true` 才尝试，返回带 `warning`，操作前保存工程。此开关与普通 `TEXT` 删除使用的内部快照路径分开；全失败返回 `manualDelete` 世界坐标清单。
 - **会话损坏迹象**：创建类指令（drawWire/placeNetLabel/placeText/placeDevice/labelWire/linkWire）突然全 `create failed!` 或超时而读类正常 → 判定损坏；不空跑（插件连 3 败自动熔断）；**不保存直接关页面重开**即可还原，重开后分批继续。
 - fixNetLabels：**dryRun 默认 true 只出四类体检报告**（id/net/世界坐标/问题/建议），确认后 `dryRun:false` 真修，逐条收错，修完自动 pruneFloatingLabels 复核。四类：浮空（parentId=$$root，DRC 来源）；重复（同线同网名>1 或锚点距<10）；反字（rotation 180）；位置不对（锚点离线>20 或导线戳出悬空端点）。
 - repairNet：人工拖标签致网断后用它收尾；流程另见 pitfalls.md。
-- **delete 加固**：官方 delete 对类型不匹配甚至不存在的 ID 也可能返回 true——插件先识别真实类型、删后读回、整批后**终扫对账**（超时但后台已删的挪 `deleted`，`reconciled` 注明）。逐项 8s 熔断、连 3 败熔断整批、`batchSize` 默认 10、全局预算 100s、`unprocessed` 可续删。**大批删除保持默认分批**。批末自动探针图元，返回 `sessionHealth:ok|degraded|inconclusive`——0.10.40 起探针加固（焦点复核+3 次重试+创建/删除读回+残留报 `probeResidue`）：`degraded`（创建 3 连败或删除异常）先用只读指令复核再决定【不保存重开页面】；`inconclusive` 是探针未得出可信结论（如焦点不在对应文档），不采信、删除结果本身已读回验证、不必停摆。**0.10.42 起返回带 `taskId`**：客户端超时时用 `task.get {taskId}` 查实时进度/补取结果（结果留 15 分钟）；同 ID 清单在跑时重发只回 `alreadyRunning` 进度不重复执行；全部收尾 await 已有超时保护，整批最坏 ~200s 必返回。
+- **delete 加固**：先识别类型；删除调用后立即读回，只有仍在才按既有 400/600/1000ms 间隔复核，最后终扫对账。SDK 布尔返回不代表成功；写入超时或读回未知保持 partial，停止后续项和健康探针，不能用“终扫目标消失”清洗未知写入。`unprocessed` 只表示未处理，须先核对现场和写保护。非未知路径的健康探针仅单次串行创建/清理；探针不能代替保存重开。`taskId` 可用于查询原任务，超时不代表取消。`deletedBy` 含 `text` 时，日常统一用 `schematic.delete`，不自动保存；按任务另行 save→close→open 核验持久性。
 - 导线中点的 NET 属性标签**不支持单独删**（delete 报"删后仍在"是预期）——只能删整根导线重画。
 
 ## ④ 查询与检查导出

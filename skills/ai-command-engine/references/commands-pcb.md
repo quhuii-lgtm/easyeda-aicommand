@@ -17,6 +17,7 @@
 | `pcb.delete` | 删图元（同 schematic.delete 加固） | `primitiveIds`, `batchSize?` |
 
 - **DRC 只查铜皮间距，不查本体/丝印重叠**——大本体器件（连接器、电解电容）DRC 过也可能互压；checkPlacement 按焊盘包围盒，大本体加 `margin`（10~30mil）近似。
+- `pcb.checkPlacement` 对任意角度矩形、椭圆（含圆形）、胶囊形焊盘计算保守外包盒；NGON 使用外接圆包围盒。包围盒保留小数。遇到不支持的形状或无效焊盘数据时跳过该整器件，列入 `skippedUnsupported` 并返回 `complete:false`；无焊盘器件列入 `skippedNoPads`，同样不算完整检查。
 - **groupBySchematicRegions**：读全图页区框（`pageUuid` 限定），按位号文本位置归属、多框取面积最小；组内位号前缀分行（U>R>C>L>D>Q>其他）；组间货架 packing 强制收进板框，摆不下报错并附诊断（板框宽高、可用宽、rowLimit、各组 bbox）。布局引擎是官方原版移植（X86 主板验证）：组按估算面积升序货架横排（rowLimit=min(官方值,可用宽)，组缝 120），贪心避让 gap 10/15，R/C/L 强制 angle=0。避让既有器件（实测 bbox 作 obstacles，绕不开记 `blockedBy` 出口闸报错）。测量链三级（封装源码→实测→兜底），placements 带 `measured/measureSource`（fallback 项宽高可能有偏差）。组边框+组名生成 `spg_` 前缀文档层（layerId=13），重复执行先清场，实跑后源码回读核销。**五步管线**：版本化备份（`backups/<工程>/<时间戳>.txt` 留 5 份）→写源码→回读比对（容差 0.001）→失败整份恢复→全过才保存。**dryRun 默认 true**。⚠️ 调用前焦点在 PCB，执行中短暂切焦点读原理图再切回。（0.10.55 起为唯一自动布局指令，autoPlace 已删除。）
 - **sourceRollback**：`list:true` 列备份；否则恢复（默认最近或按 `backupId`），恢复前校验 pcbUuid 匹配，恢复后回读+保存。
 - **pcb.delete**：同 schematic.delete 加固（识别类型+删后读回+8s 熔断+连 3 败熔断+batchSize 10+预算 100s+终扫对账+sessionHealth 探针+taskId 查进度）。
@@ -31,8 +32,13 @@
 | `pcb.rebuildPour` | 重建铺铜填充并读回 | `primitiveId?`（留空=全板） |
 | `pcb.listLines`/`listVias`/`listPours` | 读回自查（listPours 传 `withFill:true` 可读回填充状态） | `net?` |
 | `pcb.listNets` | 列全部网络 | 无 |
-| `pcb.importAutoRouteSes` | SES 回灌 | 无 |
+| `pcb.importAutoRouteSes` | 导入并回灌 SES 自动布线结果 | `base64`（SES 文件内容的 Base64 编码，必填）, `fileName?`（默认 `autoroute.ses`） |
 
+- `pcb.listPours` 的 `withFill:true` 返回 `filled:boolean|null` 与 `fillStatus:filled|empty|unknown`，并可带 `fillRegions`、`fillPrimitiveId`、`fillReadError`。无填充区域，或有效填充对象的 `PourFills` 数组为空时，结果为 `false/empty` 且区域数为 0；必须有有效填充对象和非空区域数组才是 `true/filled`。读取失败、超时、对象结构无效或数组元素无效时返回 `null/unknown` 并附错误；`null` 不可当作未填充判断。
+- `pcb.routeTrack` 成功返回 `segmentIds`。写入开始后的分段错误若由处理器捕获，`error.cause.partial=true` 并含 `segmentIds`、一基 `failedSegmentIndex`、`failedSegmentAttempted`、`unprocessedSegments` 和 `phase`。`failedSegmentAttempted:true` 表示失败段已发出、可能已生效，`unprocessedSegments` 只计其后的段；为 `false` 表示失败段尚未发出，计数包含该段。外层通用熔断可能只返回通用 `partial`，不保证有分段字段。即使末段已返回有效 ID，共享预算耗尽时仍可能保守返回 `partial`；处理器会保留已知 ID，不表示一定缺段或未落地。失败不自动回滚或重试；宏停止，先读回现场再决定后续写入。
+- **0.10.87 候选边界**：以上三项依据源码候选说明；候选未安装，尚无宿主实测验证。
+
+- **rebuildPour（0.10.82 源码）**：单框、全板和逐框重建共用既有总预算。超时、拒绝或写后读回未知返回失败及 `error.cause.partial=true`，停止后续重建和宏写入；不能凭旧填充掩盖本次错误。`completed` 仅表示调用未报错且有效读回存在填充，`freshnessVerified:false`，不证明填充新鲜度、保存态或制造可用。超时不代表取消，先只读复核，勿盲目重试。安装宿主验证须单列。
 - 大电流先 `knowledge.widthForCurrent` 换算线宽（`currentA?` 传电流时插件按 IPC-2221 自动换算）；GND 优先整层铺铜。
 - 自动布线闭环（锁电源网→FreeRouting→回灌）见附录 ⑦。
 - 等长组管理见附录 ⑥。
@@ -111,7 +117,7 @@
 
 ## ⑦ 自动布线闭环（FreeRouting）
 
-⚠️ **标准工艺流程（电源先行）**：① AI 用 `pcb.routeTrack`/`pourCopper` 按知识库规则布完电源主路径 → ② `pcb.setNetLock` 锁定电源网络（回灌会清除全部**未锁定**走线/过孔，不锁就被冲掉）→ ③ `pcb.autoRouteStart` 启动 → ④ `pcb.autoRouteStatus` 轮询（完成自动回灌+DRC）→ ⑤ AI 审查走线，不合理的局部 `pcb.delete`+`routeTrack` 重修。
+⚠️ **标准工艺流程（电源先行）**：① AI 用 `pcb.routeTrack`/`pourCopper` 按知识库规则布完电源主路径 → ② `pcb.setNetLock` 锁定电源网络（`autoRouteStatus` 完成时的自动 SES 回灌会清除全部**未锁定**线段、圆弧和过孔，不锁就被冲掉）→ ③ `pcb.autoRouteStart` 启动 → ④ `pcb.autoRouteStatus` 轮询（完成自动回灌+DRC）→ ⑤ AI 审查走线，不合理的局部 `pcb.delete`+`routeTrack` 重修。此清除范围仅适用于该自动布线状态流程，不代表普通 `importAutoRouteSes` 会手动清线。
 
 前置：本地 FreeRouting V2.2.3+ 服务运行（端口 37864），可跑 `bridge/start-freerouting.bat` 一键拉起。
 

@@ -1,5 +1,6 @@
 import type { ICommandRequest } from './engine/types';
 import extensionConfig from '../extension.json' with { type: 'json' };
+import { createBridgeOwnerCoordinator } from './bridge/owner';
 /**
  * AI Command Engine — 扩展入口
  *
@@ -11,7 +12,7 @@ import extensionConfig from '../extension.json' with { type: 'json' };
  * 注意：扩展运行在独立 JS 上下文，window 不与其他扩展共享，
  * 因此与 AI 的通信必须走本扩展自己的 WebSocket 连接。
  */
-import { isBridgeConnected, startBridgeClient, stopBridgeClient } from './bridge/client';
+import { getBridgeLifecycleStatus, reconnectBridgeClient, startBridgeClient, stopBridgeClient } from './bridge/client';
 import { cbbCommands } from './commands/cbb';
 import { editorCommands } from './commands/editor';
 import { knowledgeCommands } from './commands/knowledge';
@@ -24,6 +25,8 @@ import { systemCommands } from './commands/system';
 import { executeCommand, getCommandDocs, listCommandNames, registerCommand } from './engine/registry';
 
 let registered = false;
+let activating = false;
+const bridgeOwner = createBridgeOwnerCoordinator(extensionConfig.version);
 
 function registerAllCommands(): void {
 	for (const def of [
@@ -42,23 +45,41 @@ function registerAllCommands(): void {
 }
 
 /**
- * 0.10.70（KIMI-EDA-20261006-01）：幂等激活守卫。EDA 会为同一扩展累积多个 JS 上下文
- * （每次导入/部分菜单点击都可能产生新上下文），某些上下文里官方只回调菜单导出函数而不调
- * activate()——该上下文指令表就只有 import 时自动注册的 macro（残态，0.10.65 首装即遇过）。
- * 所有对外导出函数都先走这里，保证任何上下文首次被调用时指令注册与桥接都已就绪。
+ * 单 owner 激活：同一 EDA 窗口可能累积多个扩展上下文，只有发现无 owner 的上下文
+ * 才会登记命令并启动桥接；其他上下文复用现有 owner 的 RPC 菜单服务。
  */
-function ensureActivated(): void {
-	if (registered)
-		return;
-	activate();
+function handleBridgeOwnerRequest(request: any): unknown {
+	switch (request?.method) {
+		case 'start':
+			startBridgeClient();
+			return { status: getBridgeLifecycleStatus() };
+		case 'stop':
+			stopBridgeClient();
+			return { status: getBridgeLifecycleStatus() };
+		case 'reconnect':
+			reconnectBridgeClient();
+			return { status: getBridgeLifecycleStatus() };
+		case 'status':
+			return { status: getBridgeLifecycleStatus(), commandCount: listCommandNames().length };
+		case 'commands':
+			return listCommandNames();
+		default:
+			throw new Error(`未知的桥接菜单请求：${String(request?.method)}`);
+	}
 }
 
 export function activate(_status?: 'onStartupFinished', _arg?: string): void {
-	if (registered)
+	if (registered || activating)
 		return;
-	registered = true;
+	activating = true;
 
 	try {
+		const role = bridgeOwner.activate(handleBridgeOwnerRequest);
+		if (role !== 'owner') {
+			registered = true;
+			return;
+		}
+
 		registerAllCommands()
 
 		// 备用/诊断通道：挂到全局对象
@@ -75,6 +96,8 @@ export function activate(_status?: 'onStartupFinished', _arg?: string): void {
 		};
 
 		// 主通道：WebSocket 连接本地指令代理（需要「外部交互」权限）
+		bridgeOwner.markReady();
+		registered = true;
 		startBridgeClient();
 
 		try {
@@ -85,55 +108,79 @@ export function activate(_status?: 'onStartupFinished', _arg?: string): void {
 		}
 	}
 	catch (err) {
+		if (!registered)
+			bridgeOwner.release();
 		// 激活失败时直接弹窗，便于排查
 		eda.sys_Dialog.showInformationMessage(
 			`AI Command Engine 激活失败: ${err instanceof Error ? err.message : String(err)}`,
 			'Error',
 		);
 	}
+	finally {
+		activating = false;
+	}
 }
 
-export function about(): void {
-	ensureActivated();
-	const bridgeStatus = isBridgeConnected() ? '已连接指令代理' : '未连接指令代理（请先运行 bridge/command-proxy.mjs，或点菜单「连接指令代理」）';
+async function requestOwner(method: string, title: string): Promise<any | undefined> {
+	try {
+		return await bridgeOwner.request(method);
+	}
+	catch (err) {
+		eda.sys_Dialog.showInformationMessage(
+			`无法执行菜单操作：${err instanceof Error ? err.message : String(err)}`,
+			title,
+		);
+		return undefined;
+	}
+}
+
+export async function about(): Promise<void> {
+	const result = await requestOwner('status', 'About');
+	if (!result)
+		return;
 	eda.sys_Dialog.showInformationMessage(
-		`AI Command Engine v${extensionConfig.version}\n已注册 ${listCommandNames().length} 条指令\n桥接状态：${bridgeStatus}`,
+		`AI Command Engine v${extensionConfig.version}\n已注册 ${result.commandCount} 条指令\n桥接状态：${result.status}`,
 		'About',
 	);
 }
 
-/**
- * 菜单「连接指令代理」：连接/强制重连本地指令代理。
- * 已连接时调用 = 断开重连一次（代理重启后用它恢复）；未连接时立即发起连接。
- * 0.10.64（KIMI-EDA-20261005-01）
- */
-export function connectBridge(): void {
-	ensureActivated();
-	// 0.10.65 修复：先取连接状态再调 startBridgeClient（该方法会把 connected 复位后重连，
-	// 后取状态会让已连接场景误显示「代理未运行」分支文案）
-	const wasConnected = isBridgeConnected();
-	startBridgeClient();
+/** 启动或恢复已激活所有者的本窗口桥接。 */
+export async function connectBridge(): Promise<void> {
+	const result = await requestOwner('start', '启动桥接');
+	if (!result)
+		return;
 	eda.sys_Dialog.showInformationMessage(
-		`已请求连接指令代理（ws://127.0.0.1:49720）\n`
-		+ `${wasConnected ? '此前已连接，本次为强制重连（适合代理重启后恢复）' : '若代理未运行，激活时已尝试过 ai-command-proxy:// 自动拉起；仍失败请手动运行 bridge/command-proxy.mjs'}\n`
-		+ '连接结果可稍候点「About...」查看桥接状态',
-		'连接指令代理',
+			result.status + '\n稍后可在 About 查看结果；首次自动启动前需注册 bridge/install-url-scheme.ps1。',
+			'启动桥接',
+		);
+}
+
+/** 停止接收新指令，等待在途结果后断开。 */
+export async function disconnectBridge(): Promise<void> {
+	const result = await requestOwner('stop', '停止桥接');
+	if (!result)
+		return;
+	eda.sys_Dialog.showInformationMessage(
+		result.status + '\n当前操作结束后才断开；结果未知时保留连接和写保护。全部窗口停止且无待处理操作后，桥接空闲 300 秒自动退出。',
+		'停止桥接',
 	);
 }
 
-/** 菜单「断开指令代理」：断开连接并暂停自动重连（0.10.64） */
-export function disconnectBridge(): void {
-	ensureActivated();
-	stopBridgeClient();
+/** 只重连所有者的本窗口；使用与停止相同的等待流程。 */
+export async function reconnectBridge(): Promise<void> {
+	const result = await requestOwner('reconnect', '重新连接桥接');
+	if (!result)
+		return;
 	eda.sys_Dialog.showInformationMessage(
-		'已暂停指令代理：AI 发往本窗口的一切指令都会被代理拒绝。\n连接随即断开（EDA 的自动重连会被代理持续挡回），后台空闲 300 秒后自动退出。\n点「连接指令代理」可随时恢复（后台没在跑会自动拉起）。',
-		'断开指令代理',
+		result.status + '\n只重新连接本窗口，等待当前操作结束，不清除结果未知的写保护。',
+		'重新连接桥接',
 	);
 }
 
-export function listCommands(): void {
-	ensureActivated();
-	const names = listCommandNames();
+export async function listCommands(): Promise<void> {
+	const names = await requestOwner('commands', 'AI Command Engine — 指令列表');
+	if (!names)
+		return;
 	eda.sys_Dialog.showInformationMessage(
 		names.join('\n'),
 		'AI Command Engine — 指令列表',
@@ -142,7 +189,6 @@ export function listCommands(): void {
 
 /** 打开 SMT 物料查询窗口（页面由本地指令代理提供） */
 export async function openSmtQuery(): Promise<void> {
-	ensureActivated();
 	const url = 'http://127.0.0.1:49720/smt';
 	try {
 		const resp = await eda.sys_ClientUrl.request('http://127.0.0.1:49720/health', 'GET');

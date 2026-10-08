@@ -12,11 +12,11 @@ import { setDiagSink } from '../engine/diag';
  *
  * 自动拉起代理：激活时先探测代理 /health，若代理未运行，
  * 尝试通过 URL Scheme（ai-command-proxy://start）唤起本地启动器
- * （需用户预先注册该 URL 协议；仓库不提供协议注册脚本）。
+ * （需先运行 bridge/install-url-scheme.ps1 注册当前仓库的启动器）。
  */
 import { executeCommand, getCommandDocs, listCommandNames } from '../engine/registry';
 
-const WS_ID = 'ai-command-engine';
+const WS_ID_PREFIX = 'ai-command-engine';
 const DEFAULT_PORT = 49720;
 const RECONNECT_MS = 5000;
 const HEARTBEAT_MS = 10000;
@@ -41,6 +41,15 @@ let started = false;
 let connected = false;
 /** 菜单「断开指令代理」置位：暂停自动重连，直到再次 startBridgeClient() */
 let manualStop = false;
+let currentPort = DEFAULT_PORT;
+let lifecycleGeneration = 0;
+let lifecycleSequence = 0;
+let lifecycleStatus = '未连接';
+let proxyCompatible = false;
+let connecting = false;
+let checkingHealth = false;
+let pendingResume: string | null = null;
+let stopRequest: { id: string; reconnect: boolean } | null = null;
 /**
  * 0.10.69（KIMI-EDA-20261006-01）：恢复口令。模块级随机数，随 hello/pause/resume 帧携带。
  *  代理只在口令匹配时才允许清除「断开指令代理」的暂停态——防止旧版本残留模块的重放 hello
@@ -55,8 +64,9 @@ function getResumeNonce(rotate = false): string {
 }
 /** 最近一次收到代理任何消息（pong/指令/describe）的时间戳；心跳据此判定半开连接 */
 let lastHeardAt = 0;
-/** 超过该时长没收到代理任何消息，判定连接已死，强制重连 */
+/** 超过静默时长后发一次应用层探测；探测后仍静默才退役连接 */
 const SILENCE_DEAD_MS = 35000;
+let probeSentAt = 0;
 /**
  * 0.10.71：最近一次尝试自动拉起代理的时间戳；自动拉起从"一生一次"改为"每 5 分钟最多一次"。
  *  旧 autoLaunchTried 一生一次导致代理空闲退出/崩溃后数小时黑窗（2026-10-06 凌晨实发：
@@ -75,9 +85,59 @@ let inflightCommands = 0;
  *  防止旧事件抹掉新连接的 connected 标志、旧结果发到新连接上
  */
 let connectionGeneration = 0;
+let currentConnectionId: string | null = null;
+let pendingCloseId: string | null = null;
 
 export function isBridgeConnected(): boolean {
 	return connected;
+}
+
+export function getBridgeLifecycleStatus(): string {
+	return lifecycleStatus;
+}
+
+function setLifecycleStatus(status: string): void {
+	lifecycleStatus = status;
+	log(`AI Command Engine：${status}`);
+}
+
+function nextLifecycleId(): string {
+	return `${INSTANCE_ID}-${++lifecycleSequence}`;
+}
+
+function isCurrentConnection(id: string, gen: number): boolean {
+	return id === currentConnectionId && gen === connectionGeneration;
+}
+
+function closeRetiredConnection(id: string): boolean {
+	try {
+		eda.sys_WebSocket.close(id, 1000, 'AI Command Engine connection replaced');
+		pendingCloseId = null;
+		return true;
+	}
+	catch (err) {
+		manualStop = true;
+		pendingCloseId = id;
+		connected = false;
+		connecting = false;
+		stopRequest = null;
+		setLifecycleStatus(`旧连接已退役，但关闭失败，本次替换已停止：${String(err)}`);
+		return false;
+	}
+}
+
+/** Retire callbacks before calling the host: close() is synchronous and may not close the socket. */
+function retireConnection(id: string, gen: number, closeHost = true): boolean {
+	if (!isCurrentConnection(id, gen))
+		return true;
+	connectionGeneration++;
+	currentConnectionId = null;
+	connected = false;
+	connecting = false;
+	probeSentAt = 0;
+	if (!closeHost)
+		return true;
+	return closeRetiredConnection(id);
 }
 
 function log(message: string): void {
@@ -89,14 +149,18 @@ function log(message: string): void {
 	}
 }
 
-async function handleMessage(event: MessageEvent<any>, gen: number): Promise<void> {
+async function handleMessage(event: MessageEvent<any>, id: string, gen: number): Promise<void> {
 	// 过期代际的事件全部丢弃：只属于当前连接的 close/error 才复位标志（0.10.65 修复）
-	if (gen !== connectionGeneration)
+	if (!isCurrentConnection(id, gen))
 		return;
 	// 连接关闭/出错事件：复位标志，让 5 秒重连循环接管
 	const eventType = (event as any)?.type;
 	if (eventType === 'close' || eventType === 'error') {
-		connected = false;
+		retireConnection(id, gen, false);
+		if (stopRequest)
+			setLifecycleStatus('停止尚未确认：连接已中断，未清除写保护');
+		else if (!manualStop)
+			setLifecycleStatus('连接已中断，等待重新连接');
 		return;
 	}
 
@@ -108,10 +172,75 @@ async function handleMessage(event: MessageEvent<any>, gen: number): Promise<voi
 		return;
 	}
 
-	// 收到代理任何消息都说明连接活着
+	// 收到当前代任何有效消息都说明连接活着，并结束本轮探测
+	const hadProbe = probeSentAt > 0;
 	lastHeardAt = Date.now();
+	probeSentAt = 0;
+	if (hadProbe && !manualStop && !pendingResume && !stopRequest)
+		setLifecycleStatus('已连接');
 	if (msg?.type === 'pong')
 		return;
+	if (msg?.type === 'ping') {
+		try {
+			eda.sys_WebSocket.send(id, JSON.stringify({ type: 'pong' }));
+		}
+		catch (err) {
+			log('桥接心跳应答发送失败：' + String(err));
+		}
+		return;
+	}
+
+	if (msg?.type === 'resume-accepted' || msg?.type === 'resume-rejected') {
+		if (!pendingResume || msg.requestId !== pendingResume || manualStop)
+			return;
+		pendingResume = null;
+		if (msg.type === 'resume-accepted') {
+			setLifecycleStatus('已连接');
+		}
+		else {
+			manualStop = true;
+			setLifecycleStatus('恢复被桥接拒绝，连接保持暂停');
+		}
+		return;
+	}
+
+	if (msg?.type === 'stop-accepted' || msg?.type === 'stop-ready' || msg?.type === 'stop-blocked') {
+		if (!manualStop || !stopRequest || msg.requestId !== stopRequest.id)
+			return;
+		if (msg.type === 'stop-accepted') {
+			setLifecycleStatus(stopRequest.reconnect ? '正在等待当前操作结束，然后重连本窗口' : '停止请求已接收，正在等待当前操作结束');
+			return;
+		}
+		if (msg.type === 'stop-blocked') {
+			setLifecycleStatus('停止尚未完成：写操作结果未知，连接和写保护继续保留');
+			return;
+		}
+		if (inflightCommands > 0) {
+			setLifecycleStatus('停止尚未完成：本窗口仍有操作未返回，连接继续保留');
+			return;
+		}
+		const completed = stopRequest;
+		try {
+			eda.sys_WebSocket.send(id, JSON.stringify({ type: 'bye', requestId: completed.id }));
+		}
+		catch (err) {
+			setLifecycleStatus(`停止确认后断开失败：${String(err)}`);
+			return;
+		}
+		if (!retireConnection(id, gen))
+			return;
+		stopRequest = null;
+		connected = false;
+		connecting = false;
+		setLifecycleStatus('本窗口桥接已停止');
+		if (completed.reconnect) {
+			manualStop = false;
+			lifecycleGeneration++;
+			setLifecycleStatus('当前操作已结束，正在重新连接本窗口');
+			void connectWhenReady(true);
+		}
+		return;
+	}
 
 	if (msg?.type === 'describe') {
 		// 代理询问本实例身份：回报当前工程名与打开的标签页，用于多窗口选路。
@@ -144,10 +273,10 @@ async function handleMessage(event: MessageEvent<any>, gen: number): Promise<voi
 		catch {}
 		// 复审补强（0.10.65）：info 帧发送前补代际校验——describe 处理期间若发生强制重连，
 		// 迟到的旧快照会发到新连接上，与 result/progress 帧口径对齐
-		if (gen !== connectionGeneration || !connected)
+		if (!isCurrentConnection(id, gen))
 			return;
 		try {
-			eda.sys_WebSocket.send(WS_ID, JSON.stringify({ type: 'info', instanceId: INSTANCE_ID, project, tabs }));
+			eda.sys_WebSocket.send(id, JSON.stringify({ type: 'info', instanceId: INSTANCE_ID, project, tabs }));
 		}
 		catch {}
 		return;
@@ -155,6 +284,21 @@ async function handleMessage(event: MessageEvent<any>, gen: number): Promise<voi
 
 	if (msg?.type !== 'command')
 		return;
+
+	// A command already sent before the stop reached the proxy may still arrive.
+	// Reject it before entering the handler; previously accepted work keeps its result path.
+	if (manualStop) {
+		try {
+			eda.sys_WebSocket.send(id, JSON.stringify({
+				type: 'result', id: msg.id,
+				result: { ok: false, cmd: msg.cmd, error: { message: '本窗口已停止接收指令，此指令未执行' } },
+			}));
+		}
+		catch (err) {
+			log(`停止期间拒绝指令的结果未能发送：${String(err)}`);
+		}
+		return;
+	}
 
 	// 代理端伪指令：指令清单与文档查询
 	let result: unknown;
@@ -185,7 +329,7 @@ async function handleMessage(event: MessageEvent<any>, gen: number): Promise<voi
 					onProgress: (patch) => {
 						lastBeatAt = Date.now();
 						// 0.10.65：连接已被重连取代时不再往新连接发旧指令的心跳
-						if (gen !== connectionGeneration || !connected)
+						if (!isCurrentConnection(id, gen))
 							return;
 						try {
 							// 进度载荷截断到 2000 字符——心跳通道是辅助设施，不搬大件数据。
@@ -194,7 +338,7 @@ async function handleMessage(event: MessageEvent<any>, gen: number): Promise<voi
 							let payload: any = patch ?? {};
 							if (JSON.stringify(payload).length > 2000)
 								payload = { truncated: true, keys: Object.keys(patch ?? {}) };
-							eda.sys_WebSocket.send(WS_ID, JSON.stringify({ type: 'progress', id: msg.id, progress: payload }));
+							eda.sys_WebSocket.send(id, JSON.stringify({ type: 'progress', id: msg.id, progress: payload }));
 						}
 						catch {
 							// 心跳发送失败静默——不影响指令本身
@@ -206,14 +350,14 @@ async function handleMessage(event: MessageEvent<any>, gen: number): Promise<voi
 						if (Date.now() - lastBeatAt > timeoutMs) {
 							if (watchdog)
 								clearInterval(watchdog);
-							reject(new Error(`指令 ${msg.cmd} 执行超时（${Math.round(timeoutMs / 1000)}s 无进度心跳，EDA API 可能未响应，存在模态框或工程未打开）。注意：超时≠取消，指令内部可能仍在后台执行，重发同参数只回进度不重复执行，或 task.get 查询`));
+							reject(new Error(`指令 ${msg.cmd} 执行超时（${Math.round(timeoutMs / 1000)}s 无进度心跳，底层操作可能仍在执行）。`, { cause: { partial: true, source: 'client-watchdog' } }));
 						}
 					}, 3000);
 				}),
 			]);
 		}
 		catch (err) {
-			result = { ok: false, cmd: msg.cmd, error: String((err as Error)?.message ?? err) };
+			result = { ok: false, cmd: msg.cmd, error: { message: String((err as Error)?.message ?? err), cause: (err as Error)?.cause } };
 		}
 		finally {
 			inflightCommands--;
@@ -224,8 +368,8 @@ async function handleMessage(event: MessageEvent<any>, gen: number): Promise<voi
 	// 0.10.65 修复：result 发送是唯一无 try/catch 的 send（旧版断线瞬间必抛未处理 rejection）；
 	// 且连接已被重连取代时代际不符，丢弃本结果帧（旧 id 落到新连接会困扰代理；该指令由代理 300s 超时兜底）
 	try {
-		if (gen === connectionGeneration && connected)
-			eda.sys_WebSocket.send(WS_ID, JSON.stringify({ type: 'result', id: msg.id, result }));
+		if (isCurrentConnection(id, gen))
+			eda.sys_WebSocket.send(id, JSON.stringify({ type: 'result', id: msg.id, result }));
 		else
 			log(`指令 ${msg.cmd} 的结果帧已随旧连接作废（连接已被重连/断开取代），丢弃`);
 	}
@@ -235,19 +379,29 @@ async function handleMessage(event: MessageEvent<any>, gen: number): Promise<voi
 }
 
 function connect(port: number): void {
+	if (connecting)
+		return;
+	if (pendingCloseId && !closeRetiredConnection(pendingCloseId))
+		return;
+	if (currentConnectionId && !retireConnection(currentConnectionId, connectionGeneration))
+		return;
 	try {
+		connecting = true;
 		const gen = ++connectionGeneration;
+		const id = `${WS_ID_PREFIX}:${INSTANCE_ID}:${gen}`;
+		currentConnectionId = id;
 		eda.sys_WebSocket.register(
-			WS_ID,
+			id,
 			`ws://127.0.0.1:${port}/ws`,
-			event => void handleMessage(event, gen),
+			event => void handleMessage(event, id, gen),
 			() => {
 				// 0.10.65：onOpen 也可能是旧连接的迟到回调，代际不符直接丢弃
-				if (gen !== connectionGeneration)
+				if (!isCurrentConnection(id, gen))
 					return;
-				connected = true;
+				connecting = false;
+				connected = !manualStop;
 				lastHeardAt = Date.now();
-				eda.sys_WebSocket.send(WS_ID, JSON.stringify({
+				eda.sys_WebSocket.send(id, JSON.stringify({
 					type: 'hello',
 					extension: 'ai-command-engine',
 					version: (globalThis as any).__aiCommand?.version ?? 'unknown',
@@ -259,167 +413,212 @@ function connect(port: number): void {
 					// 0.10.69：恢复口令——代理仅在口令匹配时才允许清除暂停（防旧模块重放 hello 越权恢复）
 					nonce: getResumeNonce(),
 				}));
-				log(manualStop
-					? 'AI Command Engine 已连接指令代理（暂停态：代理将挡回本连接，全部断开后后台自动退出）'
-					: 'AI Command Engine 已连接指令代理');
+				if (!manualStop)
+					setLifecycleStatus('已连接');
 			},
 		);
 	}
 	catch (err) {
 		connected = false;
-		log(`AI Command Engine 连接指令代理失败: ${String(err)}`);
+		connecting = false;
+		setLifecycleStatus(`连接指令代理失败: ${String(err)}`);
 	}
 }
 
-/**
- * 探测代理健康状态；未运行时通过 URL Scheme 自动拉起。0.10.71 起每 5 分钟最多试一次
- *  （旧"一生一次"会留下数小时黑窗）；调用方（激活/重连循环）可高频调用，由时间窗节流
- */
-async function probeAndAutoLaunch(port: number): Promise<void> {
+/** Health and URL launch share the lifecycle generation so a late probe cannot undo Stop. */
+async function probeAndAutoLaunch(port: number, force: boolean): Promise<boolean> {
+	const generation = lifecycleGeneration;
+	let response: Response | undefined;
 	try {
-		const resp = await eda.sys_ClientUrl.request(`http://127.0.0.1:${port}/health`, 'GET');
-		if (resp?.status === 200)
-			return;
+		response = await eda.sys_ClientUrl.request('http://127.0.0.1:' + port + '/health', 'GET');
 	}
 	catch {
-		// 代理未运行或不可达
+		// The launcher performs its own local-port check before starting a process.
 	}
-
-	if (Date.now() - lastLaunchAttemptAt < LAUNCH_RETRY_MS)
-		return;
+	if (manualStop || generation !== lifecycleGeneration)
+		return false;
+	if (response) {
+		try {
+			const health = await response.json();
+			if (manualStop || generation !== lifecycleGeneration)
+				return false;
+			proxyCompatible = response.status === 200 && health?.service === 'ai-command-proxy' && health?.lifecycleProtocol === 1;
+			if (!proxyCompatible)
+				setLifecycleStatus('桥接版本不匹配：请在当前任务结束后更新配套桥接，现有服务未被关闭');
+			return proxyCompatible;
+		}
+		catch {
+			proxyCompatible = false;
+			setLifecycleStatus('桥接健康响应无法识别，现有服务未被关闭');
+			return false;
+		}
+	}
+	proxyCompatible = false;
+	if (!force && Date.now() - lastLaunchAttemptAt < LAUNCH_RETRY_MS)
+		return false;
 	lastLaunchAttemptAt = Date.now();
-
-	log('AI Command Engine 未检测到指令代理，尝试自动拉起（ai-command-proxy://start）...');
 	try {
 		eda.sys_Window.open('ai-command-proxy://start', '_blank' as any);
+		setLifecycleStatus('已请求启动桥接；若尚未注册，请运行 bridge/install-url-scheme.ps1');
 	}
 	catch (err) {
-		log(`AI Command Engine 自动拉起失败: ${String(err)}。请在仓库根目录先运行 npm ci，再运行 node bridge/command-proxy.mjs；也可运行 bridge/launch-proxy.bat。`);
+		setLifecycleStatus('自动启动失败：' + String(err) + '；可运行 bridge/launch-proxy.bat');
+	}
+	return false;
+}
+
+async function connectWhenReady(force: boolean): Promise<void> {
+	if (manualStop || connected || checkingHealth || inflightCommands > 0)
+		return;
+	checkingHealth = true;
+	const generation = lifecycleGeneration;
+	try {
+		const ready = await probeAndAutoLaunch(currentPort, force);
+		if (ready && generation === lifecycleGeneration && !manualStop && !connected && inflightCommands === 0) {
+			if (connecting)
+				return;
+			connect(currentPort);
+		}
+	}
+	finally {
+		checkingHealth = false;
 	}
 }
 
-/**
- * 启动桥接客户端，断线每 5 秒自动重连。
- *  已启动时重复调用 = 立即强制重连一次（菜单「连接指令代理」/重启后台后用）
- */
+/** Start is idempotent; resuming a draining connection does not discard its results. */
 export function startBridgeClient(port: number = DEFAULT_PORT): void {
+	currentPort = port;
+	if (connected && !manualStop && !stopRequest)
+		return;
+	if (checkingHealth || connecting)
+		return;
+	if (pendingCloseId && !closeRetiredConnection(pendingCloseId))
+		return;
+	lifecycleGeneration++;
+	const wasStopped = manualStop;
 	manualStop = false;
-	if (started) {
-		// 已启动时重复调用 = 强制重连（先关后连；连接中会把进行中的指令留在旧连接上作废，
-		// 这是「强制重连」的固有代价，调用方已在对话框文案中说明）
-		// 0.10.66：先发 bye 让代理侧真正释放旧连接（官方 close() 不生效）
-		// 0.10.67：先 resume 清除「断开指令代理」的暂停标记，再 bye+重连换到新连接（新连接不带暂停）
-		// 0.10.69：resume 携带恢复口令——代理校验通过才真正清除暂停
-		try {
-			eda.sys_WebSocket.send(WS_ID, JSON.stringify({ type: 'resume', nonce: getResumeNonce() }));
+	stopRequest = null;
+	if (connected) {
+		if (wasStopped) {
+			const id = currentConnectionId;
+			if (!id)
+				return;
+			pendingResume = nextLifecycleId();
+			try {
+				eda.sys_WebSocket.send(id, JSON.stringify({ type: 'resume', nonce: getResumeNonce(), requestId: pendingResume }));
+				setLifecycleStatus('已请求恢复本窗口，等待桥接确认');
+			}
+			catch (err) {
+				manualStop = true;
+				pendingResume = null;
+				setLifecycleStatus('恢复请求发送失败：' + String(err));
+			}
 		}
-		catch {
-			// 忽略
-		}
-		try {
-			eda.sys_WebSocket.send(WS_ID, JSON.stringify({ type: 'bye' }));
-		}
-		catch {
-			// 忽略
-		}
-		try {
-			eda.sys_WebSocket.close(WS_ID);
-		}
-		catch {
-			// 忽略关闭异常
-		}
-		connected = false;
-		connect(port);
 		return;
 	}
-	started = true;
-
-	const tryConnect = (): void => {
-		if (!connected && !manualStop) {
-			// 0.10.71（KIMI-EDA-20261006-02）：有指令在途时推迟重连——
-			// 此时重连作废在途结果（Luna 会话"只读查询超时"的根因之一）；
-			// 指令自带 300s 超时兜底，结束后下一轮重连自然接上。
-			if (inflightCommands > 0) {
-				setTimeout(tryConnect, RECONNECT_MS);
-				return;
-			}
-			// 0.10.66：残留半开连接也先发 bye 请代理侧清理（官方 close() 不生效）
-			try {
-				eda.sys_WebSocket.send(WS_ID, JSON.stringify({ type: 'bye' }));
-			}
-			catch {
-				// 忽略
-			}
-			try {
-				eda.sys_WebSocket.close(WS_ID);
-			}
-			catch {
-				// 忽略关闭异常
-			}
-			connect(port);
-			// 0.10.71：重连循环里带上代理自动拉起重试（5 分钟节流），
-			// 代理空闲退出/崩溃后插件能自己拉回。
-			void probeAndAutoLaunch(port);
-		}
-		setTimeout(tryConnect, RECONNECT_MS);
-	};
-
-	// 心跳：让代理知道 EDA 还活着（代理端据此实现空闲自动退出）
-	try {
-		eda.sys_Timer.setIntervalTimer('aiCommandHeartbeat', HEARTBEAT_MS, () => {
-			if (connected) {
-				// 半开连接检测：超过 SILENCE_DEAD_MS 没收到代理任何消息（含 pong），判定死亡
-				if (lastHeardAt > 0 && Date.now() - lastHeardAt > SILENCE_DEAD_MS) {
-					// 0.10.71：指令在途时推迟判死——重连会作废在途结果；
-					// 指令自带 300s 超时兜底，结束后下一轮心跳再判。
-					if (inflightCommands > 0)
-						return;
-					log('AI Command Engine 心跳超时，判定连接已死，准备重连');
-					connected = false;
+	if (!started) {
+		started = true;
+		const tryConnect = (): void => {
+			if (!manualStop && !connected)
+				void connectWhenReady(false);
+			setTimeout(tryConnect, RECONNECT_MS);
+		};
+		try {
+			eda.sys_Timer.setIntervalTimer('aiCommandHeartbeat', HEARTBEAT_MS, () => {
+				if (!connected)
+					return;
+				const id = currentConnectionId;
+				if (!id)
+					return;
+				const now = Date.now();
+				if (probeSentAt > 0) {
+					if (!manualStop && inflightCommands === 0 && now - probeSentAt > SILENCE_DEAD_MS) {
+						if (retireConnection(id, connectionGeneration))
+							setLifecycleStatus('桥接探测超时，等待重新连接');
+					}
 					return;
 				}
+				if (!manualStop && lastHeardAt > 0 && now - lastHeardAt > SILENCE_DEAD_MS) {
+					probeSentAt = now;
+					setLifecycleStatus('桥接静默，正在探测连接');
+					try {
+						eda.sys_WebSocket.send(id, JSON.stringify({ type: 'ping' }));
+					}
+					catch (err) {
+						log('桥接探测发送失败：' + String(err));
+					}
+					return;
+				}
+				const heardBeforePing = lastHeardAt;
 				try {
-					eda.sys_WebSocket.send(WS_ID, JSON.stringify({ type: 'ping' }));
+					eda.sys_WebSocket.send(id, JSON.stringify({ type: 'ping' }));
 				}
-				catch {
-					// 发送失败说明连接已断：复位标志，交给重连逻辑。
-					// 0.10.71：指令在途时不复位——复位会触发重连作废在途结果，
-					// 留给静默判死分支（带在途保护）统一处理。
-					if (inflightCommands === 0)
-						connected = false;
+				catch (err) {
+					if (probeSentAt === 0 && lastHeardAt === heardBeforePing) {
+						probeSentAt = now;
+						if (!manualStop)
+							setLifecycleStatus('桥接心跳发送失败，正在等待探测结果');
+					}
+					log('桥接心跳发送失败：' + String(err));
 				}
-			}
-		});
+			});
+		}
+		catch (err) {
+			log('无法注册桥接心跳：' + String(err));
+		}
+		setTimeout(tryConnect, RECONNECT_MS);
 	}
-	catch {
-		// 定时器不可用时退化为仅依赖连接状态
-	}
-
-	// 首次立即连接；若代理未运行则尝试自动拉起
-	void probeAndAutoLaunch(port);
-	connect(port);
-	setTimeout(tryConnect, RECONNECT_MS);
+	setLifecycleStatus('正在检查并启动桥接');
+	void connectWhenReady(true);
 }
 
-/**
- * 菜单「断开指令代理」：暂停连接并停止自动重连尝试。
- * 0.10.64（KIMI-EDA-20261005-01）：供 AI Command 菜单开关使用；
- * 重连循环仍在跑但跳过连接，直到再次调用 startBridgeClient()（菜单「连接指令代理」）。
- * 0.10.67（KIMI-EDA-20261006-01）：官方 sys_WebSocket.close() 实测不生效，且封装对
- * 服务端掐断内置自动重连（插件侧压不住物理连接）——「断开」改为**暂停语义**：
- * 给代理发 pause 帧，代理拒收发往本实例的一切指令并明确提示，连接本身保持。
- */
-export function stopBridgeClient(): void {
+function requestBridgeStop(reconnect: boolean): void {
+	if (stopRequest) {
+		// Stop during a pending reconnect changes only the final intent.
+		stopRequest.reconnect = reconnect;
+		return;
+	}
+	lifecycleGeneration++;
+	pendingResume = null;
 	manualStop = true;
-	connected = false;
+	if (!connected) {
+		setLifecycleStatus(inflightCommands > 0 ? '停止尚未确认：连接中断且仍有操作未返回' : '本窗口桥接已停止');
+		return;
+	}
+	if (!proxyCompatible) {
+		setLifecycleStatus('本窗口已拒绝新指令，但桥接不支持安全停止；保留连接等待当前操作');
+		return;
+	}
+	const id = currentConnectionId;
+	if (!id) {
+		setLifecycleStatus('停止请求失败：当前连接标识不存在，写保护继续保留');
+		return;
+	}
+	const previousNonce = resumeNonce;
+	const request = { id: nextLifecycleId(), reconnect };
+	stopRequest = request;
 	try {
-		// 0.10.69：暂停时轮换恢复口令——此前所有重放/缓存帧里的旧口令即刻作废
-		eda.sys_WebSocket.send(WS_ID, JSON.stringify({ type: 'pause', nonce: getResumeNonce(true) }));
+		eda.sys_WebSocket.send(id, JSON.stringify({ type: 'stop', requestId: request.id, nonce: getResumeNonce(true) }));
+		setLifecycleStatus(reconnect ? '已请求等待当前操作结束后重连' : '已请求停止，正在等待当前操作结束');
 	}
-	catch {
-		// 连接可能已不在，忽略
+	catch (err) {
+		resumeNonce = previousNonce;
+		stopRequest = null;
+		setLifecycleStatus('停止请求发送失败，连接保留：' + String(err));
 	}
-	log('AI Command Engine 已暂停指令代理（菜单「连接指令代理」可恢复）');
+}
+
+export function stopBridgeClient(): void {
+	requestBridgeStop(false);
+}
+
+/** Reconnect uses the same drain handshake as Stop and never clears write protection. */
+export function reconnectBridgeClient(): void {
+	if (!connected && !stopRequest) {
+		startBridgeClient(currentPort);
+		return;
+	}
+	requestBridgeStop(true);
 }
 
 // 0.10.52（KIMI-EDA-20261003-09）：诊断日志通道——指令内经 diag() 发出的事件经 WebSocket
@@ -427,8 +626,9 @@ export function stopBridgeClient(): void {
 // 同时镜像到 EDA 系统日志。发送失败静默忽略，绝不影响主流程。
 setDiagSink((event) => {
 	try {
-		if (connected)
-			eda.sys_WebSocket.send(WS_ID, JSON.stringify({ type: 'log', ts: Date.now(), ...event }));
+		const id = currentConnectionId;
+		if (connected && id)
+			eda.sys_WebSocket.send(id, JSON.stringify({ type: 'log', ts: Date.now(), ...event }));
 	}
 	catch {
 		// 忽略发送失败

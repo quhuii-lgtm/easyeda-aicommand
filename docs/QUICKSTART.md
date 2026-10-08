@@ -30,26 +30,30 @@ npm ci
 node bridge/command-proxy.mjs
 ```
 
-`npm ci` 使用锁定依赖；不要加 `--omit=dev`，当前 `ws` 在开发依赖中。此步骤不需要 `npm run build`。看到监听 `http://127.0.0.1:49720` 的日志后保留该终端；后续也可双击 `bridge/launch-proxy.bat` 启动。
+`npm ci` 使用锁定依赖；不要加 `--omit=dev`，当前 `ws` 在开发依赖中。此步骤不需要 `npm run build`。完成后可注册当前仓库的用户级 URL 启动入口：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\bridge\install-url-scheme.ps1
+```
+
+这会把 `ai-command-proxy://start` 注册到当前 Windows 用户；不启动或停止代理。本命令只对本次脚本运行绕过执行策略，不修改机器策略。仓库固定在该目录后再注册；移动仓库后重新运行脚本。需要移除时运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\bridge\uninstall-url-scheme.ps1`。手动启动可双击 `bridge/launch-proxy.bat`。
 
 默认使用 49720。不要只改代理的 `PORT`：发布插件、启动器和 Python 助手默认都连接 49720，目前没有面向普通用户的一键改端口入口。
 
-**自动启动不是首次安装的默认能力。**插件会尝试 `ai-command-proxy://`，但必须由本机预先注册协议处理程序。此仓库目前不提供协议注册/卸载脚本；未配置者始终按上述方法手动启动。旧插件弹窗提到 `start-services.bat` 时，也按本节操作，该文件不在此仓库。
+启动器只接受 `ai-command-proxy://start`。如果默认端口上有其他程序或旧版代理，它会报不兼容并停止；它不会悄悄替换或结束现有服务。先让旧服务的操作完成，再更新桥接和插件。若注册目标已指向旧仓库，只有确认要替换后才运行 `.\bridge\install-url-scheme.ps1 -Force`。
 
 ## 2. 安装并连接 EDA 插件
 
 1. 从 [Releases](https://github.com/quhuii-lgtm/easyeda-aicommand/releases) 下载 `ai-command-engine_v*.eext`。源代码 ZIP 与 `.eext` 用途不同。
 2. 在 EDA 的扩展/插件管理界面导入该 `.eext`，启用插件并勾选“允许外部交互”。不同 EDA 版本菜单位置可能不同，以当前客户端的插件导入入口为准。
 3. 新建一个用于试用的空白工程及原理图页，打开该页。
-4. 在“AI Command”菜单点击“连接指令代理”。菜单“断开指令代理”是用户暂停开关；暂停后必须由用户再次点击连接恢复。
+4. 在“AI Command”菜单使用“启动桥接”“停止桥接”或“重新连接桥接”。启动已连接的窗口是幂等操作；重新连接会先排空本窗口已有请求，再换连。停止会拒绝排队中的新写请求，交付已派发请求的结果后再断开本窗口。partial 或结果不确定时停止会明确报告并保留写保护。
 
-v0.10.73 原始发布附件 SHA256：
+v0.10.87 附件校验值见 [SHA256SUMS.txt](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/download/v0.10.87/SHA256SUMS.txt)。
 
-```text
-974745adb1245b69e0c1d5cd47ab20870907e592b58a4aa3ae4fdac3b19b4657
-```
+可用 PowerShell `Get-FileHash -Algorithm SHA256 -LiteralPath '<下载的 eext 路径>'` 核对。校验值只适用于本次发布附件，不适用于自行重新打包的文件。
 
-可用 PowerShell `Get-FileHash -Algorithm SHA256 -LiteralPath '<下载的 eext 路径>'` 核对。该值只对应原始 v0.10.73 附件，不适用于自己重新构建的包。
+本版尚未完成完整宿主安装验收；升级后先在试用工程核对，验证边界见 [版本说明](releases/v0.10.87.md)。从旧版升级需关闭并重新打开 EDA 窗口，代理和技能也应更新到同一标签。
 
 ## 3. 完成第一次只读调用
 
@@ -108,7 +112,7 @@ python skills/ai-command-engine/scripts/eda.py project.getInfo --instance-id '<�
 | --- | --- |
 | 找不到 `node` 或 `npm` | 安装符合上述要求的 Node.js，重新打开终端并检查版本。 |
 | `ERR_MODULE_NOT_FOUND` / 找不到 `ws` | 回到含 `package-lock.json` 的仓库根目录执行 `npm ci`，完成后重新启动代理。 |
-| 连接被拒绝 | 确认代理终端仍在运行，且使用默认 49720。所有 EDA 实例断开后代理默认 300 秒退出，之后需重新启动。 |
+| 连接被拒绝 | 确认代理已启动且使用默认 49720。所有窗口停止且没有待处理请求或写保护时，代理默认空闲 300 秒后退出；下次启动插件会再次检查并按需拉起。 |
 | `EADDRINUSE` | 先查询 `/health` 确认是否是已有代理；若是其他程序占用，先解决端口冲突，不要只改单端口。 |
 | `/health` 正常但没有实例 | 检查工程窗口、插件启用状态、“允许外部交互”和用户暂停状态，然后点击连接菜单。 |
 | 缺少 `instanceId` | 每个完整 `/command` 请求都带顶层 `instanceId`，`/select` 不能代替它。 |
@@ -122,7 +126,7 @@ python skills/ai-command-engine/scripts/eda.py project.getInfo --instance-id '<�
 
 停止旧代理终端（Ctrl+C），更新仓库、执行 `npm ci`，再启动代理；按发布说明导入匹配的 `.eext`，更新完整技能目录。重新查询 `/connections`，核对版本和工程。仅更新 `.eext` 不会更新外部代理或 AI 技能。
 
-停用时在 EDA 菜单断开代理，并停止代理终端。卸载时从 EDA 扩展管理器卸载插件、移除 AI 工具中该技能；自行决定是否保留仓库、密钥和 `bridge/backups/` 备份。若曾自行注册 URL 协议，按原注册方式撤销；本仓库手动安装流程没有写注册表。
+停用时在 EDA 菜单选择“停止桥接”；当前窗口的操作完成后断开，所有窗口均停止且无写保护时代理会在空闲阈值后自动退出。卸载时先运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\bridge\uninstall-url-scheme.ps1`，再从 EDA 扩展管理器卸载插件、移除 AI 工具中的技能；自行决定是否保留仓库、密钥和 `bridge/backups/` 备份。卸载脚本只移除指向当前仓库的注册项，不会更改其他安装。
 
 ## 反馈与验证边界
 
