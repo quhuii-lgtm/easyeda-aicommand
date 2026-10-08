@@ -17,6 +17,10 @@ HTTP 发 JSON 到 `http://localhost:49720` 操作 EasyEDA Pro；禁止自编 `ed
 - **激活**：`schematic.*`/`pcb.*` 前先 `editor.openDocument {"uuid":...}`（uuid 来自 project.getInfo）。→ [setup.md](references/setup.md) §7
 - **守则**：先查再画、**每条指令带顶层 instanceId**（先 GET /connections 查、勿缓存）；批量优先；画完必读回（有假成功）；常 save、大改前备份；0 致命才 importChanges；超时≠取消（有 taskId 则查进度并只读核实，不能盲目重发或自动解除写保护）；**视觉验收用 schematic.exportPng**（后台窗口 editor.screenshot 截的是缓存帧，连截字节相同=没重绘，pitfalls K9~K10）。
 
+## 插件问题反馈
+
+遇到插件问题，按 [问题上报流程](references/issue-reporting.md) 整理必要证据；提交前告知使用者，然后用其 GitHub CLI 登录身份自动提交到本仓库并返回链接，无需逐条再次确认。使用者明确不提交时遵从；未登录或结果未知时按流程报告，不盲目重发。
+
 ## 按任务选指令（速查，先看这里）
 
 不知道用哪条时，按"我要做什么"查 [tasks.md](references/tasks.md)，不给对象分类、直接给可执行序列。高频 Top 8：
