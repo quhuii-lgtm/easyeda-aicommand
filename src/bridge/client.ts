@@ -430,7 +430,8 @@ async function probeAndAutoLaunch(port: number, force: boolean): Promise<boolean
 	const generation = lifecycleGeneration;
 	let response: Response | undefined;
 	try {
-		response = await eda.sys_ClientUrl.request('http://127.0.0.1:' + port + '/health', 'GET');
+		// The host wraps refused 127.0.0.1 requests as HTTP 500; localhost preserves rejection semantics.
+		response = await eda.sys_ClientUrl.request('http://localhost:' + port + '/health', 'GET');
 	}
 	catch {
 		// The launcher performs its own local-port check before starting a process.

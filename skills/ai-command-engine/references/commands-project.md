@@ -46,6 +46,18 @@
 | 指令 | 说明 | 关键参数 |
 | --- | --- | --- |
 | `project.createPcb` | 新建 PCB（boardName 规则同上） | `boardName?` |
-| `project.copyPcb` | 复制 PCB | `pcbUuid`, `boardName?` |
+| `project.copyPcb` | 复制 PCB；`boardName` 是副本归属的目标 Board 名称，不是副本名称 | `pcbUuid`, `boardName?` |
 | `project.deletePcb` | 删除 PCB | `pcbUuid` |
 | `project.listPcbs` | 列全部 PCB | 无 |
+
+- **`project.copyPcb`**：省略 `boardName` 时创建游离 PCB，不要求预先证明已有 Board 归属。若指定不存在的 Board 名而 SDK 返回空，具体根因未知。SDK 空返回或抛错时结果未确认，插件以 `error.cause.partial=true` 返回并停止依赖宏步骤，不自动重试；先用 `project.getInfo` 与 `project.listPcbs` 只读核对。成功返回以 `pcbUuid` 标识副本。
+
+```json
+{
+  "instanceId": "当前工程窗口 ID",
+  "cmd": "project.copyPcb",
+  "params": { "pcbUuid": "源 PCB UUID", "boardName": "副本归属的目标 Board 名" }
+}
+```
+
+遇 `error.cause.partial=true` 时不要再次复制；按上文只读核对结果处理。

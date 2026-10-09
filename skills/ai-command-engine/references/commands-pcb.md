@@ -29,6 +29,8 @@
 | `pcb.routeTrack` | 走线（折线自动拆段） | `net`, `points`, `layer?`, `width?` 或 `currentA?` |
 | `pcb.placeVia` | 过孔 | `net`, `x`, `y`, `holeDiameter`, `diameter` |
 | `pcb.pourCopper` | 矩形铺铜（只创建覆铜边框，不保证同步填充） | `net`, `layer?`, `x`, `y`, `width`, `height` |
+| `pcb.getFanoutPlan` / `pcb.fanout` | 只读规划并按计划创建焊盘扇出线与通孔 | 规划参数、完整 `plan` 执行；详见[几何命令说明](commands-geometry.md) |
+| `pcb.getAutoCopperPlan` / `pcb.autoCopper` | 只读规划并按计划创建局部覆铜或固定填充 | 规划参数、完整 `plan` 执行；详见[几何命令说明](commands-geometry.md) |
 | `pcb.rebuildPour` | 重建铺铜填充并读回 | `primitiveId?`（留空=全板） |
 | `pcb.listLines`/`listVias`/`listPours` | 读回自查（listPours 传 `withFill:true` 可读回填充状态） | `net?` |
 | `pcb.listNets` | 列全部网络 | 无 |
@@ -36,7 +38,8 @@
 
 - `pcb.listPours` 的 `withFill:true` 返回 `filled:boolean|null` 与 `fillStatus:filled|empty|unknown`，并可带 `fillRegions`、`fillPrimitiveId`、`fillReadError`。无填充区域，或有效填充对象的 `PourFills` 数组为空时，结果为 `false/empty` 且区域数为 0；必须有有效填充对象和非空区域数组才是 `true/filled`。读取失败、超时、对象结构无效或数组元素无效时返回 `null/unknown` 并附错误；`null` 不可当作未填充判断。
 - `pcb.routeTrack` 成功返回 `segmentIds`。写入开始后的分段错误若由处理器捕获，`error.cause.partial=true` 并含 `segmentIds`、一基 `failedSegmentIndex`、`failedSegmentAttempted`、`unprocessedSegments` 和 `phase`。`failedSegmentAttempted:true` 表示失败段已发出、可能已生效，`unprocessedSegments` 只计其后的段；为 `false` 表示失败段尚未发出，计数包含该段。外层通用熔断可能只返回通用 `partial`，不保证有分段字段。即使末段已返回有效 ID，共享预算耗尽时仍可能保守返回 `partial`；处理器会保留已知 ID，不表示一定缺段或未落地。失败不自动回滚或重试；宏停止，先读回现场再决定后续写入。
-- **0.10.87 候选边界**：以上三项依据源码候选说明；候选未安装，尚无宿主实测验证。
+- 扇出与自动局部铜皮均先调用只读计划命令，再把完整返回对象作为执行命令的 `params.plan`。两类计划与执行细节、覆盖限制及来源见[几何命令说明](commands-geometry.md)。
+- **0.10.87 实机范围（2026-10-08）**：隔离PCB已验证铺铜 empty→filled、矩形焊盘45°与圆形焊盘外接框、三段走线；保存关闭重开后走线及填充保持，原有器件和线段不变。非圆椭圆、OVAL、NGON、未知形状及故障超时分支仍仅有本地模拟回归，不能据此宣称全部形状或生产验收通过。
 
 - **rebuildPour（0.10.82 源码）**：单框、全板和逐框重建共用既有总预算。超时、拒绝或写后读回未知返回失败及 `error.cause.partial=true`，停止后续重建和宏写入；不能凭旧填充掩盖本次错误。`completed` 仅表示调用未报错且有效读回存在填充，`freshnessVerified:false`，不证明填充新鲜度、保存态或制造可用。超时不代表取消，先只读复核，勿盲目重试。安装宿主验证须单列。
 - 大电流先 `knowledge.widthForCurrent` 换算线宽（`currentA?` 传电流时插件按 IPC-2221 自动换算）；GND 优先整层铺铜。
@@ -52,7 +55,7 @@
 | `pcb.getPrimitivesInRegion` | 区域扫描（语义 left<right、top>bottom） | `left/right/top/bottom` |
 | `pcb.getPrimitiveAtPoint` | 点查 | `x`, `y` |
 | `pcb.listLayers` | 列全部层 | 无 |
-| `pcb.getCurrentLayer` / `pcb.selectLayer` | 查/切当前激活层 | select: `layer`（ID 或 top/bottom） |
+| `pcb.getCurrentLayer` / `pcb.selectLayer` | 查/切当前激活层 | select: `layer`（层 ID、`top`/`t`、`bottom`/`b`，以及 `inner2`/`inner-2`/`inner_2` 等宽层别名；数字输入保持原行为） |
 | `pcb.setCopperLayers` | 设铜层数（2/4/6…，⚠️ 改层数影响叠层，谨慎） | `count` |
 | `pcb.setLayerVisible` / `setLayerLocked` | 层显示/隐藏、锁定 | `layers[]`, `visible?`/`locked?` |
 | `addCustomLayer` / `removeCustomLayer` / `modifyLayer` / `setPcbType` | 自定义层与板型（刚性 NORMAL / 柔性 FPC；⚠️ 加删层触发文档重载，需重新 openDocument，守卫会自愈） | 层名/板型 |
@@ -68,8 +71,13 @@
 | --- | --- |
 | `pcb.runDrc` | DRC |
 | `pcb.runDrcDetailed` | 逐条明细（官方树形分组，插件拍平提 type/rule/message/net/primitiveId/x/y，raw 保留原样，聚合 fatalCount/warnCount） |
+| `pcb.runDfm` | 嘉立创 PCB 下单检查（18 项；材料、板厚及本次外/内铜厚选择为必填） | `material`, `thickness`, `outerCopperOz`, `innerCopperOz` |
+| `pcb.runSmtDfm` | 嘉立创 SMT 下单检查（7 项；经济/标准、板厚为必填） | `standard`, `thickness` |
+| `pcb.checkSameNetPadSpacing` | 同网络焊盘间距检查（1 项） | `minSpacingMm` |
 | `pcb.importChanges` | 从原理图导入（⚠️ 弹对话框，需用户点「应用修改」） |
 | `pcb.save` | 保存（⚠️ 无修改时官方返回 false，非失败） |
+
+下单检查参数、铜厚输入与图纸对照、结果完整性和覆盖限制见[嘉立创下单检查说明](commands-dfm.md)。0.10.92 铜厚参数已通过本地及实机命令对照，菜单定位与导出对话框待实机验收。
 
 - **原理图有致命 DRC 时 `importChanges` 静默返回 false**——导入前必须清到 0 致命。
 - 导入后 `listComponents`+逐器件 `getComponentPads` 比对焊盘网络与网表。
@@ -80,9 +88,24 @@
 
 | 指令 | 说明 |
 | --- | --- |
-| `pcb.modifyLine`/`modifyVia`/`modifyPour`/`modifyString` | 改线/孔/铺铜/丝印（分步+读回验证），均实测 |
+| `pcb.modifyLine`/`modifyVia`/`modifyPour`/`modifyString` | 改线/孔/铺铜/丝印（分步+读回验证） |
 | `pcb.placeString`/`listStrings` | 丝印放/读 |
 | `pcb.getPrimitivesInRegion`/`getPrimitiveAtPoint` | ⚠️ 查不到丝印文字；区域语义 left<right、top>bottom |
+
+- **`modifyPour` 的 `order`（0.10.89 候选）**：逐项写入后独立读取 PCB source 核对 `sourceOrder`；验收以请求数值与 source 读回相符为准，`apiPriority` 仅作辅助信息。宿主 API 的正数 `setOrder` 是插入位置，不是直接设置源数据 `order`：priority 1 作用于原顺序 `[2,3]` 时仍可能读回 `3`。查询 `get`/`getAll` 时，源 `order:0` 会回退为 `maxOrder+1`，因此改用这些查询方式无法修正此行为。`order:0` 可用 source 读回验证，但不能保证任意指定顺序。
+- 每项抛错、空返回、source 读回失败或不匹配时立即停止后续项，并返回 `error.cause.partial=true` 及 `attemptedFields`、`verifiedFields`、`unverifiedFields`、`notAttemptedFields`、`readback`、`sourceOrders`。`readbackStatus` / `sourceOrdersStatus` 为 `lastKnown` 时只代表旧观测；写后读回失败或迟到时，不保留当前“已验证”标记。沿用单指令总时限，超时不能取消已发出的修改，但不继续发出后续读取或修改。不得自动重试；先按返回字段只读核对。候选不保证任意指定 `order`，不修复宿主排序算法，不自动删除重建、归一化或重排其他覆铜，也不自动保存。本地模拟回归通过；2026-10-09 在隔离工程验证源 order 0/1、非零改0、组合字段不一致停止及宏停止，并经保存关闭重开核对持久性。priority 99 实际读回3时返回 partial；不代表任意顺序值可达。当前宿主 getCurrentLayer 为空实现，本轮选层按独立 UI 激活标记验证 inner2 与数字15，不能以 null 判定选择失败。
+
+调用仍使用普通 `/command` 外层格式；source 读回由插件在写入后独立完成：
+
+```json
+{
+  "instanceId": "当前 PCB 窗口 ID",
+  "cmd": "pcb.modifyPour",
+  "params": { "primitiveId": "目标覆铜 ID", "pourPriority": 1 }
+}
+```
+
+插件会用独立 source 读回来核对 `sourceOrder`。若收到 `error.cause.partial=true`，宏已停止；用 `project.getDocumentSource` 只读核对现场，不重复提交。
 
 ## ⑥ 低频附录（用到再查）
 
