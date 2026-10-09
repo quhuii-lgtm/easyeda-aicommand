@@ -13,8 +13,11 @@ import { createBridgeOwnerCoordinator } from './bridge/owner';
  * 因此与 AI 的通信必须走本扩展自己的 WebSocket 连接。
  */
 import { getBridgeLifecycleStatus, reconnectBridgeClient, startBridgeClient, stopBridgeClient } from './bridge/client';
+import { autoCopperCommands } from './commands/autoCopper';
 import { cbbCommands } from './commands/cbb';
+import { dfmCommands } from './commands/dfm';
 import { editorCommands } from './commands/editor';
+import { fanoutCommands } from './commands/fanout';
 import { knowledgeCommands } from './commands/knowledge';
 import { libCommands } from './commands/lib';
 import { pcbCommands } from './commands/pcb';
@@ -22,6 +25,7 @@ import { pcbGroupingCommands } from './commands/pcbGrouping';
 import { libraryCommands, projectCommands } from './commands/project';
 import { schematicCommands } from './commands/schematic';
 import { systemCommands } from './commands/system';
+import { installDfmMenuApi, padSpacingMenu, pcbDfmMenu, smtDfmMenu } from './dfm/menu';
 import { executeCommand, getCommandDocs, listCommandNames, registerCommand } from './engine/registry';
 
 let registered = false;
@@ -35,6 +39,9 @@ function registerAllCommands(): void {
 		...editorCommands,
 		...schematicCommands,
 		...pcbCommands,
+		...fanoutCommands,
+		...autoCopperCommands,
+		...dfmCommands,
 		...pcbGroupingCommands,
 		...knowledgeCommands,
 		...systemCommands,
@@ -69,6 +76,7 @@ function handleBridgeOwnerRequest(request: any): unknown {
 }
 
 export function activate(_status?: 'onStartupFinished', _arg?: string): void {
+	installDfmMenuApi();
 	if (registered || activating)
 		return;
 	activating = true;
@@ -120,6 +128,8 @@ export function activate(_status?: 'onStartupFinished', _arg?: string): void {
 		activating = false;
 	}
 }
+
+export { padSpacingMenu, pcbDfmMenu, smtDfmMenu };
 
 async function requestOwner(method: string, title: string): Promise<any | undefined> {
 	try {

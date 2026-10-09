@@ -8,6 +8,7 @@ import { assertSnapshotFocused, captureDocumentSnapshot, withDocumentRecovery } 
 import { widthForCurrent } from '../knowledge/rules'
 import { blobToBase64, fileToResult } from './util'
 import { beginTask, failTask, finishTask, taskProgress } from '../engine/tasks'
+import { parseSourceLog, resolveRecords } from '../pcb/sourcelog'
 
 /** 0.10.42：给无保护 await 加超时（官方偶发永不 resolve，曾致整批删除挂死 300s 无结果） */
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
@@ -1436,14 +1437,32 @@ export const pcbCommands: Array<ICommandDef> = [
 		name: 'pcb.selectLayer',
 		summary: '切换当前激活层',
 		params: [
-			{ name: 'layer', type: 'string | number', required: true, description: '层 ID 或 top/bottom' },
+			{ name: 'layer', type: 'string | number', required: true, description: `层名或层 ID；${LAYER_HELP}` },
 		],
 		returns: '{ selected }',
 		example: { cmd: 'pcb.selectLayer', params: { layer: 'bottom' } },
 		handler: async (params) => {
 			if (params.layer == null)
 				throw new Error('缺少参数 layer')
-			const selected = await eda.pcb_Layer.selectLayer(resolveLayer(params.layer) as any)
+			let layer: number
+			if (typeof params.layer === 'string') {
+				const normalized = params.layer.trim().toLowerCase().replace(/[_\s]/g, '-')
+				if (normalized === '' || normalized === 'top' || normalized === 't' || normalized === 'bottom' || normalized === 'b')
+					layer = resolveLayer(params.layer)
+				else {
+					const namedLayer = /^(inner|custom)-?(\d+)$/.exec(normalized)
+					if (namedLayer) {
+						const number = Number(namedLayer[2])
+						const maximum = namedLayer[1] === 'inner' ? 32 : 200
+						if (number < 1 || number > maximum)
+							throw new Error(`不认识的层 "${params.layer}"——合法命名层范围为 inner1~inner32、custom1~custom200`)
+					}
+					layer = resolveLayerEx(params.layer, 1)
+				}
+			}
+			else
+				layer = resolveLayerEx(params.layer, 1)
+			const selected = await eda.pcb_Layer.selectLayer(layer as any)
 			return { selected: Boolean(selected) }
 		},
 	},
@@ -1814,12 +1833,12 @@ export const pcbCommands: Array<ICommandDef> = [
 		params: [
 			{ name: 'primitiveId', type: 'string', required: true, description: '铺铜图元 ID' },
 			{ name: 'net', type: 'string', description: '新网络名' },
-			{ name: 'layer', type: 'string', description: '新层：top | bottom | inner1..30 | 数字层 ID' },
+			{ name: 'layer', type: 'string | number', description: `新层：${LAYER_HELP}` },
 			{ name: 'pourName', type: 'string', description: '铺铜名称' },
 			{ name: 'pourPriority', type: 'number', description: '铺铜优先级（数字小先铺）' },
 			{ name: 'lineWidth', type: 'number', description: '铺铜线宽（mil）' },
 		],
-		returns: '{ modified }',
+		returns: '{ modified, readback: { verified, ... }, apiPriority?, sourceOrder?, sourceOrders }；优先级按 PCB 源码 order 验收；当前宿主可能将请求 priority 映射为同层锚点排序，读回不符时停止后续字段并标记 partial，不自动重试或保存',
 		example: { cmd: 'pcb.modifyPour', params: { primitiveId: 'xxx', pourPriority: 1 } },
 		handler: async (params) => {
 			if (!params.primitiveId)
@@ -1832,38 +1851,197 @@ export const pcbCommands: Array<ICommandDef> = [
 			if (params.pourName != null)
 				property.pourName = String(params.pourName)
 			for (const k of ['pourPriority', 'lineWidth']) {
-				if (params[k] != null)
+				if (params[k] != null) {
 					property[k] = Number(params[k])
+					if (!Number.isFinite(property[k]))
+						throw new Error(`${k} 必须是有限数值`)
+				}
 			}
 			if (Object.keys(property).length === 0)
 				throw new Error('至少提供一个要修改的属性')
 			const pourId = String(params.primitiveId)
-			// 0.10.24 原子化（P10）——网络 / 层 / 名称 / 优先级 / 线宽各自独立步骤
-			const pourSteps: Array<Record<string, any>> = []
-			for (const k of ['net', 'layer', 'pourName', 'pourPriority', 'lineWidth']) {
-				if (property[k] != null)
-					pourSteps.push({ [k]: property[k] })
+			const monotonicStart = performance.now()
+			const MAX_TIMER_MS = 2147483647
+			const requestedTimeout = params._timeoutMs == null ? 290_000 : Number(params._timeoutMs)
+			if (!Number.isFinite(requestedTimeout) || requestedTimeout > MAX_TIMER_MS)
+				throw new Error(`_timeoutMs 必须是有限且不超过 ${MAX_TIMER_MS}ms 的数值`)
+			const budgetMs = Math.max(1000, requestedTimeout)
+			const deadline = monotonicStart + budgetMs
+			const remaining = () => deadline - performance.now()
+			const budgetError = (label: string, cause?: unknown) => new Error(`${label}超出单指令时间预算（${budgetMs}ms）；原调用可能仍在后台执行`, cause === undefined ? undefined : { cause })
+			const awaitSdk = async <T>(label: string, operation: () => Promise<T>): Promise<T> => {
+				if (remaining() <= 0)
+					throw budgetError(label)
+				let value: T
+				try { value = await operation() }
+				catch (error) {
+					if (remaining() <= 0)
+						throw budgetError(label, error)
+					throw error
+				}
+				if (remaining() <= 0)
+					throw budgetError(label)
+				return value
 			}
-			const okAny = await modifyInSteps(async props => eda.pcb_PrimitivePour.modify(pourId, props as any), pourSteps)
-			// 读回验证（0.10.24）
-			await new Promise(resolve => setTimeout(resolve, 300))
-			const pours = await eda.pcb_PrimitivePour.getAll(undefined, undefined).catch(() => undefined)
-			const back = (pours ?? []).find((p: any) => safeState<string>(p, 'getState_PrimitiveId') === pourId)
-			const checks: Array<[string, string, any, 'num' | 'str' | 'bool']> = []
-			if (property.net != null)
-				checks.push(['net', 'getState_Net', property.net, 'str'])
-			if (property.layer != null)
-				checks.push(['layer', 'getState_Layer', property.layer, 'num'])
-			if (property.pourName != null)
-				checks.push(['pourName', 'getState_PourName', property.pourName, 'str'])
-			if (property.pourPriority != null)
-				checks.push(['pourPriority', 'getState_PourPriority', property.pourPriority, 'num'])
-			if (property.lineWidth != null)
-				checks.push(['lineWidth', 'getState_LineWidth', property.lineWidth, 'num'])
-			const { readback, verified } = verifyReadback(back, checks)
-			if (!verified)
-				throw new Error(`铺铜 ${pourId} 修改读回不匹配（读回 ${JSON.stringify(readback)}，目标 ${JSON.stringify(property)}）——官方 modify 假成功，请重试`)
-			return { modified: okAny || verified, readback: { ...readback, verified } }
+			const focus = await awaitSdk('读取焦点文档', () => eda.dmt_SelectControl.getCurrentDocumentInfo())
+			if (focus?.documentType !== 3 || typeof focus?.uuid !== 'string' || !focus.uuid.trim())
+				throw new Error(`焦点文档不是有效 PCB（documentType=${focus?.documentType ?? '未知'}, uuid=${focus?.uuid ?? '无'}）`)
+			const assertSameFocus = async () => {
+				const latestFocus = await awaitSdk('复核焦点文档', () => eda.dmt_SelectControl.getCurrentDocumentInfo())
+				if (latestFocus?.documentType !== 3 || latestFocus.uuid !== focus.uuid)
+					throw new Error(`当前 PCB 文档已变化（原页=${focus.uuid}, 当前=${latestFocus?.uuid ?? '未知'}）`)
+			}
+			const readSource = async () => {
+				await assertSameFocus()
+				const source = await awaitSdk('读取 PCB 源码', () => eda.sys_FileManager.getDocumentSource())
+				await assertSameFocus()
+				if (typeof source !== 'string' || !source.trim())
+					throw new Error('getDocumentSource 返回空或非法值')
+				const doc = parseSourceLog(source)
+				if (doc.docType !== 'PCB' || doc.uuid !== focus.uuid)
+					throw new Error(`源码身份与当前 PCB 不符（docType=${doc.docType}, 源码 UUID=${doc.uuid}, 焦点 UUID=${focus.uuid}）`)
+				const records = resolveRecords(doc, 'POUR')
+				const target = records.get(`POUR\u0000${pourId}`)
+				if (!target || !target.data || typeof target.data !== 'object' || Array.isArray(target.data))
+					throw new Error(`源码中不存在有效铺铜 ${pourId}`)
+				const all = Array.from(records.values()).map(record => ({ id: String(record.header.id), data: record.data as Record<string, any> }))
+				return { target: target.data as Record<string, any>, orders: all.filter(item => item.data.layerId === target.data.layerId).map(item => ({ primitiveId: item.id, layer: item.data.layerId, sourceOrder: item.data.order })).sort((a, b) => String(a.primitiveId).localeCompare(String(b.primitiveId))) }
+			}
+			const names = ['net', 'layer', 'pourName', 'pourPriority', 'lineWidth'] as const
+			const sourceField: Record<(typeof names)[number], string> = { net: 'netName', layer: 'layerId', pourName: 'name', pourPriority: 'order', lineWidth: 'width' }
+			const sourceValue = (data: Record<string, any>, key: (typeof names)[number]) => data[sourceField[key]]
+			const equivalent = (key: (typeof names)[number], actual: unknown, expected: unknown) => key === 'net' || key === 'pourName' ? actual === expected : typeof actual === 'number' && actual === expected
+			const requested = Object.fromEntries(names.filter(key => property[key] != null).map(key => [key, property[key]]))
+			let previousSource: Awaited<ReturnType<typeof readSource>> | undefined
+			const sourceOrders: { before: Array<Record<string, unknown>>, after?: Array<Record<string, unknown>> } = { before: [] }
+			const attemptedFields: Array<string> = []
+			const verifiedFields: Array<string> = []
+			const readback: Record<string, unknown> = {}
+			let apiPriority: number | undefined
+			let lastSource: Record<string, any> = {}
+			let readbackStatus: 'current' | 'lastKnown' = 'current'
+			const refreshVerifiedFields = (data: Record<string, any>) => {
+				verifiedFields.splice(0, verifiedFields.length, ...attemptedFields.filter(field => equivalent(field as (typeof names)[number], sourceValue(data, field as (typeof names)[number]), requested[field])))
+			}
+			const remainingFields = () => names.filter(key => property[key] != null && !attemptedFields.includes(key))
+			const failPartial = (message: string, details: Record<string, unknown>, original?: unknown): never => {
+				const error = original instanceof Error ? original : new Error(message)
+				const priorCause = (error as any).cause
+				;(error as any).cause = {
+					...(priorCause !== undefined ? { priorCause } : {}),
+					partial: true,
+					retryable: false,
+					primitiveId: pourId,
+					documentUuid: focus.uuid,
+					requested,
+					attemptedFields: [...attemptedFields],
+					verifiedFields: [...verifiedFields],
+					unverifiedFields: attemptedFields.filter(field => !verifiedFields.includes(field)),
+					notAttemptedFields: remainingFields(),
+					readback: { ...readback },
+					readbackStatus,
+					sourceOrdersStatus: readbackStatus,
+					sourceOrders: { ...sourceOrders },
+					...details,
+				}
+				if (!original)
+					error.message = message
+				throw error
+			}
+			const before = await readSource() // 前置失败不会标记 partial
+			previousSource = before
+			sourceOrders.before = before.orders
+			lastSource = before.target
+			for (const key of names) {
+				if (property[key] == null)
+					continue
+				try { await assertSameFocus() }
+				catch (error) {
+					readbackStatus = 'lastKnown'
+					if (attemptedFields.length)
+						failPartial(`铺铜 ${pourId} 字段 ${key} 写入前文档焦点已变化，已停止后续字段`, { readError: String((error as any)?.message ?? error) })
+					throw error
+				}
+				if (remaining() <= 0) {
+					const error = budgetError(`铺铜 ${pourId} 字段 ${key} 写入前检查`)
+					readbackStatus = 'lastKnown'
+					if (attemptedFields.length)
+						failPartial(error.message, { readError: error.message })
+					throw error
+				}
+				const stepBefore = previousSource!
+				let writeResult: unknown
+				let writeError: unknown
+				try {
+					writeResult = await awaitSdk(`修改铺铜 ${pourId} ${key}`, () => {
+						attemptedFields.push(key)
+						readbackStatus = 'lastKnown'
+						verifiedFields.length = 0
+						return eda.pcb_PrimitivePour.modify(pourId, { [key]: property[key] } as any)
+					})
+					if (!writeResult)
+						writeError = new Error('modify 返回空值或失败值')
+				}
+				catch (error) { writeError = error }
+				if (remaining() <= 0) {
+					const error = writeError instanceof Error ? writeError : budgetError(`铺铜 ${pourId} 字段 ${key} 写入`)
+					if (attemptedFields.length)
+						failPartial(`铺铜 ${pourId} 字段 ${key} 写入超出时间预算，结果未知；已停止后续读取和写入`, { writeError: String((writeError as any)?.message ?? writeError ?? 'modify 已返回') }, error)
+					throw error
+				}
+				let after: Awaited<ReturnType<typeof readSource>> | undefined
+				let readError: unknown
+				try { after = await readSource() }
+				catch (error) { readError = error }
+				if (readError) {
+					verifiedFields.length = 0
+					readbackStatus = 'lastKnown'
+					failPartial(`铺铜 ${pourId} 字段 ${key} 写后源码读回不可用：${(readError as any)?.message ?? String(readError)}`, { writeError: writeError ? String((writeError as any)?.message ?? writeError) : undefined, readError: String((readError as any)?.message ?? readError) }, writeError)
+				}
+				if (after) {
+					readbackStatus = 'current'
+					sourceOrders.after = after.orders
+					lastSource = after.target
+					for (const field of names)
+						readback[field] = sourceValue(after.target, field) ?? null
+					const sameLayerChanged = key !== 'pourPriority' && key !== 'layer' && JSON.stringify(stepBefore.orders) !== JSON.stringify(after.orders)
+					refreshVerifiedFields(after.target)
+					if (writeError)
+						failPartial(`铺铜 ${pourId} 字段 ${key} 修改失败或返回空值，已停止后续字段`, { writeError: String((writeError as any)?.message ?? writeError) }, writeError)
+					if (!equivalent(key, sourceValue(after.target, key), property[key])) {
+						const mismatch = { field: key, requested: property[key], actual: sourceValue(after.target, key) }
+						const message = key === 'pourPriority'
+							? `铺铜 ${pourId} 目标排序未达成（请求 priority=${property[key]}, source order=${sourceValue(after.target, key)}）；宿主排序参数可能不等于 source order，请检查后决定是否再次操作`
+							: `铺铜 ${pourId} 字段 ${key} 源码读回不匹配（请求=${JSON.stringify(property[key])}, source=${JSON.stringify(sourceValue(after.target, key))}）`
+						failPartial(message, { sourceMismatch: mismatch })
+					}
+					if (sameLayerChanged)
+						failPartial(`铺铜 ${pourId} 字段 ${key} 修改同时改变了同层铺铜 source order，已停止后续字段`, { sourceOrderChanged: true })
+					for (const field of names) {
+						if (field !== key && sourceValue(after.target, field) !== sourceValue(stepBefore.target, field))
+							failPartial(`铺铜 ${pourId} 字段 ${key} 修改同时改变了其他字段 ${field}，已停止后续字段`, { unintendedFieldChange: { field, before: sourceValue(stepBefore.target, field), after: sourceValue(after.target, field) } })
+					}
+					previousSource = after
+				}
+			}
+			try {
+				await assertSameFocus()
+				const pours = await awaitSdk('读取 API 铺铜优先级', () => eda.pcb_PrimitivePour.getAll(undefined, undefined))
+				await assertSameFocus()
+				const back = (pours ?? []).find((p: any) => safeState<string>(p, 'getState_PrimitiveId') === pourId)
+				apiPriority = back ? safeState<number>(back, 'getState_PourPriority') : undefined
+			}
+			catch (error) {
+				if (remaining() <= 0)
+					failPartial(`铺铜 ${pourId} API 优先级辅助读回超出时间预算，停止并标记部分结果`, { readError: String((error as any)?.message ?? error) })
+				/* API 优先级是辅助信息，源码 order 为验收依据 */
+			}
+			return {
+				modified: true,
+				readback: { ...readback, verified: true },
+				...(property.pourPriority != null ? { apiPriority, sourceOrder: sourceValue(lastSource, 'pourPriority') } : {}),
+				sourceOrders,
+			}
 		},
 	},
 	{

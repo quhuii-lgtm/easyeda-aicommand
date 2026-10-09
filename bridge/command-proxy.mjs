@@ -232,6 +232,9 @@ function forwardToExtension(message, instanceId, isWrite = false) {
 const READONLY_COMMAND_PATTERNS = [
 	/^schematic\.(list|get|export|runDrc|checkRectOverlap)/,
 	/^pcb\.(list|get|export|runDrc)/,
+	/^pcb\.runDfm$/,
+	/^pcb\.runSmtDfm$/,
+	/^pcb\.checkSameNetPadSpacing$/,
 	/^project\.(get|list|export)/,
 	/^editor\.(listTabs|screenshot|zoomToAll|zoomToRegion)$/,
 	/^library\.(search|get)/,

@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { build } from 'esbuild';
+
+const extensionVersion = JSON.parse(await readFile('extension.json', 'utf8')).version;
 
 const compiled = await build({
 	entryPoints: ['src/index.ts'],
@@ -13,6 +16,7 @@ const compiled = await build({
 		setup(build) {
 			build.onResolve({ filter: /^\.\/bridge\/client$/ }, () => ({ path: 'bridge-client', namespace: 'mock' }));
 			build.onResolve({ filter: /^\.\/commands\// }, args => ({ path: args.path, namespace: 'mock' }));
+			build.onResolve({ filter: /^\.\/dfm\/menu$/ }, () => ({ path: 'dfm-menu', namespace: 'mock' }));
 			build.onResolve({ filter: /^\.\/engine\/registry$/ }, () => ({ path: 'registry', namespace: 'mock' }));
 			build.onLoad({ filter: /.*/, namespace: 'mock' }, args => {
 				if (args.path === 'bridge-client') {
@@ -32,7 +36,9 @@ const compiled = await build({
 				}
 				if (args.path === 'registry')
 					return { contents: 'export const executeCommand = async () => ({}); export const getCommandDocs = () => []; export const listCommandNames = () => ["demo.command"]; export const registerCommand = () => { if (globalThis.__bridge.failRegistrations > 0) { globalThis.__bridge.failRegistrations--; throw new Error("register failed"); } };' };
-				return { contents: 'export const cbbCommands=[{name:"demo.command"}]; export const editorCommands=[]; export const knowledgeCommands=[]; export const libCommands=[]; export const pcbCommands=[]; export const pcbGroupingCommands=[]; export const libraryCommands=[]; export const projectCommands=[]; export const schematicCommands=[]; export const systemCommands=[];' };
+				if (args.path === 'dfm-menu')
+					return { contents: 'export const installDfmMenuApi = () => {}; export const padSpacingMenu = async () => {}; export const pcbDfmMenu = async () => {}; export const smtDfmMenu = async () => {};' };
+				return { contents: 'export const autoCopperCommands=[]; export const cbbCommands=[{name:"demo.command"}]; export const dfmCommands=[]; export const editorCommands=[]; export const fanoutCommands=[]; export const knowledgeCommands=[]; export const libCommands=[]; export const pcbCommands=[]; export const pcbGroupingCommands=[]; export const libraryCommands=[]; export const projectCommands=[]; export const schematicCommands=[]; export const systemCommands=[];' };
 			});
 		},
 	}],
@@ -100,7 +106,7 @@ function createModule(bus, sharedBridge = { startCalls: 0, clientInstances: 0, s
 	return { api: context.module.exports, context, messages };
 }
 
-function addOwner(bus, id, version = '0.10.77', phase = 'ready') {
+function addOwner(bus, id, version = extensionVersion, phase = 'ready') {
 	const rpcTopic = `fake-rpc:${id}`;
 	bus.messageBus.subscribe('ai-command-engine:owner:query:v1', request => bus.messageBus.publish(request.replyTopic, { id, rpcTopic, phase, version }));
 	bus.messageBus.rpcService(rpcTopic, () => ({ status: 'fake' }));
@@ -206,8 +212,8 @@ for (const [name, options] of [
 
 await test('multiple owners and mismatched owner version fail without a client', async () => {
 	const bus = makeBus();
-	addOwner(bus, 'a', '0.10.78');
-	addOwner(bus, 'b', '0.10.78');
+	addOwner(bus, 'a', extensionVersion);
+	addOwner(bus, 'b', extensionVersion);
 	const bridge = { startCalls: 0, clientInstances: 0, stopCalls: 0, reconnectCalls: 0, status: 'connected' };
 	const module = createModule(bus, bridge);
 	module.api.activate();
@@ -226,9 +232,9 @@ await test('incompatible owner version is explicit and does not look like no own
 });
 
 for (const [name, malformed] of [
-	['missing id', { rpcTopic: 'fake-rpc:bad', phase: 'ready', version: '0.10.78' }],
-	['empty rpc topic', { id: 'bad', rpcTopic: ' ', phase: 'ready', version: '0.10.78' }],
-	['invalid phase', { id: 'bad', rpcTopic: 'fake-rpc:bad', phase: 'broken', version: '0.10.78' }],
+	['missing id', { rpcTopic: 'fake-rpc:bad', phase: 'ready', version: extensionVersion }],
+	['empty rpc topic', { id: 'bad', rpcTopic: ' ', phase: 'ready', version: extensionVersion }],
+	['invalid phase', { id: 'bad', rpcTopic: 'fake-rpc:bad', phase: 'broken', version: extensionVersion }],
 ]) {
 	await test(`invalid owner reply (${name}) fails closed without starting`, async () => {
 		const bus = makeBus();

@@ -567,22 +567,39 @@ export const projectCommands: Array<ICommandDef> = [
 	},
 	{
 		name: 'project.copyPcb',
-		summary: '复制 PCB',
+		summary: '复制指定 PCB；boardName 指定副本归属的目标板子（Board）名，省略时创建游离 PCB',
 		params: [
 			{ name: 'pcbUuid', type: 'string', required: true, description: '源 PCB UUID' },
-			{ name: 'boardName', type: 'string', description: '目标板子名' },
+			{ name: 'boardName', type: 'string', description: '副本归属的目标板子（Board）名；省略时创建游离 PCB' },
 		],
-		returns: '{ pcbUuid }（新 PCB）',
+		returns: '{ pcbUuid }（新 PCB）；若 SDK 返回空或抛错，结果未知，错误标记 error.cause.partial=true 并阻止依赖宏继续',
 		example: { cmd: 'project.copyPcb', params: { pcbUuid: 'xxx' } },
 		handler: async (params) => {
 			if (!params.pcbUuid)
 				throw new Error('缺少参数 pcbUuid')
-			const uuid = await eda.dmt_Pcb.copyPcb(
-				String(params.pcbUuid),
-				params.boardName ? String(params.boardName) : undefined,
+			const sourcePcbUuid = String(params.pcbUuid)
+			const boardName = params.boardName ? String(params.boardName) : undefined
+			const unknownResult = (operationError: unknown) => new Error(
+				`PCB 复制结果未知（源 PCB ${sourcePcbUuid}，请求 boardName=${boardName ?? '未提供'}）。官方调用可能已创建副本，也可能尚未创建；请先用 project.getInfo / project.listPcbs 核对是否生成副本，再决定后续操作；不要自动重试。原始错误：${operationError instanceof Error ? operationError.message : String(operationError)}`,
+				{
+					cause: {
+						partial: true,
+						retryable: false,
+						phase: 'project.copyPcb',
+						operationError: operationError instanceof Error ? operationError.message : String(operationError),
+						result: { sourcePcbUuid, requestedBoardName: boardName ?? null, pcbUuid: 'unknown' },
+					},
+				},
 			)
+			let uuid: string | undefined
+			try {
+				uuid = await eda.dmt_Pcb.copyPcb(sourcePcbUuid, boardName)
+			}
+			catch (err) {
+				throw unknownResult(err)
+			}
 			if (!uuid)
-				throw new Error('PCB 复制失败（官方返回空）')
+				throw unknownResult('SDK 返回空值')
 			return { pcbUuid: uuid }
 		},
 	},

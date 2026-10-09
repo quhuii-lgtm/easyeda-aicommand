@@ -7,9 +7,13 @@ description: 通过简易 JSON 指令操作嘉立创 EDA 专业版（EasyEDA Pro
 
 本技能可独立安装，不依赖作者本机的其他技能或调试网关。首次装机见仓库 README；连接细节见 setup。
 
-配套代理和技能从[项目仓库](https://github.com/quhuii-lgtm/easyeda-aicommand)获取，并按所用版本/提交保持一致；插件市场安装不会替使用者部署本地代理或向 AI 工具安装技能。v0.10.88 目前是未发布候选，当前公开版为 [v0.10.87](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.10.87)；候选状态和有限验证范围见[候选说明](https://github.com/quhuii-lgtm/easyeda-aicommand/blob/main/docs/releases/v0.10.88.md)。使用仍需另行安装 Node.js >=20.17.0、运行本地代理、安装本技能，并在 EDA 启用扩展和允许外部交互。
+配套代理和技能从[项目仓库](https://github.com/quhuii-lgtm/easyeda-aicommand)获取，并按所用版本/提交保持一致；插件市场安装不会替使用者部署本地代理或向 AI 工具安装技能。v0.10.93 是 2026-10-09 的预发布候选，当前最新稳定版为 [v0.10.87](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.10.87)。候选验证范围见[版本说明](https://github.com/quhuii-lgtm/easyeda-aicommand/blob/v0.10.93/docs/releases/v0.10.93.md)。使用仍需另行安装 Node.js >=20.17.0、运行本地代理、安装本技能，并在 EDA 启用扩展和允许外部交互。
 
 HTTP 发 JSON 到 `http://localhost:49720` 操作 EasyEDA Pro；禁止自编 `eda.*` API。
+
+嘉立创下单检查提供 `pcb.runDfm`、`pcb.runSmtDfm` 和 `pcb.checkSameNetPadSpacing`。`pcb.runDfm` 必须明确输入 `outerCopperOz` 和 `innerCopperOz`；图纸来源铜厚另行报告，不能替代输入。检查完整性和几何覆盖边界见[下单检查说明](references/commands-dfm.md)。
+
+v0.10.93 预发布候选新增 `pcb.getFanoutPlan`、`pcb.fanout`、`pcb.getAutoCopperPlan` 和 `pcb.autoCopper`。扇出五项尺寸必须明确输入 mil；曲线几何有明确覆盖边界。接口、输入规则和失败处理见[几何命令说明](references/commands-geometry.md)。几何功能尚未在真实 EDA 工程验证写入和保存关闭重开。
 
 ## 新手必读（首次操作前读一遍，熟悉后跳过）
 
@@ -49,12 +53,14 @@ HTTP 发 JSON 到 `http://localhost:49720` 操作 EasyEDA Pro；禁止自编 `ed
 **🔴 有风险（用错后果）**
 `autoLayout` 真跑→部分移动失败时先检查 `error.cause.moved` 并核对现场；该命令不自动回滚，须依据备份受控恢复。没有通用 undo API，不承诺 UI undo 可用。修复类不带 dryRun→误删标签只能删线重画；`delete`→删错无撤销，先备份；`importFile`→覆盖导入无法回退；`groupBySchematicRegions`→无备份不可回滚；`importChanges`→DRC 非 0 会把错误同步进 PCB；改 Designator→位号错位、官方还会再规范化。
 
-## 指令文档（8 份，按对象）
+## 指令文档（10 份，按对象）
 
 | 对象 | 文件 |
 | --- | --- |
 | 原理图（含宏） | [commands-schematic.md](references/commands-schematic.md) |
 | PCB（含低频附录+自动布线闭环） | [commands-pcb.md](references/commands-pcb.md) |
+| PCB 扇出与自动局部铜皮 | [commands-geometry.md](references/commands-geometry.md) |
+| 嘉立创下单检查（DFM/SMT/同网间距） | [commands-dfm.md](references/commands-dfm.md) |
 | 网络类/差分对/生产导出 | [commands-net.md](references/commands-net.md) |
 | 工程/板子/图页 | [commands-project.md](references/commands-project.md) |
 | 复用模块 | [commands-cbb.md](references/commands-cbb.md) |

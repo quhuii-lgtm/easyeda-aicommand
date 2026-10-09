@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>嘉立创下单检查</title>
+	<style>
+		:root { color-scheme: dark; font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif; background:#15171c; color:#e8eaed; --line:#343a46; --panel:#1e2128; --muted:#a2a8b4; --accent:#818cf8; --bad:#f87171; --good:#34d399; }
+		* { box-sizing:border-box; }
+		body { margin:0; min-height:100vh; background:#15171c; }
+		main { min-height:100vh; display:flex; flex-direction:column; }
+		header { padding:16px 20px; background:var(--panel); border-bottom:1px solid var(--line); }
+		h1 { margin:0 0 6px; font-size:18px; }
+		p { margin:5px 0; color:var(--muted); font-size:12px; line-height:1.5; }
+		#scope { color:#fbbf24; }
+	.controls { display:grid; grid-template-columns:repeat(4,minmax(130px,1fr)); gap:12px; align-items:end; padding:16px 20px; border-bottom:1px solid var(--line); }
+		label { display:flex; flex-direction:column; gap:6px; font-size:12px; color:var(--muted); }
+		input,select,button { min-height:34px; color:#e8eaed; background:#262a33; border:1px solid #404653; border-radius:5px; padding:6px 9px; font:inherit; }
+		button { cursor:pointer; }
+		button:hover { border-color:var(--accent); }
+		button:disabled { opacity:.55; cursor:wait; }
+		.actions { display:flex; gap:8px; flex-wrap:wrap; }
+		.primary { background:#4f46e5; border-color:#6366f1; color:white; }
+		#status { min-height:34px; padding:8px 20px; color:#fbbf24; font-size:13px; }
+		#report { padding:0 20px 24px; overflow:auto; }
+		.summary { display:flex; flex-wrap:wrap; gap:16px; padding:10px 12px; background:var(--panel); border:1px solid var(--line); border-radius:6px; font-size:13px; }
+		.summary .good { color:var(--good); } .summary .bad { color:var(--bad); }
+		.section-title { margin:16px 0 7px; font-size:14px; }
+		ul { margin:0; padding-left:22px; color:var(--muted); font-size:12px; line-height:1.6; }
+		.issues { color:#fbbf24; }
+		.table-wrap { overflow:auto; border:1px solid var(--line); border-radius:6px; }
+		table { width:100%; border-collapse:collapse; font-size:12px; min-width:760px; }
+		th,td { padding:8px 10px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+		th { position:sticky; top:0; background:var(--panel); color:var(--muted); }
+		tr:last-child td { border-bottom:0; }
+		.result-error { color:var(--bad); } .result-warning { color:#fbbf24; } .result-success { color:var(--good); }
+		.violation { display:block; margin:2px 0; border:0; padding:0; min-height:unset; color:#c7d2fe; background:transparent; text-align:left; text-decoration:underline; }
+		footer { padding:0 20px 18px; color:var(--muted); font-size:11px; }
+		@media(max-width:760px) { .controls { grid-template-columns:repeat(2,minmax(120px,1fr)); } }
+	</style>
+</head>
+<body>
+<main>
+	<header>
+		<h1>嘉立创下单检查</h1>
+		<p>来源：<span id="source">嘉立创下单检查器 v1.0.4</span> · 当前 PCB：<span id="doc">正在读取</span></p>
+		<p id="scope">本地几何检查结果不等于嘉立创在线全量DFM验收。长圆焊环、接触/重叠线段、弧线和多段线等情况不在完整覆盖范围内。</p>
+	</header>
+	<section class="controls" aria-label="检查参数">
+		<label>检查类型<select id="kind"><option value="pcb">PCB DFM</option><option value="smt">SMT DFM</option><option value="spacing">同网焊盘间距</option></select></label>
+		<label id="material-field">PCB板材<select id="material"><option value="">请选择板材</option></select></label>
+		<label id="outer-copper-field" hidden>下单外层铜厚（oz）<select id="outer-copper"><option value="">请选择</option><option value="1">1 oz</option><option value="2">2 oz</option></select></label>
+		<label id="inner-copper-field" hidden>本次下单内层铜厚（oz）<select id="inner-copper"><option value="1">1 oz</option></select></label>
+		<label id="standard-field" hidden>SMT标准<select id="standard"><option value="">请选择标准</option><option value="economy">经济型</option><option value="standard">标准型</option></select></label>
+		<label id="thickness-field">板厚（mm）<input id="thickness" type="number" min="0" step="any" inputmode="decimal"></label>
+		<label id="spacing-field" hidden>同网最小间距（mm）<input id="spacing" type="number" min="0" step="any" inputmode="decimal"></label>
+		<div class="actions"><button class="primary" id="run">执行检查</button><button id="refresh" disabled>刷新</button><button id="export-txt" disabled>导出TXT</button><button id="export-json" disabled>导出JSON</button></div>
+	</section>
+	<div id="status" role="status" aria-live="polite">检查尚未运行。</div>
+	<section id="report" aria-live="polite"></section>
+	<footer>检查不会修改或保存 PCB。定位仅调整选择与视图；上游辅助索引可能造成位置偏差。导出由用户点击触发。</footer>
+</main>
+<script>
+(() => {
+	'use strict';
+	const api = window.eda && window.eda.jlcOrderDfm;
+	const byId = id => document.getElementById(id);
+	const kind = byId('kind');
+	const status = byId('status');
+	const reportNode = byId('report');
+	let context;
+	let lastInputs;
+	let lastReport;
+	let busy = false;
+	const setStatus = text => { status.textContent = text; };
+	const clearReport = () => {
+		lastReport = undefined;
+		reportNode.replaceChildren();
+		byId('refresh').disabled = true;
+		byId('export-txt').disabled = true;
+		byId('export-json').disabled = true;
+	};
+	const textNode = (tag, text, className) => {
+		const node = document.createElement(tag);
+		node.textContent = text == null ? '' : String(text);
+		if (className) node.className = className;
+		return node;
+	};
+	const selectedInputs = () => {
+		const selectedKind = kind.value;
+		if (selectedKind === 'pcb') return {
+			material: byId('material').value,
+			thickness: byId('thickness').valueAsNumber,
+			outerCopperOz: byId('outer-copper').value === '' ? NaN : Number(byId('outer-copper').value),
+			innerCopperOz: Number(byId('inner-copper').value),
+		};
+		if (selectedKind === 'smt') return { standard: byId('standard').value, thickness: byId('thickness').valueAsNumber };
+		return { minSpacingMm: byId('spacing').valueAsNumber };
+	};
+	const syncFields = () => {
+		byId('material-field').hidden = kind.value !== 'pcb';
+		byId('outer-copper-field').hidden = kind.value !== 'pcb';
+		byId('inner-copper-field').hidden = kind.value !== 'pcb';
+		byId('standard-field').hidden = kind.value !== 'smt';
+		byId('thickness-field').hidden = kind.value === 'spacing';
+		byId('spacing-field').hidden = kind.value !== 'spacing';
+	};
+	const appendList = (title, values, className) => {
+		const heading = textNode('h2', title, 'section-title');
+		reportNode.append(heading);
+		const list = document.createElement('ul');
+		for (const value of values || []) list.append(textNode('li', value, className));
+		if (!values || values.length === 0) list.append(textNode('li', '无'));
+		reportNode.append(list);
+	};
+	const render = result => {
+		clearReport();
+		lastReport = result;
+		const data = result.data;
+		const summary = document.createElement('div');
+		summary.className = 'summary';
+		summary.append(textNode('span', `检查：${data.checkType} · ${data.documentUuid}`));
+		summary.append(textNode('span', `项目：${data.results.length}/${data.expectedCount}`));
+		summary.append(textNode('span', `完整：${data.complete ? '是' : '否'}`, data.complete ? 'good' : 'bad'));
+		summary.append(textNode('span', `逐项检查通过：${data.upstreamPassed ? '是' : '否'}`));
+		summary.append(textNode('span', `综合 passed：${data.passed ? '是' : '否'}`, data.passed ? 'good' : 'bad'));
+		summary.append(textNode('span', `时间：${new Date(data.timestamp).toLocaleString()}`));
+		reportNode.append(summary);
+		appendList('本次下单输入', Object.entries(data.inputs || {}).map(([key, value]) => `${key}：${value}`), '');
+		appendList('检查覆盖边界', data.coverage, '');
+		appendList('读取或执行问题', (data.issues || []).map(issue => `${issue.code}: ${issue.message}`), 'issues');
+		if (data.checkType === 'pcb') {
+			const copper = data.reportedCopper;
+			const copperLines = [
+				`下单外层铜厚目标：${data.inputs.outerCopperOz} oz`,
+				`下单内层铜厚选项：${data.inputs.innerCopperOz} oz`,
+				`图纸铜厚记录状态：${copper.status}`,
+				`图纸铜厚与下单目标一致：${copper.matchesTarget === null ? '无法对照' : copper.matchesTarget ? '是' : '否'}`,
+				...(copper.layers || []).map(layer => `图层 ${layer.layerId}：${layer.thicknessMil == null ? '无铜厚记录' : `${layer.thicknessMil} mil`} / ${layer.copperOz == null ? '无法换算 oz' : `${layer.copperOz} oz`}`),
+				...(copper.differences || []).map(diff => `图层 ${diff.layerId} 与目标差异：要求 ${diff.requestedOz} oz，图纸记录 ${diff.reportedOz == null ? '缺失' : `${diff.reportedOz} oz`}`),
+				...(copper.messages || []).map(message => `铜厚对照信息：${message}`),
+			];
+			appendList('下单铜厚与图纸记录对照', copperLines, '');
+		}
+		const heading = textNode('h2', '逐项结果', 'section-title');
+		reportNode.append(heading);
+		const wrap = document.createElement('div');
+		wrap.className = 'table-wrap';
+		const table = document.createElement('table');
+		const thead = document.createElement('thead');
+		const header = document.createElement('tr');
+		for (const label of ['项目', '结果', '实际值', '标准值', '违规图元 / 坐标']) header.append(textNode('th', label));
+		thead.append(header); table.append(thead);
+		const tbody = document.createElement('tbody');
+		for (const item of data.results || []) {
+			const row = document.createElement('tr');
+			row.append(textNode('td', `${item.number}. ${item.item}`));
+			row.append(textNode('td', item.result, `result-${item.result}`));
+			row.append(textNode('td', item.actualValue));
+			row.append(textNode('td', item.standardValue));
+			const violations = document.createElement('td');
+			for (const violation of item.violations || []) {
+				const button = textNode('button', `${violation.id || '无ID'} · (${violation.x}, ${violation.y}) · ${violation.reason || ''}`, 'violation');
+				button.type = 'button';
+				button.addEventListener('click', async () => {
+					try {
+						const located = await api.locate({ id: violation.id, x: violation.x, y: violation.y }, context.sessionToken);
+						setStatus(located ? `已定位 ${violation.id}` : `已选择 ${violation.id}，宿主未确认视图导航`);
+					}
+					catch (error) { setStatus(error instanceof Error ? error.message : String(error)); }
+				});
+				violations.append(button);
+			}
+			row.append(violations);
+			tbody.append(row);
+		}
+		table.append(tbody); wrap.append(table); reportNode.append(wrap);
+		byId('refresh').disabled = false;
+		byId('export-txt').disabled = false;
+		byId('export-json').disabled = false;
+		setStatus(result.data.complete ? '检查已完成。完整性与 passed 状态分别列出。' : '检查已返回，但数据不完整；不可视为通过。');
+	};
+	const run = async inputs => {
+		if (!api) { clearReport(); setStatus('无法连接扩展内DFM接口，请关闭此窗口并从PCB菜单重开。'); return; }
+		if (busy) return;
+		busy = true;
+		clearReport();
+		setStatus('正在检查当前绑定的 PCB…');
+		for (const button of document.querySelectorAll('.actions button')) button.disabled = true;
+		try {
+			const result = await api.runCheck(kind.value, inputs, context.sessionToken);
+			if (!result || result.ok !== true || !result.data) throw new Error(result?.error?.message || '检查未返回有效报告');
+			if (result.data.documentUuid !== context.documentUuid) throw new Error('返回报告属于其他 PCB，已丢弃');
+			lastInputs = inputs;
+			render(result);
+		}
+		catch (error) { clearReport(); setStatus(error instanceof Error ? error.message : String(error)); }
+		finally {
+			busy = false;
+			byId('run').disabled = false;
+			byId('refresh').disabled = !lastReport;
+			byId('export-txt').disabled = !lastReport;
+			byId('export-json').disabled = !lastReport;
+		}
+	};
+	const saveReport = async (extension, content) => {
+		if (!lastReport || !context) return;
+		try {
+			const saved = await api.saveReport(extension, content, context.sessionToken);
+			setStatus(saved.saved ? `已导出 ${saved.fileName}` : `导出已取消：${saved.message}`);
+		}
+		catch (error) { setStatus(error instanceof Error ? `导出失败：${error.message}` : `导出失败：${String(error)}`); }
+	};
+	kind.addEventListener('change', () => { syncFields(); lastInputs = undefined; clearReport(); });
+	for (const id of ['material', 'standard', 'thickness', 'spacing', 'outer-copper', 'inner-copper']) byId(id).addEventListener('input', () => { lastInputs = undefined; clearReport(); });
+	for (const id of ['outer-copper', 'inner-copper']) byId(id).addEventListener('change', () => { lastInputs = undefined; clearReport(); });
+	byId('run').addEventListener('click', () => { void run(selectedInputs()); });
+	byId('refresh').addEventListener('click', () => { if (lastInputs) void run(lastInputs); });
+	byId('export-json').addEventListener('click', () => { if (lastReport) void saveReport('json', JSON.stringify(lastReport, null, 2)); });
+	byId('export-txt').addEventListener('click', () => {
+		if (!lastReport) return;
+		const data = lastReport.data;
+		const copper = data.checkType === 'pcb' ? data.reportedCopper : undefined;
+		const copperLines = copper ? ['', '下单铜厚与图纸记录对照：', `下单外层铜厚目标：${data.inputs.outerCopperOz} oz`, `下单内层铜厚选项：${data.inputs.innerCopperOz} oz`, `图纸铜厚记录状态：${copper.status}`, `图纸铜厚与下单目标一致：${copper.matchesTarget === null ? '无法对照' : copper.matchesTarget ? '是' : '否'}`, ...(copper.layers || []).map(layer => `图层 ${layer.layerId}：${layer.thicknessMil == null ? '无铜厚记录' : `${layer.thicknessMil} mil`} / ${layer.copperOz == null ? '无法换算 oz' : `${layer.copperOz} oz`}`), ...(copper.differences || []).map(diff => `图层 ${diff.layerId} 与目标差异：要求 ${diff.requestedOz} oz，图纸记录 ${diff.reportedOz == null ? '缺失' : `${diff.reportedOz} oz`}`), ...(copper.messages || []).map(message => `铜厚对照信息：${message}`)] : [];
+		const lines = [`来源：${data.upstream.repository} ${data.upstream.version} ${data.upstream.commit} ${data.upstream.license}`, `文档：${data.documentUuid}`, `检查：${data.checkType}`, `输入：${JSON.stringify(data.inputs)}`, `时间：${new Date(data.timestamp).toISOString()}`, `预期项目数：${data.expectedCount}`, `完整：${data.complete}`, `逐项检查通过：${data.upstreamPassed}`, `综合通过：${data.passed}`, ...copperLines, '', '问题：', ...(data.issues || []).map(issue => `${issue.code}: ${issue.message}`), '', '覆盖边界：', ...(data.coverage || []), '', '逐项结果：'];
+		for (const item of data.results || []) {
+			lines.push(`${item.number}. ${item.item} | ${item.result} | 实际=${item.actualValue} | 标准=${item.standardValue}`);
+			for (const violation of item.violations || []) lines.push(`  ${violation.id} (${violation.x}, ${violation.y}) ${violation.reason || ''}`);
+		}
+		void saveReport('txt', lines.join('\n'));
+	});
+	const init = async () => {
+		if (!api) { byId('doc').textContent = '扩展接口不可用'; setStatus('无法连接扩展接口。'); return; }
+		try {
+			context = await api.getContext();
+			byId('doc').textContent = context.documentUuid;
+			for (const material of context.materials || []) {
+				const option = document.createElement('option'); option.value = material; option.textContent = material; byId('material').append(option);
+			}
+			kind.value = context.initialKind;
+			byId('source').textContent = `${context.upstream.repository} · v${context.upstream.version} · ${context.upstream.commit} · ${context.upstream.license}`;
+			syncFields();
+			setStatus('请先选择板材/标准并输入参数，再执行检查。');
+		}
+		catch (error) { clearReport(); byId('doc').textContent = '文档身份失效'; setStatus(error instanceof Error ? error.message : String(error)); }
+	};
+	void init();
+})();
+</script>
+</body>
+</html>

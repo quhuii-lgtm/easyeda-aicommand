@@ -1,146 +1,173 @@
 {
-	"name": "ai-command-engine",
-	"uuid": "29aa51f0bed4411d866cb7a7a249231a",
-	"displayName": "AI Command Engine",
-	"description": "通过本地代理与 AI 技能驱动嘉立创 EDA 专业版的原理图、PCB、工程及元件库操作；需另行安装本地代理并启用 AI 技能。",
-	"version": "0.10.88",
-	"publisher": "ai-command-engine",
-	"engines": {
-		"eda": "^3.2.0"
-	},
-	"license": "Apache-2.0",
-	"repository": {
-		"type": "github",
-		"url": "https://github.com/quhuii-lgtm/easyeda-aicommand"
-	},
-	"categories": ["Schematic", "PCB", "Library", "Project"],
-	"keywords": [
-		"Tool"
-	],
-	"images": {
-		"logo": "./images/logo-marketplace.png"
-	},
-	"homepage": "https://github.com/quhuii-lgtm/easyeda-aicommand",
-	"bugs": "https://github.com/quhuii-lgtm/easyeda-aicommand/issues",
-	"activationEvents": {
-		"onStartupFinished": true
-	},
-	"entry": "./dist/index",
-	"dependentExtensions": {},
-	"headerMenus": {
-		"home": [
-			{
-				"id": "aiCommand",
-				"title": "AI Command",
-				"menuItems": [
-					{
-						"id": "About",
-						"title": "About...",
-						"registerFn": "about"
-					},
-					{
-						"id": "ListCommands",
-						"title": "List Commands...",
-						"registerFn": "listCommands"
-					},
-					{
-						"id": "ConnectBridge",
-						"title": "启动桥接",
-						"registerFn": "connectBridge"
-					},
-					{
-						"id": "DisconnectBridge",
-						"title": "停止桥接",
-						"registerFn": "disconnectBridge"
-					},
-					{
-						"id": "ReconnectBridge",
-						"title": "重新连接桥接",
-						"registerFn": "reconnectBridge"
-					},
-					{
-						"id": "SmtQuery",
-						"title": "SMT Part Query...",
-						"registerFn": "openSmtQuery"
-					}
-				]
-			}
-		],
-		"sch": [
-			{
-				"id": "aiCommand",
-				"title": "AI Command",
-				"menuItems": [
-					{
-						"id": "About",
-						"title": "About...",
-						"registerFn": "about"
-					},
-					{
-						"id": "ListCommands",
-						"title": "List Commands...",
-						"registerFn": "listCommands"
-					},
-					{
-						"id": "ConnectBridge",
-						"title": "启动桥接",
-						"registerFn": "connectBridge"
-					},
-					{
-						"id": "DisconnectBridge",
-						"title": "停止桥接",
-						"registerFn": "disconnectBridge"
-					},
-					{
-						"id": "ReconnectBridge",
-						"title": "重新连接桥接",
-						"registerFn": "reconnectBridge"
-					},
-					{
-						"id": "SmtQuery",
-						"title": "SMT Part Query...",
-						"registerFn": "openSmtQuery"
-					}
-				]
-			}
-		],
-		"pcb": [
-			{
-				"id": "aiCommand",
-				"title": "AI Command",
-				"menuItems": [
-					{
-						"id": "About",
-						"title": "About...",
-						"registerFn": "about"
-					},
-					{
-						"id": "ListCommands",
-						"title": "List Commands...",
-						"registerFn": "listCommands"
-					},
-					{
-						"id": "ConnectBridge",
-						"title": "启动桥接",
-						"registerFn": "connectBridge"
-					},
-					{
-						"id": "DisconnectBridge",
-						"title": "停止桥接",
-						"registerFn": "disconnectBridge"
-					},
-					{
-						"id": "ReconnectBridge",
-						"title": "重新连接桥接",
-						"registerFn": "reconnectBridge"
-					},
-					{
-						"id": "SmtQuery",
-						"title": "SMT Part Query...",
-						"registerFn": "openSmtQuery"
-					}
-				]
-			}
-		]
-	}
+  "name": "ai-command-engine",
+  "uuid": "29aa51f0bed4411d866cb7a7a249231a",
+  "displayName": "AI Command Engine",
+  "description": "通过本地代理与 AI 技能驱动嘉立创 EDA 专业版的原理图、PCB、工程及元件库操作；需另行安装本地代理并启用 AI 技能。",
+  "version": "0.10.93",
+  "publisher": "ai-command-engine",
+  "engines": {
+    "eda": "^3.2.0"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "github",
+    "url": "https://github.com/quhuii-lgtm/easyeda-aicommand"
+  },
+  "categories": [
+    "Schematic",
+    "PCB",
+    "Library",
+    "Project"
+  ],
+  "keywords": [
+    "Tool"
+  ],
+  "images": {
+    "logo": "./images/logo-marketplace.png",
+    "banner": "./images/banner.jpg"
+  },
+  "homepage": "https://github.com/quhuii-lgtm/easyeda-aicommand",
+  "bugs": "https://github.com/quhuii-lgtm/easyeda-aicommand/issues",
+  "activationEvents": {
+    "onStartupFinished": true
+  },
+  "entry": "./dist/index",
+  "dependentExtensions": {},
+  "headerMenus": {
+    "home": [
+      {
+        "id": "aiCommand",
+        "title": "AI Command",
+        "menuItems": [
+          {
+            "id": "About",
+            "title": "About...",
+            "registerFn": "about"
+          },
+          {
+            "id": "ListCommands",
+            "title": "List Commands...",
+            "registerFn": "listCommands"
+          },
+          {
+            "id": "ConnectBridge",
+            "title": "启动桥接",
+            "registerFn": "connectBridge"
+          },
+          {
+            "id": "DisconnectBridge",
+            "title": "停止桥接",
+            "registerFn": "disconnectBridge"
+          },
+          {
+            "id": "ReconnectBridge",
+            "title": "重新连接桥接",
+            "registerFn": "reconnectBridge"
+          },
+          {
+            "id": "SmtQuery",
+            "title": "SMT Part Query...",
+            "registerFn": "openSmtQuery"
+          }
+        ]
+      }
+    ],
+    "sch": [
+      {
+        "id": "aiCommand",
+        "title": "AI Command",
+        "menuItems": [
+          {
+            "id": "About",
+            "title": "About...",
+            "registerFn": "about"
+          },
+          {
+            "id": "ListCommands",
+            "title": "List Commands...",
+            "registerFn": "listCommands"
+          },
+          {
+            "id": "ConnectBridge",
+            "title": "启动桥接",
+            "registerFn": "connectBridge"
+          },
+          {
+            "id": "DisconnectBridge",
+            "title": "停止桥接",
+            "registerFn": "disconnectBridge"
+          },
+          {
+            "id": "ReconnectBridge",
+            "title": "重新连接桥接",
+            "registerFn": "reconnectBridge"
+          },
+          {
+            "id": "SmtQuery",
+            "title": "SMT Part Query...",
+            "registerFn": "openSmtQuery"
+          }
+        ]
+      }
+    ],
+    "pcb": [
+      {
+        "id": "aiCommand",
+        "title": "AI Command",
+        "menuItems": [
+          {
+            "id": "About",
+            "title": "About...",
+            "registerFn": "about"
+          },
+          {
+            "id": "ListCommands",
+            "title": "List Commands...",
+            "registerFn": "listCommands"
+          },
+          {
+            "id": "ConnectBridge",
+            "title": "启动桥接",
+            "registerFn": "connectBridge"
+          },
+          {
+            "id": "DisconnectBridge",
+            "title": "停止桥接",
+            "registerFn": "disconnectBridge"
+          },
+          {
+            "id": "ReconnectBridge",
+            "title": "重新连接桥接",
+            "registerFn": "reconnectBridge"
+          },
+          {
+            "id": "SmtQuery",
+            "title": "SMT Part Query...",
+            "registerFn": "openSmtQuery"
+          }
+        ]
+      },
+      {
+        "id": "jlcDfmMenu",
+        "title": "嘉立创下单检查",
+        "menuItems": [
+          {
+            "id": "PcbDfm",
+            "title": "嘉立创 PCB DFM...",
+            "registerFn": "pcbDfmMenu"
+          },
+          {
+            "id": "SmtDfm",
+            "title": "嘉立创 SMT DFM...",
+            "registerFn": "smtDfmMenu"
+          },
+          {
+            "id": "PadSpacing",
+            "title": "同网焊盘间距...",
+            "registerFn": "padSpacingMenu"
+          }
+        ]
+      }
+    ]
+  }
 }

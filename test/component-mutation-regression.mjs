@@ -136,7 +136,7 @@ export { modifyComponentSafely, moveComponentSafely, schematicCommands, register
 	]) {
 		const f = fixture({ modifyMutation: mutate })
 		await rejectsPartial(() => mod.modifyComponentSafely(f.api, 'component-1', fields), label)
-		assert.equal(f.stats.modifies, 1, `${label}: no retry`)
+		assert.equal(f.stats.modifies, 1, `${label}: no retry`) 
 	}
 	{
 		const f = fixture({ modifyMutation: (state, property) => {
