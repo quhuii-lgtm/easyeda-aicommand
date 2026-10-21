@@ -32,7 +32,7 @@ function makeHarness({ onCreate, lagReads = 0, persistentLag = false, changeFocu
 		getState_Color: () => item.color,
 		getState_LineWidth: () => item.lineWidth,
 		getState_LineType: () => item.lineType,
-		getState_Net: () => item.net,
+		getState_Net: () => item.net ?? '',
 	})
 	const source = () => {
 		const rows = [`{"type":"DOCHEAD","ticket":1}||${JSON.stringify({ docType: 'SCH_PAGE', uuid: 'page-1', client: 'test', version: 1 })}`]

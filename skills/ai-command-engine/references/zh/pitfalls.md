@@ -1,5 +1,8 @@
 # 操作时必须注意的问题
 
+## 宿主导线规范化
+`schematic.drawWire` 核对几何、电气值和归属，同时接受合法显示编号重排及受影响导线自动 NET/Name/Relevance 标签重建。重复同值标签不等于网络改变，也不会被自动删除。缺失 getter 不能当作默认样式。partial 仍须先读回再决定是否重试。源码仓库中的 `docs/SCHEMATIC-HOST-NORMALIZATION.md` 记录范围与回归证据。
+
 本页只记录不能靠 `/help` 参数表判断的风险。常规流程见[原理图](commands-schematic.md)、[PCB](commands-pcb.md)。
 
 ## 结果与写入状态

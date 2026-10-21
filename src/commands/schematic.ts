@@ -2374,6 +2374,9 @@ export const schematicCommands: Array<ICommandDef> = [
 			}
 			const segmentCovered = (target: Array<number>, lines: Array<Array<number>>) => {
 				const [x1, y1, x2, y2] = target
+				// Preserve an existing point only with the identical point record.
+				if (x1 === x2 && y1 === y2)
+					return lines.flatMap(lineSegments).some(([ax, ay, bx, by]) => ax === x1 && ay === y1 && bx === x1 && by === y1)
 				const horizontal = y1 === y2
 				const vertical = x1 === x2
 				if (!horizontal && !vertical) return false
@@ -2509,7 +2512,9 @@ export const schematicCommands: Array<ICommandDef> = [
 					if (record.header.type !== 'WIRE' || record.header.id == null) continue
 					const id = String(record.header.id)
 					const data: any = record.data && typeof record.data === 'object' ? record.data : {}
-					const { line: _geometry, ...wireAttributes } = data
+					const { line: _geometry, zIndex: sourceWireDisplayOrder, ...wireAttributes } = data
+					if (sourceWireDisplayOrder != null && !Number.isSafeInteger(sourceWireDisplayOrder))
+						throw new Error(`WIRE ${id} has invalid display-order index`)
 					const model = wires.get(id) ?? { id }
 					const sourceLineRecords = sourceLines.get(id) ?? []
 					if (!model.rawLine || !sourceLineRecords.length)
@@ -2617,127 +2622,107 @@ export const schematicCommands: Array<ICommandDef> = [
 			}
 			const recordKey = (record: any) => `${record?.header?.type ?? ''}\u0000${String(record?.header?.id ?? '')}`
 			const checkSnapshotChanges = (before: any, after: any, requested: Array<number>[], segmentWasNamed: boolean, currentSegment: Array<number>) => {
-				const oldRecords = new Map<string, any>((before.records ?? []).map((record: any) => [recordKey(record), record]))
-				const newRecords = new Map<string, any>((after.records ?? []).map((record: any) => [recordKey(record), record]))
-				const oldLineIds = new Set<string>((before.records ?? []).filter((record: any) => record.header.type === 'LINE').map((record: any) => String(record.header.id)))
-				const addedLines = (after.records ?? []).filter((record: any) => record.header.type === 'LINE' && !oldLineIds.has(String(record.header.id)))
-				// This narrow comparison applies only to a simple append that retains all
-				// old WIRE IDs and every old LINE record verbatim. Merge/extension flows
-				// keep their established geometry/style validation path.
-				if ([...before.wires.keys()].some((id: string) => !after.wires.has(id))) return
-				const oldLineRecords = (before.records ?? []).filter((record: any) => record.header.type === 'LINE')
-				const oldLinesUnchanged = oldLineRecords.every((record: any) => {
-					const current = newRecords.get(recordKey(record))
-					return current && plain(comparableHeader(record.header)) === plain(comparableHeader(current.header)) && plain(record.data) === plain(current.data)
-				})
-				if (!oldLinesUnchanged || !addedLines.length) {
-					for (const record of oldRecords.values()) {
-						if (record.header.type !== 'ATTR') continue
-						const current = newRecords.get(recordKey(record))
-						if (current && plain(record.data?.zIndex) !== plain(current.data?.zIndex))
-							throw new Error(`ATTR ${record.header.id} 的 zIndex 变化没有对应的简单新增 LINE`)
-					}
-					return
+				const oldRecords = new Map<string, any>(before.records.map((r: any) => [recordKey(r), r]))
+				const newRecords = new Map<string, any>(after.records.map((r: any) => [recordKey(r), r]))
+				const fieldDiff = (a: any, b: any) => JSON.stringify({ beforeHeader: a?.header, afterHeader: b?.header, fields: [...new Set<string>([...Object.keys(a?.data ?? {}), ...Object.keys(b?.data ?? {})])].filter((k: any) => plain(a?.data?.[k]) !== plain(b?.data?.[k])).map((k: any) => ({ key: k, before: a?.data?.[k], after: b?.data?.[k] })) })
+				const sameRecord = (a: any, b: any) => plain(comparableHeader(a.header)) === plain(comparableHeader(b.header)) && plain(a.data) === plain(b.data)
+				const touching = (wire: any) => wire.sourcePaths.some((path: any) => lineSegments(path).some((seg: any) => segmentsTouch(seg, currentSegment)))
+				const oldTouched = new Set<string>([...before.wires.values()].filter(touching).map((w: any) => w.id))
+				const newTouched = new Set<string>([...after.wires.values()].filter(touching).map((w: any) => w.id))
+				const allowedNames = new Set<string>([...before.wires.values()].filter((w: any) => oldTouched.has(w.id)).flatMap((w: any) => w.sourceNets.map((a: any) => a.value)).filter((v: any) => v !== ''))
+				if (segmentWasNamed && net)
+					allowedNames.add(net)
+				const autoKeys = new Set<string>(['NET', 'Name', 'Relevance'])
+				const autoRecord = (record: any, snapshot: any, touched: any) => record.header.type === 'ATTR' && autoKeys.has(record.data?.key) && snapshot.wires.has(String(record.data?.parentId)) && touched.has(String(record.data?.parentId))
+				const allowedFields = new Set<string>(['id', 'x', 'y', 'rotation', 'color', 'fontFamily', 'fontSize', 'fontWeight', 'italic', 'underline', 'align', 'value', 'keyVisible', 'valueVisible', 'key', 'fillColor', 'parentId', 'zIndex'])
+				const validAuto = (record: any) => {
+					const d = record.data, optional = (key: any, test: any) => d[key] == null || test(d[key])
+					return typeof record.header.id === 'string' && record.header.id.length > 0 && d && ['key', 'value', 'parentId'].every((k: any) => Object.hasOwn(d, k))
+						&& (d.id == null || d.id === record.header.id) && typeof d.value === 'string' && typeof d.parentId === 'string'
+						&& Object.keys(d).every((k: any) => allowedFields.has(k))
+						&& ['x', 'y', 'rotation', 'fontSize'].every((k: any) => optional(k, Number.isFinite))
+						&& ['color', 'fontFamily', 'fillColor'].every((k: any) => optional(k, (v: any) => typeof v === 'string'))
+						&& ['fontWeight', 'italic', 'underline', 'keyVisible', 'valueVisible'].every((k: any) => optional(k, (v: any) => typeof v === 'boolean'))
+						&& optional('align', (v: any) => typeof v === 'string' ? v === 'CENTER' || /^(LEFT|CENTER|RIGHT)_(TOP|MIDDLE|BOTTOM)$/.test(v) : Number.isInteger(v) && v >= 1 && v <= 9)
+						&& optional('zIndex', Number.isSafeInteger)
+						&& (d.key !== 'Relevance' || d.value === '[]')
 				}
-				const isSame = (left: any, right: any) => plain(comparableHeader(left.header)) === plain(comparableHeader(right.header)) && plain(left.data) === plain(right.data)
-				const changedAttrs = new Map<string, Array<{ old: any, current: any }>>()
-				for (const [key, oldRecord] of oldRecords) {
-					if (oldRecord.header.type === 'DOCHEAD') continue
+				// All non-wire records remain exact. Only auto labels of the affected wire may be recreated.
+				for (const [key, old] of oldRecords) {
+					if (old.header.type === 'DOCHEAD')
+						continue
 					const current = newRecords.get(key)
-					if (!current)
-						throw new Error(`写后有效记录丢失：${key.replace('\u0000', ':')}`)
-					if (isSame(oldRecord, current)) continue
-					if (oldRecord.header.type !== 'ATTR' || !oldRecord.data || !current.data || typeof oldRecord.data !== 'object' || typeof current.data !== 'object')
-						throw new Error(`写后非目标有效记录发生变化：${key.replace('\u0000', ':')}`)
-					const parentId = String(oldRecord.data.parentId ?? '')
-					if (!parentId || parentId !== String(current.data.parentId ?? ''))
-						throw new Error(`旧 ATTR ${oldRecord.header.id} 的 parentId 发生变化`)
-					const oldData = { ...oldRecord.data }; delete oldData.zIndex
-					const currentData = { ...current.data }; delete currentData.zIndex
-					if (plain(comparableHeader(oldRecord.header)) !== plain(comparableHeader(current.header)) || plain(oldData) !== plain(currentData))
-						throw new Error(`旧 ATTR ${oldRecord.header.id} 除 zIndex 外的字段发生变化`)
-					if (!changedAttrs.has(parentId)) changedAttrs.set(parentId, [])
-					changedAttrs.get(parentId)!.push({ old: oldRecord, current })
-				}
-				const requestedGeometry = requested
-				for (const record of newRecords.values()) {
-					const key = recordKey(record)
-					if (oldRecords.has(key)) continue
-					if (record.header.type === 'DOCHEAD') continue
-					if (record.header.type === 'WIRE') {
-						const wire = after.wires.get(String(record.header.id))
-						if (!wire || !requestedGeometry.some(segment => wireContributes(wire, segment))) throw new Error(`新增 WIRE ${record.header.id} 不属于本次请求路径`)
-						continue
-					}
-					if (record.header.type === 'LINE') {
-						const lineId = String(record.header.id)
-						const owner = String(record.data?.lineGroup ?? '')
-						const wire = after.wires.get(owner)
-						const line = wire?.sourceLines.find((item: any) => item.id === lineId)
-						const expectedStrokeStyle = ['SOLID', 'SHORT_DASH', 'DOT'][wire?.lineType]
-						if (!wire || !line || !requestedGeometry.some(segment => geometryPreserved(line.sdkLine, [segment]))
-							|| line.strokeColor !== wire.color || line.strokeWidth !== wire.lineWidth || line.strokeStyle !== expectedStrokeStyle)
-							throw new Error(`新增 LINE ${lineId} 的请求几何、归属或样式未与保留 WIRE 一致`)
-						continue
-					}
-					if (record.header.type === 'ATTR') {
-						const owner = String(record.data?.parentId ?? '')
-						const wire = after.wires.get(owner)
-						const isNewWire = !oldRecords.has(`WIRE\u0000${owner}`)
-						const data = record.data
-						const relevanceKeys = ['id', 'x', 'y', 'rotation', 'color', 'fontFamily', 'fontSize', 'fontWeight', 'italic', 'underline', 'align', 'value', 'keyVisible', 'valueVisible', 'key', 'fillColor', 'parentId', 'zIndex']
-						const validIdentity = typeof record.header.id === 'string' && record.header.id.trim().length > 0
-						const autoRelevance = isNewWire && data?.key === 'Relevance' && data?.value === '[]'
-							&& wire && wireContributes(wire, currentSegment)
-							&& ['key', 'value', 'parentId'].every(key => Object.hasOwn(data, key))
-							&& Object.keys(data).every(key => relevanceKeys.includes(key))
-							&& Object.keys(data).filter(key => !['id', 'key', 'parentId', 'value', 'zIndex'].includes(key)).every(key => data[key] === null)
-							&& (data.id == null || data.id === record.header.id) && data.parentId === owner && (data.zIndex == null || Number.isSafeInteger(data.zIndex))
-						const autoUnnamedNet = !segmentWasNamed && isNewWire && data?.key === 'NET' && data?.value === ''
-							&& wire && wireContributes(wire, currentSegment)
-							&& ['key', 'value', 'parentId'].every(key => Object.hasOwn(data, key))
-							&& Object.keys(data).every(key => relevanceKeys.includes(key))
-							&& (data.x == null || Number.isFinite(data.x)) && (data.y == null || Number.isFinite(data.y))
-							&& ['keyVisible', 'valueVisible'].every(key => data[key] == null || typeof data[key] === 'boolean')
-							&& Object.keys(data).filter(key => !['id', 'x', 'y', 'keyVisible', 'valueVisible', 'key', 'parentId', 'value', 'zIndex'].includes(key)).every(key => data[key] == null)
-							&& (data.id == null || data.id === record.header.id) && data.parentId === owner && (data.zIndex == null || Number.isSafeInteger(data.zIndex))
-						const requestedNetAttr = segmentWasNamed && net && ['NET', 'Name'].includes(String(data?.key)) && data?.value === net && wire?.net === net
-						if (!wire || !validIdentity || !requestedGeometry.some(segment => wireContributes(wire, segment)) || !(autoRelevance || autoUnnamedNet && wire.net === '' || requestedNetAttr))
-							throw new Error(`新增 ATTR ${record.header.id} 不是本次新 WIRE 的有效网络或 Relevance 属性`)
-						continue
-					}
-					throw new Error(`写后出现非请求新增有效记录：${key.replace('\u0000', ':')}`)
-				}
-				for (const [wireId, entries] of changedAttrs) {
-					if (!before.wires.has(wireId) || !after.wires.has(wireId) || !requestedGeometry.some(segment => wireContributes(after.wires.get(wireId), segment)))
-						throw new Error(`旧 ATTR 所属 WIRE ${wireId} 不是本次保留并承接请求路径的同一导线`)
-					const oldGroup = (before.records ?? []).filter((record: any) => record.header.type === 'ATTR' && String(record.data?.parentId ?? '') === wireId)
-					const afterGroup = (after.records ?? []).filter((record: any) => record.header.type === 'ATTR' && String(record.data?.parentId ?? '') === wireId)
-					const oldAttrIds = oldGroup.map((record: any) => String(record.header.id)).sort()
-					const afterAttrIds = afterGroup.map((record: any) => String(record.header.id)).sort()
-					if (oldGroup.length !== afterGroup.length || oldGroup.length !== entries.length || oldAttrIds.some((id: string, index: number) => id !== afterAttrIds[index]))
-						throw new Error(`WIRE ${wireId} 的 ATTR 身份集合发生增删`)
-					const groupEntries = oldGroup.map((old: any) => ({ old, current: newRecords.get(recordKey(old)) }))
-					if (groupEntries.some((entry: any) => !entry.current || !entries.some(pair => pair.old === entry.old)))
-						throw new Error(`WIRE ${wireId} 的 ATTR 身份发生变化`)
-					const byZIndexThenId = (a: any, b: any) => Number(a.data?.zIndex) - Number(b.data?.zIndex) || String(a.header.id).localeCompare(String(b.header.id))
-					const oldZOrder = [...oldGroup].sort(byZIndexThenId).map((record: any) => String(record.header.id))
-					const afterZOrder = [...afterGroup].sort(byZIndexThenId).map((record: any) => String(record.header.id))
-					if (oldZOrder.some((id: string, index: number) => id !== afterZOrder[index])) throw new Error(`WIRE ${wireId} 的 ATTR 相对 zIndex 顺序发生变化`)
-					const offsets: number[] = groupEntries.map(({ old, current }: any) => Number(current.data.zIndex) - Number(old.data.zIndex))
-					const unchanged = offsets.every(offset => offset === 0)
-					const addedLineCountForWire = addedLines.filter((record: any) => String(record.data?.lineGroup ?? '') === wireId).length
-					const appended = addedLineCountForWire > 0 && offsets.every(offset => Number.isSafeInteger(oldGroup[0]?.data?.zIndex) && Number.isSafeInteger(offset) && offset === addedLineCountForWire)
-					if (!unchanged && !appended)
-						throw new Error(`WIRE ${wireId} 的 ATTR zIndex 未保持原值或统一增加新增 LINE 数量`)
-					if (appended) {
-						for (const { old, current } of groupEntries as any) {
-							if (!Number.isSafeInteger(old.data.zIndex) || !Number.isSafeInteger(current.data.zIndex)) throw new Error(`WIRE ${wireId} 的 ATTR zIndex 不是有限整数`)
-							const existing = drawingOrderChanges.find(change => change.id === String(old.header.id) && change.wireId === wireId)
-							if (existing) existing.after = current.data.zIndex
-							else drawingOrderChanges.push({ id: String(old.header.id), before: old.data.zIndex, after: current.data.zIndex, wireId })
+					if (old.header.type === 'WIRE' || old.header.type === 'LINE') {
+						const owner = old.header.type === 'WIRE' ? String(old.header.id) : String(old.data?.lineGroup)
+						if (!oldTouched.has(owner)) {
+							if (!current)
+								throw new Error('Untouched wire record missing: ' + key)
+							const a = { ...old.data }, b = { ...current.data }
+							for (const d of [a, b]) {
+								if (d.zIndex != null && !Number.isSafeInteger(d.zIndex))
+									throw new Error('Invalid wire display index: ' + key)
+								delete d.zIndex
+							}
+							if (plain(comparableHeader(old.header)) !== plain(comparableHeader(current.header)) || plain(a) !== plain(b))
+								throw new Error('Untouched wire record changed: ' + key)
 						}
+						continue
 					}
+					if (autoRecord(old, before, oldTouched)) {
+						if (current && (!autoRecord(current, after, newTouched) || !validAuto(current)))
+							throw new Error('Invalid inherited automatic wire attribute: ' + key)
+						continue
+					}
+					if (current && old.header.type === 'ATTR' && before.wires.has(String(old.data?.parentId)) && after.wires.has(String(current.data?.parentId))) {
+						const a = { ...old.data }, b = { ...current.data }
+						for (const d of [a, b]) {
+							if (d.zIndex != null && !Number.isSafeInteger(d.zIndex))
+								throw new Error('Invalid attribute display index: ' + key)
+							delete d.zIndex
+						}
+						if (plain(comparableHeader(old.header)) !== plain(comparableHeader(current.header)) || plain(a) !== plain(b))
+							throw new Error('Non-target attribute content changed: ' + key + ' ' + fieldDiff(old, current))
+						if (old.data?.zIndex !== current.data?.zIndex)
+							drawingOrderChanges.push({ id: String(old.header.id), wireId: current.data.parentId, before: old.data?.zIndex, after: current.data?.zIndex })
+						continue
+					}
+					if (!current || !sameRecord(old, current))
+						throw new Error('Non-target record changed or missing: ' + key + ' ' + fieldDiff(old, current))
+				}
+				for (const [key, current] of newRecords) {
+					if (current.header.type === 'DOCHEAD')
+						continue
+					if (current.header.type === 'WIRE' || current.header.type === 'LINE') {
+						if (!oldRecords.has(key)) {
+							const owner = current.header.type === 'WIRE' ? String(current.header.id) : String(current.data?.lineGroup)
+							if (!after.wires.has(owner) || !newTouched.has(owner))
+								throw new Error('New wire record outside request: ' + key)
+						}
+						continue
+					}
+					if (autoRecord(current, after, newTouched)) {
+						if (!validAuto(current))
+							throw new Error('Invalid automatic wire attribute: ' + key)
+						const old = oldRecords.get(key)
+						if (old && old.data?.zIndex !== current.data?.zIndex)
+							drawingOrderChanges.push({ id: String(current.header.id), wireId: current.data.parentId, before: old.data?.zIndex, after: current.data?.zIndex })
+						continue
+					}
+					if (!oldRecords.has(key))
+						throw new Error('Unexpected new record or orphan attribute: ' + key)
+				}
+				for (const id of newTouched) {
+					const wire = after.wires.get(id), attrs = wire.sourceNets
+					const expectedStyle = wire.lineType === null ? null : ['SOLID', 'SHORT_DASH', 'DOT'][wire.lineType]
+					if ((wire.color !== null && typeof wire.color !== 'string') || (wire.lineWidth !== null && !Number.isFinite(wire.lineWidth)) || (wire.lineType !== null && ![0, 1, 2].includes(wire.lineType)))
+						throw new Error('Invalid SDK wire style: ' + id)
+					if (wire.sourceLines.some((line: any) => line.strokeColor !== wire.color || line.strokeWidth !== wire.lineWidth || line.strokeStyle !== expectedStyle))
+						throw new Error('Source and SDK wire style disagree: ' + id)
+					if (attrs.some((a: any) => a.parentId !== id || typeof a.value !== 'string'))
+						throw new Error('Invalid network ownership: ' + id)
+					const names = [...new Set<string>(attrs.map((a: any) => a.value).filter((v: any) => v !== ''))]
+					if (names.length > 1 || names.some((name: any) => !allowedNames.has(name)) || typeof wire.net !== 'string' || wire.net !== (names[0] ?? ''))
+						throw new Error('Source and SDK network disagree or unrequested name: ' + id)
 				}
 			}
 			for (let i = 0; i < segments.length; i++) {
@@ -2815,14 +2800,16 @@ export const schematicCommands: Array<ICommandDef> = [
 						const exactDiagonal = targetLine[1] !== targetLine[3] && targetLine[0] !== targetLine[2]
 						const replacements = afterLines.filter((line: any) => exactDiagonal
 							? segmentKey(targetLine) === segmentKey(line.sdkLine)
-							: segmentOverlaps(targetLine, line.sdkLine))
+							: segmentOverlapsOrMatches(targetLine, line.sdkLine))
 						if (!replacements.length || (exactDiagonal ? !replacements.some((line: any) => segmentKey(targetLine) === segmentKey(line.sdkLine)) : !segmentCovered(targetLine, replacements.map((line: any) => line.sdkLine))) || replacements.some((line: any) => styleKey(line) !== styleKey(oldLine))) {
 							partial = { stoppedAtSegment: i + 1, reason: `旧导线 ${id} 的 LINE 样式/几何未承接`, state: 'partial', affectedId: id }
 							break
 						}
 					}
 					if (partial) break
-					const oldNetKey = plain(oldWire.sourceNets.map((attr: any) => ({ key: attr.key, value: attr.value })).sort((a: any, b: any) => `${a.key}:${a.value}`.localeCompare(`${b.key}:${b.value}`)))
+					// Compare distinct electrical values, not duplicate label counts.
+					const distinctNetAttributes = (attrs: any[]) => [...new Map<string, { key: string, value: string }>(attrs.map(attr => [JSON.stringify([attr.key, attr.value]), { key: attr.key, value: attr.value }])).values()].sort((a, b) => JSON.stringify([a.key, a.value]).localeCompare(JSON.stringify([b.key, b.value])))
+					const oldNetKey = plain(distinctNetAttributes(oldWire.sourceNets))
 					const oldSegments: Array<Array<number>> = (oldWire.sourcePaths as Array<Array<number>>).flatMap((path: Array<number>) => lineSegments(path))
 					const carriersBySegment: Array<Array<any>> = oldSegments.map((segment: Array<number>) => [...after.wires.values()].filter((wire: any) => wire.sourcePaths.flatMap((path: Array<number>) => lineSegments(path)).some((line: Array<number>) => segmentOverlapsOrMatches(segment, line))))
 					const carriers = [...new Map(carriersBySegment.flat().map((wire: any) => [wire.id, wire])).values()]
@@ -2834,7 +2821,7 @@ export const schematicCommands: Array<ICommandDef> = [
 					const touchesRequest = oldHasNoConflictingName && verifiedTargetNet
 						&& oldSegments.some((oldSegment: Array<number>) => requestedGeometry.some((requested: Array<number>) => segmentsTouch(oldSegment, requested)))
 					const carrierHasExpectedNets = (wire: any) => {
-						const actual = wire.sourceNets.map((attr: any) => ({ key: attr.key, value: attr.value })).sort((a: any, b: any) => `${a.key}:${a.value}`.localeCompare(`${b.key}:${b.value}`))
+						const actual = distinctNetAttributes(wire.sourceNets)
 						return plain(actual) === oldNetKey || (touchesRequest && actual.some((attr: any) => ['NET', 'Name'].includes(String(attr.key)) && attr.value === net) && actual.every((attr: any) => attr.value === '' || attr.value === net) && wire.net === net)
 					}
 					if (carriersBySegment.some(items => items.some((wire: any) => !carrierHasExpectedNets(wire) || wire.sourceNets.some((attr: any) => attr.parentId !== wire.id || typeof attr.value !== 'string')))) {

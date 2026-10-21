@@ -31,7 +31,7 @@ function makeHarness({ initial = [], onCreate, failReadAfterWrite = false, sourc
 		getState_Color: () => getterStyleOverride.color ?? item.color,
 		getState_LineWidth: () => getterStyleOverride.width ?? item.lineWidth,
 		getState_LineType: () => getterStyleOverride.type ?? item.lineType,
-		getState_Net: () => item.net,
+		getState_Net: () => item.net ?? '',
 	})
 	const source = () => {
 		const rows = [`{"type":"DOCHEAD","ticket":1}||${JSON.stringify({ docType: 'SCH_PAGE', uuid: 'page-1', client: 'test', version: 1 })}`]
@@ -47,7 +47,7 @@ function makeHarness({ initial = [], onCreate, failReadAfterWrite = false, sourc
 				if (sourceLineMode === 'nonfinite') startX = Number.POSITIVE_INFINITY
 				rows.push(`${JSON.stringify({ type: 'LINE', id: `line-${item.id}-${i}`, ticket: ticket++ })}||${JSON.stringify({ lineGroup: sourceLineMode === 'missing-group' ? undefined : item.id, startX, startY: -item.line[i + 1], endX, endY: -item.line[i + 3], strokeColor: sourceStyleOverride.color ?? item.color, strokeWidth: sourceStyleOverride.width ?? item.lineWidth, strokeStyle: sourceStyleOverride.type ?? ['SOLID', 'SHORT_DASH', 'DOT'][item.lineType] })}`)
 			}
-			if (item.net !== undefined && item.net !== null) rows.push(`${JSON.stringify({ type: 'ATTR', id: `net-${item.id}`, ticket: ticket++ })}||${JSON.stringify({ parentId: netParentOverride ?? item.id, key: 'NET', value: netValueOverride ?? item.net, display: netDisplayOverride ?? item.net })}`)
+			if (item.net !== undefined && item.net !== null) rows.push(`${JSON.stringify({ type: 'ATTR', id: `net-${item.id}`, ticket: ticket++ })}||${JSON.stringify({ parentId: netParentOverride ?? item.id, key: 'NET', value: netValueOverride ?? item.net, valueVisible: true })}`)
 		}
 		return rows.join('\n')
 	}

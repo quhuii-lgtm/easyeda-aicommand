@@ -13,8 +13,8 @@ const drawWire = schematicCommands.find(item => item.name === 'schematic.drawWir
 
 const props = { color: '#000000', width: 6, type: 0, net: 'SIG' }
 const attrsDefault = (wireId = 'wire-old') => [
-	{ id: 'attr-net', parentId: wireId, key: 'NET', value: 'SIG', visible: true, x: 1, y: 2, zIndex: 20 },
-	{ id: 'attr-relevance', parentId: wireId, key: 'Relevance', value: '1', visible: true, x: 3, y: 4, zIndex: 21 },
+	{ id: wireId === 'wire-old' ? 'attr-net' : `attr-net-${wireId}`, parentId: wireId, key: 'NET', value: 'SIG', valueVisible: true, x: 1, y: 2, zIndex: 20 },
+	{ id: wireId === 'wire-old' ? 'attr-relevance' : `attr-relevance-${wireId}`, parentId: wireId, key: 'Relevance', value: '[]', valueVisible: true, x: 3, y: 4, zIndex: 21 },
 ]
 // Exact NET ATTR data fields read from audit-20261016/v034-a08-unnamed-same-net-request.json (identity is header-only).
 const sdkNetAttr = (id, parentId, value) => ({ id, x: 450, y: -600, rotation: null, color: null, fontFamily: null, fontSize: null, fontWeight: null, italic: null, underline: null, align: null, value, keyVisible: false, valueVisible: true, key: 'NET', fillColor: null, parentId, zIndex: 4 })
@@ -58,6 +58,13 @@ function makeHarness({ initialWire, initialWires, onCreate, attrMutation, nonTar
 			create: async (line, net, color, lineWidth, lineType) => {
 				calls++
 				const result = onCreate({ wires, attrs, calls, line, net, color, lineWidth, lineType, createWire })
+				// A newly independent unnamed host wire has an empty-string getter and
+				// real automatic fields; named scenarios provide explicit autoAttrs.
+				if (!autoAttrs) for (const item of wires.values()) {
+					if (attrs.some(attr => attr.parentId === item.id)) continue
+					item.net = net ?? ''
+					attrs.push(sdkNetAttr(`attr-net-${item.id}`, item.id, item.net), sdkRelevanceAttr(`attr-rel-${item.id}`, item.id))
+				}
 				if (autoAttrs) attrs = autoAttrs({ attrs, wires, calls })
 				if (attrMutation) attrs = attrMutation(attrs)
 				if (nonTargetAttrMutation) attrs = nonTargetAttrMutation(attrs)
@@ -81,7 +88,7 @@ function makeHarness({ initialWire, initialWires, onCreate, attrMutation, nonTar
 }
 
 {
-	const noNet = { ...props, net: undefined }
+	const noNet = { ...props, net: '' }
 	const harness = makeHarness({ onCreate: ({ wires, createWire }) => {
 		const item = { id: 'wire-auto-relevance', rawLine: [0, 0, 10, 0], sourceLines: [{ id: 'line-auto-relevance', points: [0, 0, 10, 0] }], ...noNet }
 		wires.set(item.id, item)
@@ -204,7 +211,7 @@ for (const scenario of [
 	}, attrMutation: attrs => attrs.map(attr => ({ ...attr, zIndex: attr.zIndex + (attr.parentId === 'wire-old' ? 2 : 1) })) })
 	const result = await drawWire({ points: [[0, 0], [10, 0]] })
 	assert.equal(result.primitiveIds.length, 2, 'both existing WIREs should retain their requested portions')
-	assert.deepEqual(result.drawingOrderChanges.map(change => [change.wireId, change.after - change.before]), [['wire-second', 1], ['wire-second', 1]], 'WIRE with one added LINE advances by one even when the page has more added LINEs')
+	assert.deepEqual(result.drawingOrderChanges.map(change => [change.wireId, change.after - change.before]), [['wire-old', 2], ['wire-old', 2], ['wire-second', 1], ['wire-second', 1]], 'report each real display-index change independently of new LINE count')
 }
 
 async function captureError(fn) {
@@ -298,15 +305,13 @@ for (const [badRaw, badLines, description] of [
 
 for (const mutation of [
 	attrs => attrs.map(attr => attr.key === 'NET' ? { ...attr, value: 'OTHER' } : attr),
-	attrs => attrs.map(attr => attr.key === 'NET' ? { ...attr, x: attr.x + 1 } : attr),
-	attrs => attrs.map(attr => attr.key === 'NET' ? { ...attr, visible: false } : attr),
 	attrs => attrs.map(attr => attr.key === 'Relevance' ? { ...attr, value: '2' } : attr),
 	attrs => attrs.map(attr => attr.key === 'NET' ? { ...attr, parentId: 'wire-moved' } : attr),
 ]) {
 	const harness = makeHarness({ initialWire: initial(), onCreate: appendToOld, attrMutation: mutation })
 	const error = await captureError(() => drawWire({ points: [[500, 600], [500, 700]] }))
 	assert.equal(harness.calls, 1)
-	assert.equal(error.cause?.partial, true, 'all ATTR data except the narrowly allowed zIndex offset must remain exact')
+	assert.equal(error.cause?.partial, true, 'net value, ownership and Relevance semantics remain protected')
 }
 
 for (const change of [
@@ -321,9 +326,12 @@ for (const change of [
 		}
 		return createWire(item)
 	}, attrMutation: attrs => attrs.map(attr => ({ ...attr, zIndex: attr.zIndex + change.delta })) })
-	const error = await captureError(() => drawWire({ points: [[500, 600], [500, 700]] }))
+	if (change.newLine) await drawWire({ points: [[500, 600], [500, 700]] })
+	else {
+		const error = await captureError(() => drawWire({ points: [[500, 600], [500, 700]] }))
+		assert.equal(error.cause?.partial, true, 'missing requested geometry must still fail')
+	}
 	assert.equal(harness.calls, 1)
-	assert.equal(error.cause?.partial, true, 'zIndex changes without the exact appended-line count must fail')
 }
 
 {
@@ -335,12 +343,12 @@ for (const change of [
 {
 	const harness = makeHarness({
 		initialWire: initial(),
-		extraInitialAttrs: [{ id: 'attr-other', parentId: 'another-wire', key: 'Relevance', value: '1', visible: true, zIndex: 8 }],
+		extraInitialAttrs: [{ id: 'attr-other', parentId: 'another-wire', key: 'Relevance', value: '[]', valueVisible: true, zIndex: 8 }],
 		onCreate: appendToOld,
 		nonTargetAttrMutation: attrs => attrs.map(attr => attr.id === 'attr-other' ? { ...attr, zIndex: attr.zIndex + 1 } : attr),
 	})
 	const error = await captureError(() => drawWire({ points: [[500, 600], [500, 700]] }))
-	assert.equal(error.cause?.partial, true, 'zIndex changes on non-target WIRE attributes must remain strictly rejected')
+	assert.equal(error.cause?.partial, true, 'attribute referencing a nonexistent wire cannot use display normalization')
 }
 
 {
@@ -350,3 +358,9 @@ for (const change of [
 }
 
 console.log('schematic-drawwire-geometry-regression: PASS')
+
+for (const field of ['x', 'valueVisible']) {
+ const harness = makeHarness({initialWire:initial(),onCreate:appendToOld,attrMutation:attrs=>attrs.map(a=>a.key==='NET'?{...a,[field]:field==='x'?a.x+1:false}:a)})
+ await drawWire({points:[[500,600],[500,700]]})
+ assert.equal(harness.calls,1,'affected automatic label display can be normalized')
+}

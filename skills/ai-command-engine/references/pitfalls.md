@@ -1,5 +1,8 @@
 # Important operational pitfalls
 
+## Host wire normalization
+`schematic.drawWire` checks geometry, electrical values and ownership while accepting valid host display-index changes and automatic NET/Name/Relevance recreation on affected wires. Duplicate identical labels do not imply a changed net and are not automatically deleted. Missing getters remain unknown, not default styles. Partial writes still require readback before any retry. The source repository documents scope and regression evidence in `docs/SCHEMATIC-HOST-NORMALIZATION.md`.
+
 This page covers risks that cannot be determined from `/help` parameter tables alone. Standard workflows are in [schematic](commands-schematic.md) and [PCB](commands-pcb.md).
 
 Do not send users plugin checks that have already completed independent readback. Only add checks for objects, save state, and design quality that remain uncovered.
