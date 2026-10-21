@@ -39,3 +39,7 @@ Do not send users plugin checks that have already completed independent readback
 - A library UUID may change after editing a resource. An official API error may occur after a write; search and read back the target before proceeding, and do not blindly retry with an old UUID.
 - UUIDs may be rebuilt after project recovery. Compare pages, components, nets, and required resources; UUID equality alone is not sufficient.
 - If `project.importFile` returns empty or throws, treat the result as unknown and inspect the current state. Do not infer success from the project name or import again.
+
+
+## Attribute readback scheduling
+`schematic.setAttribute` uses the EDA host timer for its existing 300 ms settling delay. Diagnostic stages distinguish mutation, host timer and readback without logging property values. A failure after mutation begins is partial: inspect the actual value and operation state before retrying. The handler never automatically repeats the write. This does not guarantee that a pending host SDK call is cancelled or that all background-window stalls are fixed.

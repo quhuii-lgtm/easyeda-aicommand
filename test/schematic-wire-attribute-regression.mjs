@@ -482,6 +482,7 @@ for (const malformed of ['missing', 'nonfinite']) {
 			},
 			modify: async (_id, props) => { value = props.value; return true },
 		},
+		sys_Timer: { setTimeoutTimer: (_id, _delay, callback) => { queueMicrotask(callback); return true } },
 	}
 	const result = await setAttribute({ primitiveId: 'comp-1', key: 'Value', value: '' })
 	assert.equal(result.key, 'Value')

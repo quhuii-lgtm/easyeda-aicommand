@@ -4134,15 +4134,34 @@ export const schematicCommands: Array<ICommandDef> = [
 			const attrId = safeState<string>(target, 'getState_PrimitiveId')
 			if (!attrId)
 				throw new Error('读取属性图元 ID 失败')
-			await eda.sch_PrimitiveAttribute.modify(attrId, { value })
-			// 读回验证（官方 modify 假成功前科，0.10.23：成败以读回为准）
-			await new Promise(resolve => setTimeout(resolve, 300))
-			const back = await eda.sch_PrimitiveAttribute.get(attrId)
-			const actual = back ? safeState<string>(back as any, 'getState_Value') : undefined
-			const verified = actual != null && actual === value
-			if (!verified)
-				throw new Error(`属性 ${key} 修改未生效：读回实际为「${actual ?? '(读取失败)'}」，目标「${value}」——官方 modify 假成功，请重试`)
-			return { key, value, readback: { value: actual, verified } }
+			const started = performance.now()
+			const stage = (name: string) => diag('schematic.setAttribute', name, `elapsedMs=${Math.round(performance.now() - started)}`)
+			try {
+				stage('modify.begin')
+				await eda.sch_PrimitiveAttribute.modify(attrId, { value })
+				stage('modify.end')
+				// Use the host scheduler for the existing settling delay. Do not retry writes.
+				stage('hostTimer.begin')
+				await new Promise<void>((resolve, reject) => {
+					const timerId = `ai-command:attribute-readback:${Date.now()}:${Math.random()}`
+					if (!eda.sys_Timer.setTimeoutTimer(timerId, 300, resolve))
+						reject(new Error('EDA readback timer could not be created'))
+				})
+				stage('hostTimer.end')
+				stage('readback.begin')
+				const back = await eda.sch_PrimitiveAttribute.get(attrId)
+				const actual = back ? safeState<string>(back as any, 'getState_Value') : undefined
+				stage('readback.end')
+				if (actual !== value)
+					throw new Error('Attribute readback did not confirm the requested value')
+				return { key, value, readback: { value: actual, verified: true } }
+			}
+			catch (error) {
+				stage('partial')
+				throw new Error(`Attribute write outcome is not confirmed; inspect before retrying: ${String((error as any)?.message ?? error)}`, {
+					cause: { partial: true, primitiveId: compId, attributeId: attrId, key },
+				})
+			}
 		},
 	},
 	{
