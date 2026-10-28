@@ -7,9 +7,9 @@ import ts from 'typescript';
 
 const root = resolve(import.meta.dirname, '..');
 const nodeRequire = createRequire(import.meta.url);
-const evidence = resolve(root, '../b-development-20261021/evidence');
-const beforeEvidence = JSON.parse(await readFile(resolve(evidence, 'v074-host-before-source.json'), 'utf8')).result.data.source;
-const afterEvidence = JSON.parse(await readFile(resolve(evidence, 'v074-host-after-silk-source.json'), 'utf8')).result.data.source;
+const evidence = resolve(root, 'test/fixtures');
+const beforeEvidence = await readFile(resolve(evidence, 'silkscreen-source-before.sourcelog'), 'utf8');
+const afterEvidence = await readFile(resolve(evidence, 'silkscreen-source-after.sourcelog'), 'utf8');
 function loadTs(file) {
 	const absolute = resolve(root, file);
 	const compiled = ts.transpileModule(readFileSync(absolute, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;

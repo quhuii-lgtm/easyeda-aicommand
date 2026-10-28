@@ -6,7 +6,7 @@ import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
-const fixturePath = resolve(root, '..', 'b-development-20261021', 'evidence', 'v073-gerber.zip')
+const fixturePath = resolve(root, 'test', 'fixtures', 'silkscreen-gerber-v073.zip')
 const source = await readFile(resolve(root, 'src', 'pcb', 'silkscreenGerber.ts'), 'utf8')
 assert.match(source, /export async function analyzeSilkscreenGerber/u)
 const built = await build({
@@ -61,8 +61,8 @@ assert.equal(real.coverage.boardOutline, 'single-simple-closed-loop')
 assert.equal(real.polygonApproximation.targetSagittaMil, 0.01)
 assert.equal(real.polygonApproximation.numericDistanceMarginMil, 0.01)
 assert.equal('shapes' in real.files[0], false, 'production response keeps polygon point arrays out of the response')
-const installedFixturePath = resolve(root, '..', 'b-development-20261021', 'evidence', 'v094-installed-fixture-gerber.zip')
-const installedGeometryPath = resolve(root, '..', 'b-development-20261021', 'evidence', 'v094-installed-fixture-arc-verification-geometry.json')
+const installedFixturePath = resolve(root, 'test', 'fixtures', 'silkscreen-gerber-v094.zip')
+const installedGeometryPath = resolve(root, 'test', 'fixtures', 'silkscreen-gerber-v094-arc-oracle.json')
 const installedZipBytes = new Uint8Array(await readFile(installedFixturePath))
 const installedEdgeReport = await analyzeSilkscreenGerber(installedZipBytes, 0)
 const installedZip = await JSZip.loadAsync(installedZipBytes)

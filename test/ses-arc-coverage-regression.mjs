@@ -11,13 +11,12 @@ const built = await build({
 });
 const { buildSesRouteBaseline, assertSesRouteBaselineMatchesDsn, resolveSesArcCoverage, parseAutoRouteSes } = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`);
 
-const evidence = resolve(root, '..', 'b5-oval-arc-20261026', 'evidence');
 const [dsn, sesText, wrappedSource] = await Promise.all([
-	readFile(resolve(evidence, 'v114-combo-native.dsn'), 'utf8'),
-	readFile(resolve(evidence, 'v114-combo-result.ses'), 'utf8'),
-	readFile(resolve(evidence, 'v114-combo-before-source.json'), 'utf8'),
+	readFile(resolve(root, 'test/fixtures/ses-arc-combo.dsn'), 'utf8'),
+	readFile(resolve(root, 'test/fixtures/ses-arc-combo.ses'), 'utf8'),
+	readFile(resolve(root, 'test/fixtures/ses-arc-v114-before.sourcelog'), 'utf8'),
 ]);
-const source = JSON.parse(wrappedSource).result.data.source;
+const source = wrappedSource;
 const docHead = JSON.parse(source.split(/\r?\n/).find(line => line.startsWith('{"type":"DOCHEAD"}')).split('||')[1].replace(/\|$/, ''));
 const baseline = buildSesRouteBaseline(docHead.uuid, source, dsn);
 assert.equal(baseline.status, 'complete', JSON.stringify(baseline.issues));
@@ -123,6 +122,40 @@ for (const mutate of [
 const firstBaseline = baseline.protectedWires[0];
 const firstSes = model.wires.find(wire => wire.net === firstBaseline.net && wire.layerName === firstBaseline.layerName && wire.widthMil === firstBaseline.widthMil && wire.points.length === firstBaseline.points.length && wire.points.every((point, index) => point.xMil === firstBaseline.points[index].xMil && point.yMil === firstBaseline.points[index].yMil));
 assert.ok(firstSes, 'real SES must contain exact complete protected path');
+{
+	let nextIndex = Math.max(...model.wires.map(wire => wire.wireIndex)) + 1;
+	const geometries = [
+		{ name: 'complete identical path', points: firstSes.points },
+		{ name: 'same endpoints as a two-point line', points: [firstSes.points[0], firstSes.points.at(-1)] },
+		{ name: 'forward contiguous subpath', points: firstSes.points.slice(1, -1) },
+		{ name: 'reverse contiguous subpath', points: firstSes.points.slice(1, -1).reverse() },
+	];
+	const unrelatedAttributes = [
+		{ name: 'other copper layer, same net', layerName: firstSes.layerName === 'TopLayer' ? 'BottomLayer' : 'TopLayer', net: firstSes.net },
+		{ name: 'same copper layer, other net', layerName: firstSes.layerName, net: 'UNRELATED_NET' },
+		{ name: 'other copper layer and other net', layerName: firstSes.layerName === 'TopLayer' ? 'BottomLayer' : 'TopLayer', net: 'UNRELATED_NET' },
+	];
+	for (const geometry of geometries) {
+		for (const attributes of unrelatedAttributes) {
+			const extra = { ...structuredClone(firstSes), wireIndex: nextIndex++, pathIndex: 0, layerName: attributes.layerName, net: attributes.net, points: structuredClone(geometry.points) };
+			const result = resolveSesArcCoverage([...model.wires, extra], baseline, baseline.documentUuid, currentArcs, layerNames);
+			assert.ok(result.remainingWires.some(wire => wire.wireIndex === extra.wireIndex), `${geometry.name} on ${attributes.name} remains an ordinary route`);
+			assert.ok(!result.consumedWireIndices.includes(extra.wireIndex), `${geometry.name} on ${attributes.name} is not consumed as the ARC protect wire`);
+		}
+	}
+}
+{
+	const assertSameLayerNetRejected = (mutate, label) => {
+		const extra = structuredClone(firstSes);
+		extra.wireIndex = Math.max(...model.wires.map(wire => wire.wireIndex)) + 1;
+		mutate(extra);
+		assert.throws(() => resolveSesArcCoverage([...model.wires, extra], baseline, baseline.documentUuid, currentArcs, layerNames), /必须完整且唯一匹配|改动、拆分或重复/, label);
+	};
+	assertSameLayerNetRejected(wire => { wire.points = [wire.points[0], wire.points.at(-1)]; }, 'same-layer same-net extra endpoint route remains protected');
+	assertSameLayerNetRejected(wire => { wire.points = wire.points.slice(1, -1); }, 'same-layer same-net contiguous split remains protected');
+	assertSameLayerNetRejected(wire => { wire.widthMil += 0.001; }, 'same-layer same-net width change remains protected');
+	assertSameLayerNetRejected(wire => { wire.type = 'route'; }, 'same-layer same-net route-type change remains protected');
+}
 for (const mutate of [
 	wire => { wire.points[1].xMil += 0.001; },
 	wire => { wire.widthMil += 0.001; },

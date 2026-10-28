@@ -1,0 +1,475 @@
+{
+  "format": "ai-command-engine-route-baseline/v1",
+  "version": 1,
+  "documentUuid": "3883ab720d203769",
+  "status": "complete",
+  "arcs": [
+    {
+      "id": "b514000000000001",
+      "header": {
+        "type": "ARC",
+        "ticket": 171,
+        "id": "b514000000000001"
+      },
+      "data": {
+        "partitionId": "",
+        "groupId": 0,
+        "netName": "ACE113_P",
+        "layerId": 2,
+        "startX": 800,
+        "startY": 150,
+        "endX": 900,
+        "endY": 250,
+        "angle": 90,
+        "width": 30,
+        "locked": false,
+        "zIndex": -1,
+        "arcType": "DOT"
+      }
+    },
+    {
+      "id": "b514000000000002",
+      "header": {
+        "type": "ARC",
+        "ticket": 172,
+        "id": "b514000000000002"
+      },
+      "data": {
+        "partitionId": "",
+        "groupId": 0,
+        "netName": "ACE113_N",
+        "layerId": 2,
+        "startX": 800,
+        "startY": 400,
+        "endX": 900,
+        "endY": 500,
+        "angle": -90,
+        "width": 30,
+        "locked": false,
+        "zIndex": -1,
+        "arcType": "DOT"
+      }
+    },
+    {
+      "id": "b514000000000003",
+      "header": {
+        "type": "ARC",
+        "ticket": 173,
+        "id": "b514000000000003"
+      },
+      "data": {
+        "partitionId": "",
+        "groupId": 0,
+        "netName": "+5V",
+        "layerId": 2,
+        "startX": 950,
+        "startY": 780,
+        "endX": 1050,
+        "endY": 880,
+        "angle": 270,
+        "width": 20,
+        "locked": false,
+        "zIndex": -1,
+        "arcType": "DOT"
+      }
+    }
+  ],
+  "protectedWires": [
+    {
+      "arcId": "b514000000000001",
+      "dsnWireIndex": 4,
+      "net": "ACE113_P",
+      "layerName": "BottomLayer",
+      "widthMil": 30,
+      "points": [
+        {
+          "xMil": 800,
+          "yMil": 150
+        },
+        {
+          "xMil": 808.72,
+          "yMil": 150.38
+        },
+        {
+          "xMil": 817.36,
+          "yMil": 151.52
+        },
+        {
+          "xMil": 825.88,
+          "yMil": 153.41
+        },
+        {
+          "xMil": 834.2,
+          "yMil": 156.03
+        },
+        {
+          "xMil": 842.26,
+          "yMil": 159.37
+        },
+        {
+          "xMil": 850,
+          "yMil": 163.4
+        },
+        {
+          "xMil": 857.36,
+          "yMil": 168.08
+        },
+        {
+          "xMil": 864.28,
+          "yMil": 173.4
+        },
+        {
+          "xMil": 870.71,
+          "yMil": 179.29
+        },
+        {
+          "xMil": 876.6,
+          "yMil": 185.72
+        },
+        {
+          "xMil": 881.92,
+          "yMil": 192.64
+        },
+        {
+          "xMil": 886.6,
+          "yMil": 200
+        },
+        {
+          "xMil": 890.63,
+          "yMil": 207.74
+        },
+        {
+          "xMil": 893.97,
+          "yMil": 215.8
+        },
+        {
+          "xMil": 896.59,
+          "yMil": 224.12
+        },
+        {
+          "xMil": 898.48,
+          "yMil": 232.64
+        },
+        {
+          "xMil": 899.62,
+          "yMil": 241.28
+        },
+        {
+          "xMil": 900,
+          "yMil": 250
+        }
+      ]
+    },
+    {
+      "arcId": "b514000000000002",
+      "dsnWireIndex": 5,
+      "net": "ACE113_N",
+      "layerName": "BottomLayer",
+      "widthMil": 30,
+      "points": [
+        {
+          "xMil": 800,
+          "yMil": 400
+        },
+        {
+          "xMil": 800.38,
+          "yMil": 408.72
+        },
+        {
+          "xMil": 801.52,
+          "yMil": 417.36
+        },
+        {
+          "xMil": 803.41,
+          "yMil": 425.88
+        },
+        {
+          "xMil": 806.03,
+          "yMil": 434.2
+        },
+        {
+          "xMil": 809.37,
+          "yMil": 442.26
+        },
+        {
+          "xMil": 813.4,
+          "yMil": 450
+        },
+        {
+          "xMil": 818.08,
+          "yMil": 457.36
+        },
+        {
+          "xMil": 823.4,
+          "yMil": 464.28
+        },
+        {
+          "xMil": 829.29,
+          "yMil": 470.71
+        },
+        {
+          "xMil": 835.72,
+          "yMil": 476.6
+        },
+        {
+          "xMil": 842.64,
+          "yMil": 481.92
+        },
+        {
+          "xMil": 850,
+          "yMil": 486.6
+        },
+        {
+          "xMil": 857.74,
+          "yMil": 490.63
+        },
+        {
+          "xMil": 865.8,
+          "yMil": 493.97
+        },
+        {
+          "xMil": 874.12,
+          "yMil": 496.59
+        },
+        {
+          "xMil": 882.64,
+          "yMil": 498.48
+        },
+        {
+          "xMil": 891.28,
+          "yMil": 499.62
+        },
+        {
+          "xMil": 900,
+          "yMil": 500
+        }
+      ]
+    },
+    {
+      "arcId": "b514000000000003",
+      "dsnWireIndex": 6,
+      "net": "+5V",
+      "layerName": "BottomLayer",
+      "widthMil": 20,
+      "points": [
+        {
+          "xMil": 950,
+          "yMil": 780
+        },
+        {
+          "xMil": 950.4,
+          "yMil": 771.12
+        },
+        {
+          "xMil": 951.58,
+          "yMil": 762.31
+        },
+        {
+          "xMil": 953.54,
+          "yMil": 753.64
+        },
+        {
+          "xMil": 956.26,
+          "yMil": 745.18
+        },
+        {
+          "xMil": 959.72,
+          "yMil": 736.99
+        },
+        {
+          "xMil": 963.9,
+          "yMil": 729.15
+        },
+        {
+          "xMil": 968.75,
+          "yMil": 721.7
+        },
+        {
+          "xMil": 974.25,
+          "yMil": 714.72
+        },
+        {
+          "xMil": 980.34,
+          "yMil": 708.25
+        },
+        {
+          "xMil": 986.99,
+          "yMil": 702.35
+        },
+        {
+          "xMil": 994.14,
+          "yMil": 697.06
+        },
+        {
+          "xMil": 1001.72,
+          "yMil": 692.43
+        },
+        {
+          "xMil": 1009.69,
+          "yMil": 688.49
+        },
+        {
+          "xMil": 1017.97,
+          "yMil": 685.27
+        },
+        {
+          "xMil": 1026.51,
+          "yMil": 682.8
+        },
+        {
+          "xMil": 1035.24,
+          "yMil": 681.1
+        },
+        {
+          "xMil": 1044.08,
+          "yMil": 680.18
+        },
+        {
+          "xMil": 1052.96,
+          "yMil": 680.04
+        },
+        {
+          "xMil": 1061.83,
+          "yMil": 680.7
+        },
+        {
+          "xMil": 1070.6,
+          "yMil": 682.14
+        },
+        {
+          "xMil": 1079.21,
+          "yMil": 684.36
+        },
+        {
+          "xMil": 1087.58,
+          "yMil": 687.33
+        },
+        {
+          "xMil": 1095.66,
+          "yMil": 691.03
+        },
+        {
+          "xMil": 1103.38,
+          "yMil": 695.44
+        },
+        {
+          "xMil": 1110.68,
+          "yMil": 700.51
+        },
+        {
+          "xMil": 1117.5,
+          "yMil": 706.22
+        },
+        {
+          "xMil": 1123.78,
+          "yMil": 712.5
+        },
+        {
+          "xMil": 1129.49,
+          "yMil": 719.32
+        },
+        {
+          "xMil": 1134.56,
+          "yMil": 726.62
+        },
+        {
+          "xMil": 1138.97,
+          "yMil": 734.34
+        },
+        {
+          "xMil": 1142.67,
+          "yMil": 742.42
+        },
+        {
+          "xMil": 1145.64,
+          "yMil": 750.79
+        },
+        {
+          "xMil": 1147.86,
+          "yMil": 759.4
+        },
+        {
+          "xMil": 1149.3,
+          "yMil": 768.17
+        },
+        {
+          "xMil": 1149.96,
+          "yMil": 777.04
+        },
+        {
+          "xMil": 1149.82,
+          "yMil": 785.92
+        },
+        {
+          "xMil": 1148.9,
+          "yMil": 794.76
+        },
+        {
+          "xMil": 1147.2,
+          "yMil": 803.49
+        },
+        {
+          "xMil": 1144.73,
+          "yMil": 812.03
+        },
+        {
+          "xMil": 1141.51,
+          "yMil": 820.31
+        },
+        {
+          "xMil": 1137.57,
+          "yMil": 828.28
+        },
+        {
+          "xMil": 1132.94,
+          "yMil": 835.86
+        },
+        {
+          "xMil": 1127.65,
+          "yMil": 843.01
+        },
+        {
+          "xMil": 1121.75,
+          "yMil": 849.66
+        },
+        {
+          "xMil": 1115.28,
+          "yMil": 855.75
+        },
+        {
+          "xMil": 1108.3,
+          "yMil": 861.25
+        },
+        {
+          "xMil": 1100.85,
+          "yMil": 866.1
+        },
+        {
+          "xMil": 1093.01,
+          "yMil": 870.28
+        },
+        {
+          "xMil": 1084.82,
+          "yMil": 873.74
+        },
+        {
+          "xMil": 1076.36,
+          "yMil": 876.46
+        },
+        {
+          "xMil": 1067.69,
+          "yMil": 878.42
+        },
+        {
+          "xMil": 1058.88,
+          "yMil": 879.6
+        },
+        {
+          "xMil": 1050,
+          "yMil": 880
+        }
+      ]
+    }
+  ],
+  "issues": []
+}

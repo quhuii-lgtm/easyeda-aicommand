@@ -1,5 +1,22 @@
 # Change log
 
+## 0.20.125 — Release notes (2026-10-28)
+
+- Compared with v0.20.124, filter extra ARC duplicate/split candidates by the same `layerName` and `net`. Existing checks still reject same-layer, same-net width/type changes.
+- Add the 37 regression samples, manifest, instructions, and seven test scripts to the source archive; exclude tests from extension and skill packages.
+- Seventeen focused regression groups, TypeScript checking, and the production build passed locally. No new EDA host installation or acceptance was performed.
+- Independent skill: v2026.10.28.3. Current GitHub and marketplace status is shown on their respective release and listing pages.
+- See the [English release notes](docs/releases/v0.20.125-en.md) and [Chinese release notes](docs/releases/v0.20.125-zh.md).
+
+## 0.20.125 — 版本说明（2026-10-28）
+
+- 相比 v0.20.124，ARC 额外重复/拆分候选只比较同 `layerName`、同 `net` 的线路；同层同网线宽或线型改变仍由原检查拒绝。
+- 源码归档补齐37项回归样本、manifest、使用说明及7个测试脚本；测试文件不进入扩展包或技能包。
+- 17组相关回归、TypeScript检查及生产构建通过；未进行新版本 EDA 宿主安装验收。
+- 配套技能独立版本为 v2026.10.28.3。市场审核与公开状态以市场页面为准。
+- 详见[英文发布说明](docs/releases/v0.20.125-en.md)与[中文发布说明](docs/releases/v0.20.125-zh.md)。
+
+
 ## 0.20.124 — Release notes (2026-10-28)
 
 - Preserve array order in task fingerprints. Release only the matching autoroute job slot at terminal states; allow a new start after one read-only GET confirms that the old slot is the same job in an explicit terminal state.

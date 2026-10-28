@@ -5,19 +5,18 @@ import { resolve } from 'node:path';
 import { build } from 'esbuild';
 
 const root = resolve(import.meta.dirname, '..');
-const evidence = resolve(root, '..', 'b5-oval-arc-20261026', 'evidence');
 const [dsnText, sesText, wrappedSource, wrappedAfterSource, wrappedResult, wrappedReopenedSource] = await Promise.all([
-	readFile(resolve(evidence, 'v115-combo-native.dsn'), 'utf8'),
-	readFile(resolve(evidence, 'v115-combo-result.ses'), 'utf8'),
-	readFile(resolve(evidence, 'v115-combo-before-source.json'), 'utf8'),
-	readFile(resolve(evidence, 'v115-after-import-source.json'), 'utf8'),
-	readFile(resolve(evidence, 'v115-combo-result.json'), 'utf8'),
-	readFile(resolve(evidence, 'v115-reopened-source.json'), 'utf8'),
+	readFile(resolve(root, 'test/fixtures/ses-arc-combo.dsn'), 'utf8'),
+	readFile(resolve(root, 'test/fixtures/ses-arc-combo.ses'), 'utf8'),
+	readFile(resolve(root, 'test/fixtures/ses-arc-v115-before.sourcelog'), 'utf8'),
+	readFile(resolve(root, 'test/fixtures/ses-arc-v115-after-import.sourcelog'), 'utf8'),
+	readFile(resolve(root, 'test/fixtures/ses-arc-v115-route-baseline.json'), 'utf8'),
+	readFile(resolve(root, 'test/fixtures/ses-arc-v115-reopened.sourcelog'), 'utf8'),
 ]);
-const source = JSON.parse(wrappedSource).result.data.source;
-const sourceAfterImport = JSON.parse(wrappedAfterSource).result.data.source;
-const importedResultBaseline = JSON.parse(wrappedResult).result.data.routeBaseline;
-const sourceAfterReopen = JSON.parse(wrappedReopenedSource).result.data.source;
+const source = wrappedSource;
+const sourceAfterImport = wrappedAfterSource;
+const importedResultBaseline = JSON.parse(wrappedResult);
+const sourceAfterReopen = wrappedReopenedSource;
 const docHead = JSON.parse(source.split(/\r?\n/).find(line => line.startsWith('{"type":"DOCHEAD"}')).split('||')[1].replace(/\|$/, ''));
 const built = await build({
 	stdin: { contents: "export { pcbCommands } from '../src/commands/pcb.ts'; export { parseAutoRouteSes, mapSesRoutes, planSesImport } from '../src/engine/autoRouteSes.ts'; export { buildSesRouteBaseline, resolveSesArcCoverage } from '../src/pcb/sesArcCoverage.ts'; export { parseSourceLog, resolveRecords } from '../src/pcb/sourcelog.ts'", resolveDir: resolve(root, 'test'), sourcefile: 'ses-arc-coverage-command-regression-entry.ts' },
@@ -115,6 +114,60 @@ assert.equal(lineWrites + viaWrites + nativeWrites, 0, 'coverage-only import per
 const repeated = await importCommand.handler({ base64: Buffer.from(sesText).toString('base64'), routeBaseline: exported.routeBaseline }, {});
 assert.equal(repeated.alreadyPresent, true, 'repeated complete SES remains a zero-write no-op');
 assert.equal(lineWrites + viaWrites + nativeWrites, 0);
+{
+	const protectedWire = exported.routeBaseline.protectedWires[0];
+	const unrelatedLayer = protectedWire.layerName === 'TopLayer' ? 'BottomLayer' : 'TopLayer';
+	const layerId = layers.find(layer => layer.name === unrelatedLayer).id;
+	function addWireToNet(text, net, layerName, widthMil, points) {
+		const start = text.indexOf(`(net "${net}"`) >= 0 ? text.indexOf(`(net "${net}"`) : text.indexOf(`(net ${net}`);
+		assert.ok(start >= 0, `SES contains the protected network ${net}`);
+		let depth = 0;
+		let closeIndex = -1;
+		for (let index = start; index < text.length; index++) {
+			if (text[index] === '(') depth++;
+			else if (text[index] === ')' && --depth === 0) { closeIndex = index; break; }
+		}
+		assert.ok(closeIndex > start, `SES net ${net} closes`);
+		const coordinates = points.flatMap(point => [point.xMil * 1000, point.yMil * 1000]).join(' ');
+		const wire = `\n(wire (path ${layerName} ${widthMil * 1000} ${coordinates})(type protect))\n`;
+		return `${text.slice(0, closeIndex)}${wire}${text.slice(closeIndex)}`;
+	}
+	const sesWithUnrelatedLayerRoute = addWireToNet(sesText, protectedWire.net, unrelatedLayer, protectedWire.widthMil, [protectedWire.points[0], protectedWire.points.at(-1)]);
+	const extraModel = parseAutoRouteSes(sesWithUnrelatedLayerRoute);
+	const extraCoverage = resolveSesArcCoverage(extraModel.wires, exported.routeBaseline, docHead.uuid, currentArcs, layerNames);
+	assert.equal(extraCoverage.existingArcCoverage.length, 3, 'cross-layer endpoint route preserves the three exact ARC coverages');
+	assert.equal(extraCoverage.existingArcCoverage.reduce((sum, item) => sum + item.segmentCount, 0), 89);
+	const extraWire = extraModel.wires.find(wire => wire.net === protectedWire.net && wire.layerName === unrelatedLayer
+		&& wire.points.length === 2 && wire.points[0].xMil === protectedWire.points[0].xMil
+		&& wire.points[0].yMil === protectedWire.points[0].yMil && wire.points[1].xMil === protectedWire.points.at(-1).xMil
+		&& wire.points[1].yMil === protectedWire.points.at(-1).yMil);
+	assert.ok(extraWire, 'SES parser retains the inserted cross-layer endpoint route');
+	assert.ok(extraCoverage.remainingWires.some(wire => wire.wireIndex === extraWire.wireIndex), 'cross-layer route remains for ordinary SES difference planning');
+	assert.ok(!extraCoverage.consumedWireIndices.includes(extraWire.wireIndex), 'cross-layer route is not consumed as an ARC protect wire');
+	const extraExpected = mapSesRoutes({ ...extraModel, wires: extraCoverage.remainingWires }, layers);
+	assert.ok(extraExpected.lines.some(line => line.net === protectedWire.net && line.layer === layerId
+		&& line.a.x === protectedWire.points[0].xMil && line.a.y === protectedWire.points[0].yMil
+		&& line.b.x === protectedWire.points.at(-1).xMil && line.b.y === protectedWire.points.at(-1).yMil), 'cross-layer line enters the ordinary expected route set');
+	const extraData = {
+		netName: protectedWire.net, layerId, width: protectedWire.widthMil,
+		startX: protectedWire.points[0].xMil, startY: protectedWire.points[0].yMil,
+		endX: protectedWire.points.at(-1).xMil, endY: protectedWire.points.at(-1).yMil,
+	};
+	const extraSourceLine = `${JSON.stringify({ type: 'LINE', id: 'r2-cross-layer-endpoint-route', ticket: 1 })}||${JSON.stringify(extraData)}|`;
+	sourceNow = `${sourceAfterImport}\n${extraSourceLine}`;
+	rows = routeObjectsFromSource(sourceNow);
+	const planned = planSesImport(extraExpected, { documentUuid: docHead.uuid, lines: rows.lines, vias: rows.vias }, 'append');
+	assert.equal(planned.alreadyPresent, true, 'SDK/source readback for the cross-layer route makes the ordinary difference a zero-write no-op');
+	assert.equal(planned.deltaLines.length, 0);
+	const beforeUnrelatedLayerImport = lineWrites + viaWrites + nativeWrites;
+	const unrelatedLayerResult = await importCommand.handler({ base64: Buffer.from(sesWithUnrelatedLayerRoute).toString('base64'), routeBaseline: exported.routeBaseline }, {});
+	assert.equal(unrelatedLayerResult.alreadyPresent, true, 'registered import handler accepts the unrelated cross-layer route');
+	assert.equal(unrelatedLayerResult.existingArcCoverage.length, 3);
+	assert.equal(unrelatedLayerResult.existingArcCoverage.reduce((sum, item) => sum + item.segmentCount, 0), 89);
+	assert.equal(lineWrites + viaWrites + nativeWrites, beforeUnrelatedLayerImport, 'existing unrelated route is accepted without writes');
+	sourceNow = importedSource;
+	rows = routeObjectsFromSource(sourceNow);
+}
 sourceNow = sourceAfterReopen;
 rows = routeObjectsFromSource(sourceNow);
 const reopenedArcs = [...resolveRecords(parseSourceLog(sourceAfterReopen)).values()].filter(record => record.header.type === 'ARC');

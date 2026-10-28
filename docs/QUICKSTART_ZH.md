@@ -4,7 +4,7 @@
 
 更新日期：2026-10-28。
 
-GitHub 已于 2026-10-28 正式发布 v0.20.124。市场当前公开版为 0.20.51；v0.20.124 市场包交给用户上传，本次尚未提交市场审核。该版本最后三项修正和帮助文字更正有本地回归、类型检查与生产配置编译记录，尚未安装进行 EDA 宿主验收；既有主要功能验收依据为已安装的 v0.20.123 及相应历史记录。详见[版本说明](releases/v0.20.124-zh.md)。
+v0.20.125 相较 v0.20.124 限定 ARC 额外重复/拆分候选的匹配范围，并补齐源码回归样本。17组相关回归、类型检查与生产构建通过；没有新版本 EDA 宿主安装验证。市场状态以[市场页面](https://jlc-ext.com/item/eda_gdqnxffl/ai-command-engine)为准。详见[版本说明](releases/v0.20.125-zh.md)。
 
 本指南从一台尚未配置本插件的电脑开始。插件、代理和 AI 技能是三个独立部分；只下载 `.eext` 不会安装 Node.js、代理依赖或 AI 技能。代理须使用完整源码仓库，在 Node.js >=20.17.0 环境运行 `npm ci` 和 `node bridge/command-proxy.mjs`。
 
@@ -22,12 +22,12 @@ GitHub 已于 2026-10-28 正式发布 v0.20.124。市场当前公开版为 0.20.
 请先检查现状，再执行；每一步告诉我检查结果、当前阻点和下一步。不要一次给我一长串命令后就宣称安装完成。
 
 1. 检查你能否访问本机文件和终端，并确认操作系统、Node.js 和 npm。按项目 package.json 检查版本要求，当前要求 Node.js >=20.17.0。缺少工具时指导我从官方来源安装，安装后重新检查；Git可选，Python不是直接HTTP连接的必需项。
-2. 确认我安装或准备安装的插件版本，获取对应的完整源码仓库。读取 README.md、docs/QUICKSTART.md、package.json 和 package-lock.json。插件与代理源码从插件仓库获取；AI技能从 https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.10.28.1 或 https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.10.28.1/ai-command-engine-skill_v2026.10.28.1_en-zh.zip 单独获取。说明三部分分开安装且版本号独立；按相关功能及帮助核对适配，不要求技能和插件版本号相同。
+2. 确认我安装或准备安装的插件版本，获取对应的完整源码仓库。读取 README.md、docs/QUICKSTART.md、package.json 和 package-lock.json。插件与代理源码从插件仓库获取；AI技能从 https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.10.28.3 单独获取。说明三部分分开安装且版本号独立；按相关功能及帮助核对适配，不要求技能和插件版本号相同。
 3. 把源码保存在固定目录。发现已有仓库、技能或配置时先检查并保留个人改动，不覆盖旧目录或密钥。确认源码目录同时有 package.json、package-lock.json 和 bridge/command-proxy.mjs。
 4. 在源码目录执行 npm ci，确认代理依赖安装成功。不要添加 --omit=dev；使用已下载的插件包不需要运行构建。解压独立技能 ZIP，并将完整 ai-command-engine/ 安装到当前AI工具的技能目录，保留 SKILL.md、备用中文入口 SKILL_ZH.md、references/、scripts/ 和 VERSION。重载AI工具，让它读取 SKILL.md 并确认技能版本；不要把仓库根目录的 SKILL.md 当作技能入口。
 5. 检查 http://127.0.0.1:49720/health。如果没有代理，运行 node bridge/command-proxy.mjs，并保持进程可用；若端口已占用，先识别服务，不结束未知进程，不擅自改端口。检查健康响应和代理版本；失败时停在本步排查。Windows自动启动注册是可选项，不是首次连接的必需项。
 6. 指导我在嘉立创EDA专业版中导入或安装 .eext、启用插件、允许外部交互，并打开一个用于试用的工程和图页。登录、验证码、系统确认及需要我手动点击的步骤，明确告诉我在哪里完成，等我完成后再继续。不要替我创建或修改电路。
-7. 指导我点击“AI 指令引擎 → 启动桥接”。查询 GET /connections，核对插件版本与工程身份；没有实例时检查插件启用、外部交互、桥接状态和代理，不能跳过。多个实例时按我指定的工程选择，不自动选第一项。
+7. 指导我点击“AI 指令引擎 → 启动桥接”。查询 GET http://127.0.0.1:49720/connections，核对插件版本与工程身份；没有实例时检查插件启用、外部交互、桥接状态和代理，不能跳过。多个实例时按我指定的工程选择，不自动选第一项。
 8. 使用刚查询到的 instanceId，在 POST /command 的顶层显式携带它，调用 project.getInfo。核对返回 JSON 的 ok 为 true，且工程身份正确；HTTP 200本身不能证明成功。按需只读查询图页并核对UUID；不要猜参数，按所选实例对应版本的帮助查询。
 9. 最后报告：Node/npm版本、源码目录与版本、技能安装位置、代理健康状态、EDA/插件版本、目标instanceId、工程/图页身份，以及只读调用结果。缺哪项就说明哪项，不能把“已安装插件”当作“已连接EDA”。
 
@@ -50,7 +50,7 @@ GitHub 已于 2026-10-28 正式发布 v0.20.124。市场当前公开版为 0.20.
 
 | 项目 | 要求与验证范围 |
 | --- | --- |
-| EDA | 嘉立创 EDA 专业版桌面客户端。仓库历史操作记录包含 4.1.60；部分指令注明需要 4.2+，不能据此认为所有版本都支持所有指令。插件声明的 `^3.2.0` 是宿主加载范围，不是完整实测兼容矩阵。 |
+| EDA | 嘉立创 EDA 专业版桌面客户端。部分指令注明需要 4.2+，不能据此认为所有版本都支持所有指令。插件声明的 `^3.2.0` 是宿主加载范围，不是完整实测兼容矩阵。 |
 | 操作系统 | 以下给出 Windows PowerShell 步骤；macOS/Linux 的完整安装链路尚未验证。 |
 | Node.js / npm | Node.js >=20.17.0，附带 npm。用 `node --version`、`npm --version` 检查。 |
 | Python | 可选，仅 `scripts/eda.py` 助手及其测试需要；已使用 Python 3.12 测试。直接 HTTP 调用不需要 Python。 |
@@ -88,18 +88,12 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\bridge\install-url-sch
 
 ## 2. 安装并连接 EDA 插件
 
-1. 从 [v0.20.124 正式发布页](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.20.124) 下载 `ai-command-engine_v0.20.124_zh-CN.eext` 或 `ai-command-engine_v0.20.124_en.eext`。源码 ZIP 为 `easyeda-aicommand-plugin-source_v0.20.124.zip`，用途与 `.eext` 不同。
+1. 从 [v0.20.125 发布页](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.20.125) 下载 `ai-command-engine_v0.20.125_zh-CN.eext` 或 `ai-command-engine_v0.20.125_en.eext`。源码 ZIP 为 `easyeda-aicommand-plugin-source_v0.20.125.zip`，用途与 `.eext` 不同。
 2. 在 EDA 的扩展/插件管理界面导入该 `.eext`，启用插件并勾选“允许外部交互”。不同 EDA 版本菜单位置可能不同，以当前客户端的插件导入入口为准。
 3. 新建一个用于试用的空白工程及原理图页，打开该页。
-4. 在“AI 指令引擎”菜单使用“启动桥接”“停止桥接”或“重新连接桥接”。启动已连接的窗口是幂等操作；重新连接会先排空本窗口已有请求，再换连。停止会拒绝排队中的新写请求，交付已派发请求的结果后再断开本窗口。partial 或结果不确定仍会明确报告；0.20.57及配套代理不再因历史结果持续阻止停止或后续独立请求。
+4. 在“AI 指令引擎”菜单使用“启动桥接”“停止桥接”或“重新连接桥接”。启动已连接的窗口是幂等操作；重新连接会先排空本窗口已有请求，再换连。停止会拒绝排队中的新写请求，交付已派发请求的结果后再断开本窗口。partial 或结果不确定仍会明确报告；
 
-v0.10.73 原始发布附件 SHA256：
-
-```text
-974745adb1245b69e0c1d5cd47ab20870907e592b58a4aa3ae4fdac3b19b4657
-```
-
-可用 PowerShell `Get-FileHash -Algorithm SHA256 -LiteralPath '<下载的 eext 路径>'` 核对。该值只对应原始 v0.10.73 附件，不适用于自己重新构建的包。
+下载后可用当前 GitHub Release 中的 `SHA256SUMS.txt` 核对目标文件；不要用其他版本的校验值。
 
 ## 3. 完成第一次只读调用
 
@@ -111,7 +105,7 @@ Invoke-RestMethod "$base/health"
 Invoke-RestMethod "$base/connections" | ConvertTo-Json -Depth 8
 ```
 
-`/health` 应返回 `ok: true`；`/connections` 应列出已连接实例。先核对 `info.project` 和版本，复制刚查到的目标 `instanceId`。不要直接选第一项，也不要复用其他人的示例 ID。
+`http://127.0.0.1:49720/health` 应返回 `ok: true`；`http://127.0.0.1:49720/connections` 应列出已连接实例。先核对 `info.project` 和版本，复制刚查到的目标 `instanceId`。不要直接选第一项，也不要复用其他人的示例 ID。
 
 ```powershell
 $instanceId = '<刚查询并核对的目标 instanceId>'
@@ -130,9 +124,9 @@ $result | ConvertTo-Json -Depth 12
 
 ## 4. 安装 AI 技能
 
-从[独立技能发布页 v2026.10.28.1](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.10.28.1)下载[完整 ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.10.28.1/ai-command-engine-skill_v2026.10.28.1_en-zh.zip)。解压后把完整 `ai-command-engine/` 目录放入 AI 工具的技能目录，保留英文入口 `SKILL.md`、备用中文入口 `SKILL_ZH.md`、`references/`、`scripts/` 和 `VERSION`。不要只复制一个文件，也不要把插件仓库根目录当成技能安装。
+从[独立技能发布页 v2026.10.28.3](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.10.28.3)下载[完整 ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.10.28.3/ai-command-engine-skill_v2026.10.28.3_en-zh.zip)。解压后把完整 `ai-command-engine/` 目录放入 AI 工具的技能目录，保留英文入口 `SKILL.md`、备用中文入口 `SKILL_ZH.md`、`references/`、`scripts/` 和 `VERSION`。不要只复制一个文件，也不要把插件仓库根目录当成技能安装。
 
-Codex 本地安装位置通常是 `~/.codex/ai-command-engine/`（Windows 为 `%USERPROFILE%\.codex\skills\ai-command-engine\`）。已有同名技能时先备份并比较差异，避免覆盖个人规则。其他 AI 工具通过其技能管理功能导入该目录；不支持技能加载的工具可以读取该目录的 `SKILL.md` 及所引用手册。
+Codex 本地安装位置通常是 `~/.codex/skills/ai-command-engine/`（Windows 为 `%USERPROFILE%\.codex\skills\ai-command-engine\`）。已有同名技能时先备份并比较差异，避免覆盖个人规则。其他 AI 工具通过其技能管理功能导入该目录；不支持技能加载的工具可以读取该目录的 `SKILL.md` 及所引用手册。
 
 安装后重载 AI 工具，在新的会话中让 AI 读取 `SKILL.md` 和 `VERSION` 并报告技能版本。技能版本号独立于插件版本，按功能和对应帮助核对适配，不要求号码相同。确认后可给它以下试用请求：
 
@@ -159,12 +153,12 @@ python ai-command-engine/scripts/eda.py project.getInfo --instance-id '<刚查�
 | 找不到 `node` 或 `npm` | 安装符合上述要求的 Node.js，重新打开终端并检查版本。 |
 | `ERR_MODULE_NOT_FOUND` / 找不到 `ws` | 回到含 `package-lock.json` 的仓库根目录执行 `npm ci`，完成后重新启动代理。 |
 | 连接被拒绝 | 确认代理已启动且使用默认 49720。所有窗口停止且没有待处理请求时，代理默认空闲 300 秒后退出；下次启动插件会再次检查并按需拉起。 |
-| `EADDRINUSE` | 先查询 `/health` 确认是否是已有代理；若是其他程序占用，先解决端口冲突，不要只改单端口。 |
+| `EADDRINUSE` | 先查询 `http://127.0.0.1:49720/health` 确认是否是已有代理；若是其他程序占用，先解决端口冲突，不要只改单端口。 |
 | `/health` 正常但没有实例 | 检查工程窗口、插件启用状态、“允许外部交互”和用户暂停状态，然后点击连接菜单。 |
 | 缺少 `instanceId` | 每个完整 `/command` 请求都带顶层 `instanceId`，`/select` 不能代替它。 |
 | `UNKNOWN_INSTANCE` / `TARGET_OFFLINE` | 重新查询 `/connections`，按工程身份核对目标；不要自动改投另一个实例。 |
 | 焦点类型或 `__docUuid` 不匹配 | 核对目标页 UUID，显式打开正确文档，再只读验证。 |
-| 超时或partial | 超时不等于取消，先查task.get及现场，不自动重发。0.20.57及配套代理不保留历史写保护；write.acknowledge仅为兼容空操作。 |
+| 超时或partial | 超时不等于取消，先查task.get及现场，不自动重发。 |
 
 ## 升级、停止与卸载
 

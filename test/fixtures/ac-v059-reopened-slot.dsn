@@ -1,0 +1,162 @@
+(PCB "PCB2"
+  (parser
+    (string_quote ")
+    (space_in_quoted_tokens on)
+    (host_cad "EasyEDA Pro")
+    (host_version "4.1.78")
+  )
+  (resolution mil 1000)
+  (structure
+    (boundary(path signal 0 0 0 0 1000 1200 1000 1200 0 0 0 )
+    )
+    (via via0
+    )
+    (grid via   0.25)
+    (grid wire   0.25)
+    (grid place   0.25)
+    (rule(clear 6.03))
+    (rule(clear 6.03 (type default_smd)))
+    (rule(clear 6.03 (type smd_smd)))
+    (rule(width 10.05))
+    (layer TopLayer
+      (type signal)
+    )
+    (layer Inner1
+      (type signal)
+    )
+    (layer Inner2
+      (type signal)
+    )
+    (layer BottomLayer
+      (type signal)
+    )
+  
+    (plane "ACE_VIA" (polygon "Inner1" 0 296 104 103.99999999999994 104 104 196 296.0000000000001 196 296 104))
+    (plane "+5V" (polygon "Inner1" 0 896 504 604 504 604 696 896 696 896 504))
+  )
+
+  (placement
+    (component u1
+      (place u1 0 0 front 0
+      )
+    )
+  )
+  (library
+    (image u1
+      (pin p51611a06d79522747 51611a06d79522747 229.66 300)
+      (pin p51611a06d79522747 51611a06d79522748 170.34 300)
+      (pin p3b6f628633b0709d7 3b6f628633b0709d7 929.66 300)
+      (pin p3b6f628633b0709d7 3b6f628633b0709d8 870.34 300)
+      (pin p3577d6c78f47fc5b 3577d6c78f47fc5b 500 300)
+      (pin p3577d6c78f47fc5b 9daa1e2a8d9f031 1100 400)
+      (pin p21abb4263d4bd871 21abb4263d4bd871 757.5 177.5)
+    )
+
+    (padstack via0
+      (shape(circle TopLayer 24))
+      (shape(circle Inner1 24))
+      (shape(circle Inner2 24))
+      (shape(circle BottomLayer 24))
+    )
+
+    (padstack p51611a06d79522747
+      (shape(polygon TopLayer 0.1 -15.88 -17.01 -15.88 17.01 -15.88 17.01 15.88 17.01 15.88 17.01 15.88 -17.01 15.88 -17.01 -15.88 -17.01))
+    )
+    (padstack p3b6f628633b0709d7
+      (shape(polygon BottomLayer 0.1 -15.88 -17.01 -15.88 17.01 -15.88 17.01 15.88 17.01 15.88 17.01 15.88 -17.01 15.88 -17.01 -15.88 -17.01))
+    )
+    (padstack p3577d6c78f47fc5b
+      (shape(circle TopLayer 24 0 0))
+      (shape(circle Inner1 24 0 0))
+      (shape(circle Inner2 24 0 0))
+      (shape(circle BottomLayer 24 0 0))
+    )
+    (padstack p21abb4263d4bd871
+      (shape(polygon TopLayer 0.1 -67.5 -22.5 -67.5 22.5 -67.5 22.5 67.5 22.5 67.5 22.5 67.5 -22.5 67.5 -22.5 -67.5 -22.5))
+      (shape(polygon Inner1 0.1 -67.5 -22.5 -67.5 22.5 -67.5 22.5 67.5 22.5 67.5 22.5 67.5 -22.5 67.5 -22.5 -67.5 -22.5))
+      (shape(polygon Inner2 0.1 -67.5 -22.5 -67.5 22.5 -67.5 22.5 67.5 22.5 67.5 22.5 67.5 -22.5 67.5 -22.5 -67.5 -22.5))
+      (shape(polygon BottomLayer 0.1 -67.5 -22.5 -67.5 22.5 -67.5 22.5 67.5 22.5 67.5 22.5 67.5 -22.5 67.5 -22.5 -67.5 -22.5))
+    )
+  )
+  (network
+    (net ACE_VIA
+      (pins u1-51611a06d79522748 u1-3b6f628633b0709d8 u1-3577d6c78f47fc5b)
+    )
+    (net +5V
+      (pins u1-51611a06d79522747 u1-3b6f628633b0709d7 u1-9daa1e2a8d9f031)
+    )
+    (class +5V "+5V"
+      (circuit 
+        (use_via via0)
+      )
+      (rule 
+        (width 20)
+        (clearance 4.02)
+      )
+    )
+    (class ACE_VIA "ACE_VIA"
+      (circuit 
+        (use_via via0)
+      )
+      (rule 
+        (width 10)
+        (clearance 4.02)
+      )
+    )
+  )
+
+  (wiring
+    (wire(path TopLayer 10 170.3 300 500 300 )
+      (net ACE_VIA)
+      (type protect)
+    )
+    (wire(path BottomLayer 10 870.3 300 500 300 )
+      (net ACE_VIA)
+      (type protect)
+    )
+    (wire(path TopLayer 7.54 100 700 300 700 )
+      (net +5V)
+      (type protect)
+    )
+    (wire(path TopLayer 10.05 100 800 300 800 )
+      (net +5V)
+      (type protect)
+    )
+    (wire(path TopLayer 7.54 100 850 300 850 )
+      (net +5V)
+      (type protect)
+    )
+    (wire(path TopLayer 10 650 177.5 850 177.5 )
+      (net +5V)
+      (type protect)
+    )
+    (wire(path TopLayer 10.05 700 600 100 600 )
+      (net +5V)
+      (type protect)
+    )
+    (wire(path TopLayer 10 229.66 300 229.66 400 )
+      (net +5V)
+      (type protect)
+    )
+    (wire(path TopLayer 10 229.66 400 1100 400 )
+      (net +5V)
+      (type protect)
+    )
+    (wire(path BottomLayer 10 929.66 300 1100 300 )
+      (net +5V)
+      (type protect)
+    )
+    (wire(path BottomLayer 10 1100 300 1100 400 )
+      (net +5V)
+      (type protect)
+    )
+    (via via0 500 300
+      (net ACE_VIA)
+      (type protect)
+    )
+    (via via0 1100 400
+      (net +5V)
+      (type protect)
+    )
+  )
+)

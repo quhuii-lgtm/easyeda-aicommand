@@ -362,7 +362,10 @@ export function resolveSesArcCoverage(wires: SesArcWire[], routeBaseline: SesRou
 			throw new Error(`ARC ${baseline.arcId} 的SES wire index缺失或重复`)
 		if (wires.filter(candidate => candidate.wireIndex === index).length !== 1)
 			throw new Error(`ARC ${baseline.arcId} 的SES wire包含多个path，当前不支持混合消解，已在写入前拒绝`)
-		const changed = wires.filter(candidate => candidate !== wire && (sameEndpoints(candidate.points, baseline.points) || contiguousSubpath(candidate, baseline)))
+		const changed = wires.filter(candidate => candidate !== wire
+			&& candidate.layerName === baseline.layerName
+			&& candidate.net === baseline.net
+			&& (sameEndpoints(candidate.points, baseline.points) || contiguousSubpath(candidate, baseline)))
 		if (changed.length)
 			throw new Error(`ARC ${baseline.arcId} 存在改动、拆分或重复SES保护wire，拒绝差集导入`)
 		consumed.add(index)

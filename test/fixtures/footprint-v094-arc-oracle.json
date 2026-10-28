@@ -1,0 +1,2256 @@
+{
+  "observations": [
+    {
+      "componentId": "51611a06d7952274",
+      "localPrimitiveId": "e92",
+      "localLayerId": 3,
+      "layer": "GTO",
+      "widthMil": 3,
+      "segments": [
+        {
+          "local": {
+            "type": "arc",
+            "a": [
+              -50,
+              160
+            ],
+            "b": [
+              0,
+              210
+            ],
+            "center": [
+              -50,
+              210
+            ],
+            "radius": 50.00000000000001,
+            "sweepDegrees": 90
+          },
+          "global": {
+            "type": "arc",
+            "a": [
+              150,
+              460
+            ],
+            "b": [
+              200,
+              510
+            ],
+            "center": [
+              150,
+              510
+            ],
+            "radius": 50.00000000000001,
+            "sweepDegrees": 90
+          },
+          "bounds": {
+            "xMin": 150,
+            "yMin": 460,
+            "xMax": 200,
+            "yMax": 510
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                150,
+                460
+              ],
+              "b": [
+                200,
+                510.00000000000006
+              ],
+              "mode": 3,
+              "width": 3.0000000000000004,
+              "token": "G03X508000Y1295400I0J127000D01",
+              "center": [
+                150,
+                510
+              ],
+              "sweepDegrees": 90.00000000000006,
+              "radius": 50
+            }
+          }
+        }
+      ]
+    },
+    {
+      "componentId": "51611a06d7952274",
+      "localPrimitiveId": "e93",
+      "localLayerId": 4,
+      "layer": "GBO",
+      "widthMil": 4,
+      "segments": [
+        {
+          "local": {
+            "type": "arc",
+            "a": [
+              10,
+              160
+            ],
+            "b": [
+              60,
+              210
+            ],
+            "center": [
+              60,
+              160
+            ],
+            "radius": 50.00000000000001,
+            "sweepDegrees": -90
+          },
+          "global": {
+            "type": "arc",
+            "a": [
+              210,
+              460
+            ],
+            "b": [
+              260,
+              510
+            ],
+            "center": [
+              260,
+              460
+            ],
+            "radius": 50.00000000000001,
+            "sweepDegrees": -90
+          },
+          "bounds": {
+            "xMin": 210,
+            "yMin": 460,
+            "xMax": 260,
+            "yMax": 510
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                210,
+                460
+              ],
+              "b": [
+                260,
+                510.00000000000006
+              ],
+              "mode": 2,
+              "width": 4,
+              "token": "G02X660400Y1295400I127000J0D01",
+              "center": [
+                260,
+                460
+              ],
+              "sweepDegrees": -90,
+              "radius": 50
+            }
+          }
+        }
+      ]
+    },
+    {
+      "componentId": "51611a06d7952274",
+      "localPrimitiveId": "e94",
+      "localLayerId": 3,
+      "layer": "GTO",
+      "widthMil": 3,
+      "segments": [
+        {
+          "local": {
+            "type": "arc",
+            "a": [
+              -50,
+              260
+            ],
+            "b": [
+              50,
+              260
+            ],
+            "center": [
+              0,
+              260
+            ],
+            "radius": 50,
+            "sweepDegrees": 180
+          },
+          "global": {
+            "type": "arc",
+            "a": [
+              150,
+              560
+            ],
+            "b": [
+              250,
+              560
+            ],
+            "center": [
+              200,
+              560
+            ],
+            "radius": 50,
+            "sweepDegrees": 180
+          },
+          "bounds": {
+            "xMin": 150,
+            "yMin": 510,
+            "xMax": 250,
+            "yMax": 560
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                150,
+                560
+              ],
+              "b": [
+                250,
+                560
+              ],
+              "mode": 3,
+              "width": 3.0000000000000004,
+              "token": "G03X635000Y1422400I127000J0D01",
+              "center": [
+                200,
+                560
+              ],
+              "sweepDegrees": 180,
+              "radius": 50
+            }
+          }
+        }
+      ]
+    },
+    {
+      "componentId": "51611a06d7952274",
+      "localPrimitiveId": "e95",
+      "localLayerId": 4,
+      "layer": "GBO",
+      "widthMil": 4,
+      "segments": [
+        {
+          "local": {
+            "type": "arc",
+            "a": [
+              -30,
+              350
+            ],
+            "b": [
+              30,
+              350
+            ],
+            "center": [
+              0,
+              320
+            ],
+            "radius": 42.426406871192846,
+            "sweepDegrees": 270
+          },
+          "global": {
+            "type": "arc",
+            "a": [
+              170,
+              650
+            ],
+            "b": [
+              230,
+              650
+            ],
+            "center": [
+              200,
+              620
+            ],
+            "radius": 42.426406871192846,
+            "sweepDegrees": 270
+          },
+          "bounds": {
+            "xMin": 157.57359312880715,
+            "yMin": 577.5735931288071,
+            "xMax": 242.42640687119285,
+            "yMax": 650
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                170,
+                650
+              ],
+              "b": [
+                230,
+                650
+              ],
+              "mode": 3,
+              "width": 4,
+              "token": "G03X584200Y1651000I76200J-76200D01",
+              "center": [
+                200,
+                620
+              ],
+              "sweepDegrees": 270,
+              "radius": 42.42640687119285
+            }
+          }
+        }
+      ]
+    },
+    {
+      "componentId": "51611a06d7952274",
+      "localPrimitiveId": "e96",
+      "localLayerId": 3,
+      "layer": "GTO",
+      "widthMil": 3,
+      "segments": [
+        {
+          "local": {
+            "type": "line",
+            "a": [
+              -75,
+              430
+            ],
+            "b": [
+              -50,
+              430
+            ]
+          },
+          "global": {
+            "type": "line",
+            "a": [
+              125,
+              730
+            ],
+            "b": [
+              150,
+              730
+            ]
+          },
+          "bounds": {
+            "xMin": 125,
+            "yMin": 730,
+            "xMax": 150,
+            "yMax": 730
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                125,
+                730
+              ],
+              "b": [
+                150,
+                730
+              ],
+              "mode": 1,
+              "width": 3.0000000000000004,
+              "token": "G01X381000Y1854200D01"
+            }
+          }
+        },
+        {
+          "local": {
+            "type": "arc",
+            "a": [
+              -50,
+              430
+            ],
+            "b": [
+              50,
+              430
+            ],
+            "center": [
+              0,
+              426.6666884349928
+            ],
+            "radius": 50.110986479906884,
+            "sweepDegrees": -172.3719
+          },
+          "global": {
+            "type": "arc",
+            "a": [
+              150,
+              730
+            ],
+            "b": [
+              250,
+              730
+            ],
+            "center": [
+              200,
+              726.6666884349928
+            ],
+            "radius": 50.110986479906884,
+            "sweepDegrees": -172.3719
+          },
+          "bounds": {
+            "xMin": 150,
+            "yMin": 730,
+            "xMax": 250,
+            "yMax": 776.7776749148996
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                150,
+                730
+              ],
+              "b": [
+                250,
+                730
+              ],
+              "mode": 2,
+              "width": 3.0000000000000004,
+              "token": "G02X635000Y1854200I127000J-8467D01",
+              "center": [
+                200,
+                726.6665354330709
+              ],
+              "sweepDegrees": -172.37155089704433,
+              "radius": 50.11099665760971
+            }
+          }
+        },
+        {
+          "local": {
+            "type": "line",
+            "a": [
+              50,
+              430
+            ],
+            "b": [
+              75,
+              430
+            ]
+          },
+          "global": {
+            "type": "line",
+            "a": [
+              250,
+              730
+            ],
+            "b": [
+              275,
+              730
+            ]
+          },
+          "bounds": {
+            "xMin": 250,
+            "yMin": 730,
+            "xMax": 275,
+            "yMax": 730
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                250,
+                730
+              ],
+              "b": [
+                275,
+                730
+              ],
+              "mode": 1,
+              "width": 3.0000000000000004,
+              "token": "G01X698500Y1854200D01"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "componentId": "3b6f628633b0709d",
+      "localPrimitiveId": "e92",
+      "localLayerId": 3,
+      "layer": "GBO",
+      "widthMil": 3,
+      "segments": [
+        {
+          "local": {
+            "type": "arc",
+            "a": [
+              -50,
+              160
+            ],
+            "b": [
+              0,
+              210
+            ],
+            "center": [
+              -50,
+              210
+            ],
+            "radius": 50.00000000000001,
+            "sweepDegrees": 90
+          },
+          "global": {
+            "type": "arc",
+            "a": [
+              1060,
+              250
+            ],
+            "b": [
+              1110,
+              300
+            ],
+            "center": [
+              1110,
+              250
+            ],
+            "radius": 50.00000000000001,
+            "sweepDegrees": -90
+          },
+          "bounds": {
+            "xMin": 1060,
+            "yMin": 250,
+            "xMax": 1110,
+            "yMax": 300
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                1060,
+                250
+              ],
+              "b": [
+                1110,
+                300
+              ],
+              "mode": 2,
+              "width": 3.0000000000000004,
+              "token": "G02X2819400Y762000I127000J0D01",
+              "center": [
+                1110,
+                250
+              ],
+              "sweepDegrees": -90,
+              "radius": 50
+            }
+          }
+        }
+      ]
+    },
+    {
+      "componentId": "3b6f628633b0709d",
+      "localPrimitiveId": "e93",
+      "localLayerId": 4,
+      "layer": "GTO",
+      "widthMil": 4,
+      "segments": [
+        {
+          "local": {
+            "type": "arc",
+            "a": [
+              10,
+              160
+            ],
+            "b": [
+              60,
+              210
+            ],
+            "center": [
+              60,
+              160
+            ],
+            "radius": 50.00000000000001,
+            "sweepDegrees": -90
+          },
+          "global": {
+            "type": "arc",
+            "a": [
+              1060,
+              310
+            ],
+            "b": [
+              1110,
+              360
+            ],
+            "center": [
+              1060,
+              360
+            ],
+            "radius": 50.00000000000001,
+            "sweepDegrees": 90
+          },
+          "bounds": {
+            "xMin": 1060,
+            "yMin": 310,
+            "xMax": 1110,
+            "yMax": 360
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                1060,
+                310
+              ],
+              "b": [
+                1110,
+                360
+              ],
+              "mode": 3,
+              "width": 4,
+              "token": "G03X2819400Y914400I0J127000D01",
+              "center": [
+                1060,
+                360
+              ],
+              "sweepDegrees": 90,
+              "radius": 50
+            }
+          }
+        }
+      ]
+    },
+    {
+      "componentId": "3b6f628633b0709d",
+      "localPrimitiveId": "e94",
+      "localLayerId": 3,
+      "layer": "GBO",
+      "widthMil": 3,
+      "segments": [
+        {
+          "local": {
+            "type": "arc",
+            "a": [
+              -50,
+              260
+            ],
+            "b": [
+              50,
+              260
+            ],
+            "center": [
+              0,
+              260
+            ],
+            "radius": 50,
+            "sweepDegrees": 180
+          },
+          "global": {
+            "type": "arc",
+            "a": [
+              1160,
+              249.99999999999997
+            ],
+            "b": [
+              1160,
+              350
+            ],
+            "center": [
+              1160,
+              300
+            ],
+            "radius": 50.000000000000014,
+            "sweepDegrees": -180
+          },
+          "bounds": {
+            "xMin": 1110,
+            "yMin": 249.99999999999997,
+            "xMax": 1160,
+            "yMax": 350
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                1160,
+                250
+              ],
+              "b": [
+                1160,
+                350
+              ],
+              "mode": 2,
+              "width": 3.0000000000000004,
+              "token": "G02X2946400Y889000I0J127000D01",
+              "center": [
+                1160,
+                300
+              ],
+              "sweepDegrees": -180,
+              "radius": 50
+            }
+          }
+        }
+      ]
+    },
+    {
+      "componentId": "3b6f628633b0709d",
+      "localPrimitiveId": "e95",
+      "localLayerId": 4,
+      "layer": "GTO",
+      "widthMil": 4,
+      "segments": [
+        {
+          "local": {
+            "type": "arc",
+            "a": [
+              -30,
+              350
+            ],
+            "b": [
+              30,
+              350
+            ],
+            "center": [
+              0,
+              320
+            ],
+            "radius": 42.426406871192846,
+            "sweepDegrees": 270
+          },
+          "global": {
+            "type": "arc",
+            "a": [
+              1250,
+              270
+            ],
+            "b": [
+              1250,
+              330
+            ],
+            "center": [
+              1220,
+              300
+            ],
+            "radius": 42.426406871192846,
+            "sweepDegrees": -270
+          },
+          "bounds": {
+            "xMin": 1177.5735931288073,
+            "yMin": 257.57359312880715,
+            "xMax": 1250,
+            "yMax": 342.42640687119285
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                1250,
+                270
+              ],
+              "b": [
+                1250,
+                330
+              ],
+              "mode": 2,
+              "width": 4,
+              "token": "G02X3175000Y838200I-76200J76200D01",
+              "center": [
+                1220,
+                300
+              ],
+              "sweepDegrees": -270,
+              "radius": 42.42640687119285
+            }
+          }
+        }
+      ]
+    },
+    {
+      "componentId": "3b6f628633b0709d",
+      "localPrimitiveId": "e96",
+      "localLayerId": 3,
+      "layer": "GBO",
+      "widthMil": 3,
+      "segments": [
+        {
+          "local": {
+            "type": "line",
+            "a": [
+              -75,
+              430
+            ],
+            "b": [
+              -50,
+              430
+            ]
+          },
+          "global": {
+            "type": "line",
+            "a": [
+              1330,
+              224.99999999999997
+            ],
+            "b": [
+              1330,
+              249.99999999999997
+            ]
+          },
+          "bounds": {
+            "xMin": 1330,
+            "yMin": 224.99999999999997,
+            "xMax": 1330,
+            "yMax": 249.99999999999997
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                1330,
+                225
+              ],
+              "b": [
+                1330,
+                250
+              ],
+              "mode": 1,
+              "width": 3.0000000000000004,
+              "token": "G01X3378200Y635000D01"
+            }
+          }
+        },
+        {
+          "local": {
+            "type": "arc",
+            "a": [
+              -50,
+              430
+            ],
+            "b": [
+              50,
+              430
+            ],
+            "center": [
+              0,
+              426.6666884349928
+            ],
+            "radius": 50.110986479906884,
+            "sweepDegrees": -172.3719
+          },
+          "global": {
+            "type": "arc",
+            "a": [
+              1330,
+              249.99999999999997
+            ],
+            "b": [
+              1330,
+              350
+            ],
+            "center": [
+              1326.6666884349927,
+              300
+            ],
+            "radius": 50.1109864799069,
+            "sweepDegrees": 172.3719
+          },
+          "bounds": {
+            "xMin": 1330,
+            "yMin": 249.99999999999997,
+            "xMax": 1376.7776749148995,
+            "yMax": 350
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                1330,
+                250
+              ],
+              "b": [
+                1330,
+                350
+              ],
+              "mode": 3,
+              "width": 3.0000000000000004,
+              "token": "G03X3378200Y889000I-8467J127000D01",
+              "center": [
+                1326.666535433071,
+                300
+              ],
+              "sweepDegrees": 172.37155089704459,
+              "radius": 50.11099665760971
+            }
+          }
+        },
+        {
+          "local": {
+            "type": "line",
+            "a": [
+              50,
+              430
+            ],
+            "b": [
+              75,
+              430
+            ]
+          },
+          "global": {
+            "type": "line",
+            "a": [
+              1330,
+              350
+            ],
+            "b": [
+              1330,
+              375
+            ]
+          },
+          "bounds": {
+            "xMin": 1330,
+            "yMin": 350,
+            "xMax": 1330,
+            "yMax": 375
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                1330,
+                350
+              ],
+              "b": [
+                1330,
+                375
+              ],
+              "mode": 1,
+              "width": 3.0000000000000004,
+              "token": "G01X3378200Y952500D01"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "componentId": "b291000000000001",
+      "localPrimitiveId": "e92",
+      "localLayerId": 3,
+      "layer": "GTO",
+      "widthMil": 3,
+      "segments": [
+        {
+          "local": {
+            "type": "arc",
+            "a": [
+              -50,
+              160
+            ],
+            "b": [
+              0,
+              210
+            ],
+            "center": [
+              -50,
+              210
+            ],
+            "radius": 50.00000000000001,
+            "sweepDegrees": 90
+          },
+          "global": {
+            "type": "arc",
+            "a": [
+              390,
+              250
+            ],
+            "b": [
+              340,
+              300
+            ],
+            "center": [
+              340,
+              250
+            ],
+            "radius": 50.00000000000001,
+            "sweepDegrees": 90
+          },
+          "bounds": {
+            "xMin": 340,
+            "yMin": 250,
+            "xMax": 390,
+            "yMax": 300
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                390,
+                250
+              ],
+              "b": [
+                340,
+                300
+              ],
+              "mode": 3,
+              "width": 3.0000000000000004,
+              "token": "G03X863600Y762000I-127000J0D01",
+              "center": [
+                340,
+                250
+              ],
+              "sweepDegrees": 90,
+              "radius": 50
+            }
+          }
+        }
+      ]
+    },
+    {
+      "componentId": "b291000000000001",
+      "localPrimitiveId": "e93",
+      "localLayerId": 4,
+      "layer": "GBO",
+      "widthMil": 4,
+      "segments": [
+        {
+          "local": {
+            "type": "arc",
+            "a": [
+              10,
+              160
+            ],
+            "b": [
+              60,
+              210
+            ],
+            "center": [
+              60,
+              160
+            ],
+            "radius": 50.00000000000001,
+            "sweepDegrees": -90
+          },
+          "global": {
+            "type": "arc",
+            "a": [
+              390,
+              310
+            ],
+            "b": [
+              340,
+              360
+            ],
+            "center": [
+              390,
+              360
+            ],
+            "radius": 50.00000000000001,
+            "sweepDegrees": -90
+          },
+          "bounds": {
+            "xMin": 340,
+            "yMin": 310,
+            "xMax": 390,
+            "yMax": 360
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                390,
+                310
+              ],
+              "b": [
+                340,
+                360
+              ],
+              "mode": 2,
+              "width": 4,
+              "token": "G02X863600Y914400I0J127000D01",
+              "center": [
+                390,
+                360
+              ],
+              "sweepDegrees": -90,
+              "radius": 50
+            }
+          }
+        }
+      ]
+    },
+    {
+      "componentId": "b291000000000001",
+      "localPrimitiveId": "e94",
+      "localLayerId": 3,
+      "layer": "GTO",
+      "widthMil": 3,
+      "segments": [
+        {
+          "local": {
+            "type": "arc",
+            "a": [
+              -50,
+              260
+            ],
+            "b": [
+              50,
+              260
+            ],
+            "center": [
+              0,
+              260
+            ],
+            "radius": 50,
+            "sweepDegrees": 180
+          },
+          "global": {
+            "type": "arc",
+            "a": [
+              290,
+              250.00000000000003
+            ],
+            "b": [
+              290,
+              350
+            ],
+            "center": [
+              290,
+              300
+            ],
+            "radius": 49.999999999999986,
+            "sweepDegrees": 180
+          },
+          "bounds": {
+            "xMin": 290,
+            "yMin": 250,
+            "xMax": 340,
+            "yMax": 350
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                290,
+                250
+              ],
+              "b": [
+                290,
+                350
+              ],
+              "mode": 3,
+              "width": 3.0000000000000004,
+              "token": "G03X736600Y889000I0J127000D01",
+              "center": [
+                290,
+                300
+              ],
+              "sweepDegrees": 180,
+              "radius": 50
+            }
+          }
+        }
+      ]
+    },
+    {
+      "componentId": "b291000000000001",
+      "localPrimitiveId": "e95",
+      "localLayerId": 4,
+      "layer": "GBO",
+      "widthMil": 4,
+      "segments": [
+        {
+          "local": {
+            "type": "arc",
+            "a": [
+              -30,
+              350
+            ],
+            "b": [
+              30,
+              350
+            ],
+            "center": [
+              0,
+              320
+            ],
+            "radius": 42.426406871192846,
+            "sweepDegrees": 270
+          },
+          "global": {
+            "type": "arc",
+            "a": [
+              200,
+              270
+            ],
+            "b": [
+              200,
+              330
+            ],
+            "center": [
+              230,
+              300
+            ],
+            "radius": 42.426406871192846,
+            "sweepDegrees": 270
+          },
+          "bounds": {
+            "xMin": 200,
+            "yMin": 257.57359312880715,
+            "xMax": 272.42640687119285,
+            "yMax": 342.42640687119285
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                200,
+                270
+              ],
+              "b": [
+                200,
+                330
+              ],
+              "mode": 3,
+              "width": 4,
+              "token": "G03X508000Y838200I76200J76200D01",
+              "center": [
+                230,
+                300
+              ],
+              "sweepDegrees": 270,
+              "radius": 42.42640687119285
+            }
+          }
+        }
+      ]
+    },
+    {
+      "componentId": "b291000000000001",
+      "localPrimitiveId": "e96",
+      "localLayerId": 3,
+      "layer": "GTO",
+      "widthMil": 3,
+      "segments": [
+        {
+          "local": {
+            "type": "line",
+            "a": [
+              -75,
+              430
+            ],
+            "b": [
+              -50,
+              430
+            ]
+          },
+          "global": {
+            "type": "line",
+            "a": [
+              120,
+              225.00000000000003
+            ],
+            "b": [
+              120,
+              250.00000000000003
+            ]
+          },
+          "bounds": {
+            "xMin": 120,
+            "yMin": 225.00000000000003,
+            "xMax": 120,
+            "yMax": 250.00000000000003
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                120,
+                225
+              ],
+              "b": [
+                120,
+                250
+              ],
+              "mode": 1,
+              "width": 3.0000000000000004,
+              "token": "G01X304800Y635000D01"
+            }
+          }
+        },
+        {
+          "local": {
+            "type": "arc",
+            "a": [
+              -50,
+              430
+            ],
+            "b": [
+              50,
+              430
+            ],
+            "center": [
+              0,
+              426.6666884349928
+            ],
+            "radius": 50.110986479906884,
+            "sweepDegrees": -172.3719
+          },
+          "global": {
+            "type": "arc",
+            "a": [
+              120,
+              250.00000000000003
+            ],
+            "b": [
+              120,
+              350
+            ],
+            "center": [
+              123.33331156500722,
+              300
+            ],
+            "radius": 50.11098647990687,
+            "sweepDegrees": -172.3719
+          },
+          "bounds": {
+            "xMin": 73.22232508510035,
+            "yMin": 250.00000000000003,
+            "xMax": 120,
+            "yMax": 350
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                120,
+                250
+              ],
+              "b": [
+                120,
+                350
+              ],
+              "mode": 2,
+              "width": 3.0000000000000004,
+              "token": "G02X304800Y889000I8467J127000D01",
+              "center": [
+                123.33346456692914,
+                300
+              ],
+              "sweepDegrees": -172.3715508970443,
+              "radius": 50.11099665760971
+            }
+          }
+        },
+        {
+          "local": {
+            "type": "line",
+            "a": [
+              50,
+              430
+            ],
+            "b": [
+              75,
+              430
+            ]
+          },
+          "global": {
+            "type": "line",
+            "a": [
+              120,
+              350
+            ],
+            "b": [
+              120,
+              375
+            ]
+          },
+          "bounds": {
+            "xMin": 120,
+            "yMin": 350,
+            "xMax": 120,
+            "yMax": 375
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                120,
+                350
+              ],
+              "b": [
+                120,
+                375
+              ],
+              "mode": 1,
+              "width": 3.0000000000000004,
+              "token": "G01X304800Y952500D01"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "componentId": "b291000000000004",
+      "localPrimitiveId": "e92",
+      "localLayerId": 3,
+      "layer": "GBO",
+      "widthMil": 3,
+      "segments": [
+        {
+          "local": {
+            "type": "arc",
+            "a": [
+              -50,
+              160
+            ],
+            "b": [
+              0,
+              210
+            ],
+            "center": [
+              -50,
+              210
+            ],
+            "radius": 50.00000000000001,
+            "sweepDegrees": 90
+          },
+          "global": {
+            "type": "arc",
+            "a": [
+              250,
+              540
+            ],
+            "b": [
+              300,
+              490
+            ],
+            "center": [
+              250,
+              490
+            ],
+            "radius": 50.00000000000001,
+            "sweepDegrees": -90
+          },
+          "bounds": {
+            "xMin": 250,
+            "yMin": 490,
+            "xMax": 300,
+            "yMax": 540
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                250,
+                540
+              ],
+              "b": [
+                300,
+                490
+              ],
+              "mode": 2,
+              "width": 3.0000000000000004,
+              "token": "G02X762000Y1244600I0J-127000D01",
+              "center": [
+                250,
+                490
+              ],
+              "sweepDegrees": -90,
+              "radius": 50
+            }
+          }
+        }
+      ]
+    },
+    {
+      "componentId": "b291000000000004",
+      "localPrimitiveId": "e93",
+      "localLayerId": 4,
+      "layer": "GTO",
+      "widthMil": 4,
+      "segments": [
+        {
+          "local": {
+            "type": "arc",
+            "a": [
+              10,
+              160
+            ],
+            "b": [
+              60,
+              210
+            ],
+            "center": [
+              60,
+              160
+            ],
+            "radius": 50.00000000000001,
+            "sweepDegrees": -90
+          },
+          "global": {
+            "type": "arc",
+            "a": [
+              310,
+              540
+            ],
+            "b": [
+              360,
+              490
+            ],
+            "center": [
+              360,
+              540
+            ],
+            "radius": 50.00000000000001,
+            "sweepDegrees": 90
+          },
+          "bounds": {
+            "xMin": 310,
+            "yMin": 490,
+            "xMax": 360,
+            "yMax": 540
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                310,
+                540
+              ],
+              "b": [
+                360,
+                490
+              ],
+              "mode": 3,
+              "width": 4,
+              "token": "G03X914400Y1244600I127000J0D01",
+              "center": [
+                360,
+                540
+              ],
+              "sweepDegrees": 90,
+              "radius": 50
+            }
+          }
+        }
+      ]
+    },
+    {
+      "componentId": "b291000000000004",
+      "localPrimitiveId": "e94",
+      "localLayerId": 3,
+      "layer": "GBO",
+      "widthMil": 3,
+      "segments": [
+        {
+          "local": {
+            "type": "arc",
+            "a": [
+              -50,
+              260
+            ],
+            "b": [
+              50,
+              260
+            ],
+            "center": [
+              0,
+              260
+            ],
+            "radius": 50,
+            "sweepDegrees": 180
+          },
+          "global": {
+            "type": "arc",
+            "a": [
+              250,
+              440
+            ],
+            "b": [
+              350,
+              440
+            ],
+            "center": [
+              300,
+              440
+            ],
+            "radius": 50,
+            "sweepDegrees": -180
+          },
+          "bounds": {
+            "xMin": 250,
+            "yMin": 440,
+            "xMax": 350,
+            "yMax": 490
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                250,
+                440
+              ],
+              "b": [
+                350,
+                440
+              ],
+              "mode": 2,
+              "width": 3.0000000000000004,
+              "token": "G02X889000Y1117600I127000J0D01",
+              "center": [
+                300,
+                440
+              ],
+              "sweepDegrees": -180,
+              "radius": 50
+            }
+          }
+        }
+      ]
+    },
+    {
+      "componentId": "b291000000000004",
+      "localPrimitiveId": "e95",
+      "localLayerId": 4,
+      "layer": "GTO",
+      "widthMil": 4,
+      "segments": [
+        {
+          "local": {
+            "type": "arc",
+            "a": [
+              -30,
+              350
+            ],
+            "b": [
+              30,
+              350
+            ],
+            "center": [
+              0,
+              320
+            ],
+            "radius": 42.426406871192846,
+            "sweepDegrees": 270
+          },
+          "global": {
+            "type": "arc",
+            "a": [
+              270,
+              350
+            ],
+            "b": [
+              330,
+              350
+            ],
+            "center": [
+              300,
+              380
+            ],
+            "radius": 42.426406871192846,
+            "sweepDegrees": -270
+          },
+          "bounds": {
+            "xMin": 257.57359312880715,
+            "yMin": 350,
+            "xMax": 342.42640687119285,
+            "yMax": 422.42640687119285
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                270,
+                350
+              ],
+              "b": [
+                330,
+                350
+              ],
+              "mode": 2,
+              "width": 4,
+              "token": "G02X838200Y889000I76200J76200D01",
+              "center": [
+                300,
+                380
+              ],
+              "sweepDegrees": -270,
+              "radius": 42.42640687119285
+            }
+          }
+        }
+      ]
+    },
+    {
+      "componentId": "b291000000000004",
+      "localPrimitiveId": "e96",
+      "localLayerId": 3,
+      "layer": "GBO",
+      "widthMil": 3,
+      "segments": [
+        {
+          "local": {
+            "type": "line",
+            "a": [
+              -75,
+              430
+            ],
+            "b": [
+              -50,
+              430
+            ]
+          },
+          "global": {
+            "type": "line",
+            "a": [
+              225,
+              270
+            ],
+            "b": [
+              250,
+              270
+            ]
+          },
+          "bounds": {
+            "xMin": 225,
+            "yMin": 270,
+            "xMax": 250,
+            "yMax": 270
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                225,
+                270
+              ],
+              "b": [
+                250,
+                270
+              ],
+              "mode": 1,
+              "width": 3.0000000000000004,
+              "token": "G01X635000Y685800D01"
+            }
+          }
+        },
+        {
+          "local": {
+            "type": "arc",
+            "a": [
+              -50,
+              430
+            ],
+            "b": [
+              50,
+              430
+            ],
+            "center": [
+              0,
+              426.6666884349928
+            ],
+            "radius": 50.110986479906884,
+            "sweepDegrees": -172.3719
+          },
+          "global": {
+            "type": "arc",
+            "a": [
+              250,
+              270
+            ],
+            "b": [
+              350,
+              270
+            ],
+            "center": [
+              300,
+              273.3333115650072
+            ],
+            "radius": 50.110986479906884,
+            "sweepDegrees": 172.3719
+          },
+          "bounds": {
+            "xMin": 250,
+            "yMin": 223.2223250851003,
+            "xMax": 350,
+            "yMax": 270
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                250,
+                270
+              ],
+              "b": [
+                350,
+                270
+              ],
+              "mode": 3,
+              "width": 3.0000000000000004,
+              "token": "G03X889000Y685800I127000J8467D01",
+              "center": [
+                300,
+                273.33346456692914
+              ],
+              "sweepDegrees": 172.37155089704433,
+              "radius": 50.11099665760971
+            }
+          }
+        },
+        {
+          "local": {
+            "type": "line",
+            "a": [
+              50,
+              430
+            ],
+            "b": [
+              75,
+              430
+            ]
+          },
+          "global": {
+            "type": "line",
+            "a": [
+              350,
+              270
+            ],
+            "b": [
+              375,
+              270
+            ]
+          },
+          "bounds": {
+            "xMin": 350,
+            "yMin": 270,
+            "xMax": 375,
+            "yMax": 270
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                350,
+                270
+              ],
+              "b": [
+                375,
+                270
+              ],
+              "mode": 1,
+              "width": 3.0000000000000004,
+              "token": "G01X952500Y685800D01"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "componentId": "b291000000000005",
+      "localPrimitiveId": "e92",
+      "localLayerId": 3,
+      "layer": "GBO",
+      "widthMil": 3,
+      "segments": [
+        {
+          "local": {
+            "type": "arc",
+            "a": [
+              -50,
+              160
+            ],
+            "b": [
+              0,
+              210
+            ],
+            "center": [
+              -50,
+              210
+            ],
+            "radius": 50.00000000000001,
+            "sweepDegrees": 90
+          },
+          "global": {
+            "type": "arc",
+            "a": [
+              856.358628201963,
+              542.1275672348307
+            ],
+            "b": [
+              926.3811548619301,
+              532.2865428900685
+            ],
+            "center": [
+              886.4493793595655,
+              502.1957917324661
+            ],
+            "radius": 50.000000000000014,
+            "sweepDegrees": -90
+          },
+          "bounds": {
+            "xMin": 856.358628201963,
+            "yMin": 532.2865428900685,
+            "xMax": 926.3811548619301,
+            "yMax": 552.1957917324661
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                856.3586614173228,
+                542.1275590551181
+              ],
+              "b": [
+                926.3811023622048,
+                532.2866141732284
+              ],
+              "mode": 2,
+              "width": 3.0000000000000004,
+              "token": "G02X2353008Y1352008I76431J-101427D01",
+              "center": [
+                886.4496062992125,
+                502.1956692913386
+              ],
+              "sweepDegrees": -89.9997284912361,
+              "radius": 50.000207839483686
+            }
+          }
+        }
+      ]
+    },
+    {
+      "componentId": "b291000000000005",
+      "localPrimitiveId": "e93",
+      "localLayerId": 4,
+      "layer": "GTO",
+      "widthMil": 4,
+      "segments": [
+        {
+          "local": {
+            "type": "arc",
+            "a": [
+              10,
+              160
+            ],
+            "b": [
+              60,
+              210
+            ],
+            "center": [
+              60,
+              160
+            ],
+            "radius": 50.00000000000001,
+            "sweepDegrees": -90
+          },
+          "global": {
+            "type": "arc",
+            "a": [
+              904.2767588048007,
+              578.2364686239537
+            ],
+            "b": [
+              974.2992854647676,
+              568.3954442791915
+            ],
+            "center": [
+              944.2085343071652,
+              608.3272197815561
+            ],
+            "radius": 49.999999999999936,
+            "sweepDegrees": 90
+          },
+          "bounds": {
+            "xMin": 904.2767588048007,
+            "yMin": 558.3272197815562,
+            "xMax": 974.2992854647676,
+            "yMax": 578.2364686239537
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                904.2767716535434,
+                578.2366141732284
+              ],
+              "b": [
+                974.2992125984252,
+                568.3952755905513
+              ],
+              "mode": 3,
+              "width": 4,
+              "token": "G03X2474720Y1443724I101427J76431D01",
+              "center": [
+                944.2086614173229,
+                608.3275590551182
+              ],
+              "sweepDegrees": 89.99936819317747,
+              "radius": 50.000207839483686
+            }
+          }
+        }
+      ]
+    },
+    {
+      "componentId": "b291000000000005",
+      "localPrimitiveId": "e94",
+      "localLayerId": 3,
+      "layer": "GBO",
+      "widthMil": 3,
+      "segments": [
+        {
+          "local": {
+            "type": "arc",
+            "a": [
+              -50,
+              260
+            ],
+            "b": [
+              50,
+              260
+            ],
+            "center": [
+              0,
+              260
+            ],
+            "radius": 50,
+            "sweepDegrees": 180
+          },
+          "global": {
+            "type": "arc",
+            "a": [
+              916.5401305171679,
+              462.26401623010145
+            ],
+            "b": [
+              996.4036815218972,
+              522.4455185453063
+            ],
+            "center": [
+              956.4719060195325,
+              492.3547673877039
+            ],
+            "radius": 50.00000000000001,
+            "sweepDegrees": -180
+          },
+          "bounds": {
+            "xMin": 906.4719060195325,
+            "yMin": 462.26401623010145,
+            "xMax": 996.4036815218972,
+            "yMax": 542.3547673877039
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                916.540157480315,
+                462.26417322834646
+              ],
+              "b": [
+                996.4035433070867,
+                522.4456692913386
+              ],
+              "mode": 2,
+              "width": 3.0000000000000004,
+              "token": "G02X2530865Y1327012I101427J76431D01",
+              "center": [
+                956.4720472440945,
+                492.3551181102362
+              ],
+              "sweepDegrees": -180.00008879466745,
+              "radius": 50.000207839483686
+            }
+          }
+        }
+      ]
+    },
+    {
+      "componentId": "b291000000000005",
+      "localPrimitiveId": "e95",
+      "localLayerId": 4,
+      "layer": "GTO",
+      "widthMil": 4,
+      "segments": [
+        {
+          "local": {
+            "type": "arc",
+            "a": [
+              -30,
+              350
+            ],
+            "b": [
+              30,
+              350
+            ],
+            "center": [
+              0,
+              320
+            ],
+            "radius": 42.426406871192846,
+            "sweepDegrees": 270
+          },
+          "global": {
+            "type": "arc",
+            "a": [
+              986.676192801798,
+              402.4231207888861
+            ],
+            "b": [
+              1034.5943234046358,
+              438.5320221780089
+            ],
+            "center": [
+              992.5808074086556,
+              444.4366367848664
+            ],
+            "radius": 42.42640687119294,
+            "sweepDegrees": -270
+          },
+          "bounds": {
+            "xMin": 950.1544005374626,
+            "yMin": 402.4231207888861,
+            "xMax": 1035.0072142798485,
+            "yMax": 486.8630436560593
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                986.6763779527558,
+                402.42322834645677
+              ],
+              "b": [
+                1034.5944881889764,
+                438.53188976377953
+              ],
+              "mode": 2,
+              "width": 4,
+              "token": "G02X2627870Y1113871I14998J106714D01",
+              "center": [
+                992.5811023622047,
+                444.4366141732284
+              ],
+              "sweepDegrees": -270.00000000000006,
+              "radius": 42.426293250538826
+            }
+          }
+        }
+      ]
+    },
+    {
+      "componentId": "b291000000000005",
+      "localPrimitiveId": "e96",
+      "localLayerId": 3,
+      "layer": "GBO",
+      "widthMil": 3,
+      "segments": [
+        {
+          "local": {
+            "type": "line",
+            "a": [
+              -75,
+              430
+            ],
+            "b": [
+              -50,
+              430
+            ]
+          },
+          "global": {
+            "type": "line",
+            "a": [
+              998.8827967018337,
+              311.45060394326043
+            ],
+            "b": [
+              1018.8486844530162,
+              326.49597952206165
+            ]
+          },
+          "bounds": {
+            "xMin": 998.8827967018337,
+            "yMin": 311.45060394326043,
+            "xMax": 1018.8486844530162,
+            "yMax": 326.49597952206165
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                998.8826771653544,
+                311.4507874015748
+              ],
+              "b": [
+                1018.8488188976378,
+                326.496062992126
+              ],
+              "mode": 1,
+              "width": 3.0000000000000004,
+              "token": "G01X2587876Y829300D01"
+            }
+          }
+        },
+        {
+          "local": {
+            "type": "arc",
+            "a": [
+              -50,
+              430
+            ],
+            "b": [
+              50,
+              430
+            ],
+            "center": [
+              0,
+              426.6666884349928
+            ],
+            "radius": 50.110986479906884,
+            "sweepDegrees": -172.3719
+          },
+          "global": {
+            "type": "arc",
+            "a": [
+              1018.8486844530162,
+              326.49597952206165
+            ],
+            "b": [
+              1098.7122354577455,
+              386.6774818372665
+            ],
+            "center": [
+              1056.7744229787131,
+              359.2488316615302
+            ],
+            "radius": 50.11098647990689,
+            "sweepDegrees": 172.3719
+          },
+          "bounds": {
+            "xMin": 1018.8486844530162,
+            "yMin": 309.1378451816233,
+            "xMax": 1106.88540945862,
+            "yMax": 386.6774818372665
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                1018.8488188976378,
+                326.496062992126
+              ],
+              "b": [
+                1098.7122047244095,
+                386.67755905511814
+              ],
+              "mode": 3,
+              "width": 3.0000000000000004,
+              "token": "G03X2790729Y982161I96331J83192D01",
+              "center": [
+                1056.774409448819,
+                359.2488188976378
+              ],
+              "sweepDegrees": 172.37196956084793,
+              "radius": 50.11081158853725
+            }
+          }
+        },
+        {
+          "local": {
+            "type": "line",
+            "a": [
+              50,
+              430
+            ],
+            "b": [
+              75,
+              430
+            ]
+          },
+          "global": {
+            "type": "line",
+            "a": [
+              1098.7122354577455,
+              386.6774818372665
+            ],
+            "b": [
+              1118.6781232089277,
+              401.7228574160677
+            ]
+          },
+          "bounds": {
+            "xMin": 1098.7122354577455,
+            "yMin": 386.6774818372665,
+            "xMax": 1118.6781232089277,
+            "yMax": 401.7228574160677
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                1098.7122047244095,
+                386.67755905511814
+              ],
+              "b": [
+                1118.6779527559056,
+                401.7228346456693
+              ],
+              "mode": 1,
+              "width": 3.0000000000000004,
+              "token": "G01X2841442Y1020376D01"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "matchedArcs": 25,
+  "matchedExtraLines": 10
+}

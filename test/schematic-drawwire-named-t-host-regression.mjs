@@ -7,8 +7,8 @@ import { installVirtualClock } from './virtual-clock.mjs'
 const root = resolve(import.meta.dirname, '..')
 const beforeSource = readFileSync(resolve(root, 'test/fixtures/drawwire-named-t-before.sourcelog'), 'utf8')
 const afterSource = readFileSync(resolve(root, 'test/fixtures/drawwire-named-t-after.sourcelog'), 'utf8')
-const beforeModel = JSON.parse(readFileSync(resolve(root, 'test/fixtures/drawwire-named-t-before-wires.json'), 'utf8')).result.data
-const afterModel = JSON.parse(readFileSync(resolve(root, 'test/fixtures/drawwire-named-t-after-wires.json'), 'utf8')).result.data
+const beforeModel = JSON.parse(readFileSync(resolve(root, 'test/fixtures/drawwire-named-t-before-model.json'), 'utf8'))
+const afterModel = JSON.parse(readFileSync(resolve(root, 'test/fixtures/drawwire-named-t-after-model.json'), 'utf8'))
 const request = { points: [[300, 200], [300, 300]], net: 'ACE_BUS', color: '#FF0000', lineType: 'solid', _timeoutMs: 5000 }
 const built = buildSync({
   stdin: { contents: `import { schematicCommands } from '../src/commands/schematic.ts'; import { registerCommand } from '../src/engine/registry.ts'; export { schematicCommands, registerCommand }`, resolveDir: resolve(root, 'test'), sourcefile: 'schematic-drawwire-named-t-entry.ts' },

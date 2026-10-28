@@ -1,0 +1,362 @@
+{
+  "format": 1,
+  "description": "Regression geometry and source-log samples from project acceptance fixtures. Runtime request, instance, and timestamp wrappers are excluded.",
+  "entries": [
+    {
+      "fixture": "b2-native-rangeA.dsn",
+      "source": "existing local test fixture",
+      "sourceSha256": "38184dc7f11e31e2f08a8cfa12b0be3f7a49800e24adb9b2d938cd1a08996881",
+      "fixtureSha256": "38184dc7f11e31e2f08a8cfa12b0be3f7a49800e24adb9b2d938cd1a08996881",
+      "bytes": 4035,
+      "method": "existing fixture retained unchanged"
+    },
+    {
+      "fixture": "ses-arc-combo.dsn",
+      "source": "b5-oval-arc-20261026/evidence/v114-combo-native.dsn",
+      "sourceSha256": "7bf646198e1abfc4102022d850e5161b718f5e9b93b056f60a21d66c99204983",
+      "fixtureSha256": "7bf646198e1abfc4102022d850e5161b718f5e9b93b056f60a21d66c99204983",
+      "bytes": 7469,
+      "method": "copy source bytes unchanged"
+    },
+    {
+      "fixture": "ses-arc-combo.ses",
+      "source": "b5-oval-arc-20261026/evidence/v114-combo-result.ses",
+      "sourceSha256": "3706c5077e4cfee51a06b2d32c67c4c7cbeb57f2768eb675637d867a15c42a95",
+      "fixtureSha256": "3706c5077e4cfee51a06b2d32c67c4c7cbeb57f2768eb675637d867a15c42a95",
+      "bytes": 5584,
+      "method": "copy source bytes unchanged"
+    },
+    {
+      "fixture": "ses-arc-v114-before.sourcelog",
+      "source": "b5-oval-arc-20261026/evidence/v114-combo-before-source.json",
+      "sourceSha256": "b7566f5639a389bac364695845a02fdcdadab9eec8e3e35f67d5db7b72cd6343",
+      "fixtureSha256": "6ea891e7d5b3e1c1c02deae2d51aeae388ff08c3a459d1d29039b93f99206c4f",
+      "bytes": 42642,
+      "method": "extract result.data.source; omit request/instance/time wrapper"
+    },
+    {
+      "fixture": "ses-arc-v115-before.sourcelog",
+      "source": "b5-oval-arc-20261026/evidence/v115-combo-before-source.json",
+      "sourceSha256": "b7f25c97119ad414a1a5ed2ae92269393b175be920cfd91f17ebd51ae3aef2e1",
+      "fixtureSha256": "013ff7c8de2dd252739e893154952441f1a8b4f5b142c3584842a7a19aed2d89",
+      "bytes": 42642,
+      "method": "extract result.data.source; omit request/instance/time wrapper"
+    },
+    {
+      "fixture": "ses-arc-v115-after-import.sourcelog",
+      "source": "b5-oval-arc-20261026/evidence/v115-after-import-source.json",
+      "sourceSha256": "21c955edadf4916a95db34a23d8e5fd0d95cdbad569fc79ff9486b5f76a5ec33",
+      "fixtureSha256": "85dd28cc6ffb599bfa2dfa9acaf7ffadd17e8c3ba551f84fec5a445d0c6cd69d",
+      "bytes": 45494,
+      "method": "extract result.data.source; omit request/instance/time wrapper"
+    },
+    {
+      "fixture": "ses-arc-v115-reopened.sourcelog",
+      "source": "b5-oval-arc-20261026/evidence/v115-reopened-source.json",
+      "sourceSha256": "cf15ff7b0a94a3645fbf9333cbe5b842f85ccc917620caf12d5d67a88068b1e0",
+      "fixtureSha256": "736030aa8f228123d825bf0f750ed95db7c119ae0b5f281b372589eae06595ea",
+      "bytes": 45494,
+      "method": "extract result.data.source; omit request/instance/time wrapper"
+    },
+    {
+      "fixture": "footprint-v094-board.sourcelog",
+      "source": "b-development-20261021/evidence/v094-b2-source.json",
+      "sourceSha256": "bed7dd9fbc8cc29f9aac9812bc80632517f9937ea6d2b6112e9e99f77780fbd4",
+      "fixtureSha256": "67172372b893476639797de8fcd5582ce8928725c9cc1b964fab56e197c83305",
+      "bytes": 43750,
+      "method": "extract result.data.source; omit request/instance/time wrapper"
+    },
+    {
+      "fixture": "footprint-v094-library.sourcelog",
+      "source": "b-development-20261021/evidence/v094-b2-footprint.json",
+      "sourceSha256": "52669ba202edb16bec6e2791af9f38a8bef165020f59df6d892ccd8ff8d420c9",
+      "fixtureSha256": "91260ebc75ee98c4470382833ab6cf35bc5a4b3018684618d30e85c93bae8853",
+      "bytes": 12132,
+      "method": "extract result.data.source; omit request/instance/time wrapper"
+    },
+    {
+      "fixture": "footprint-v093-board.sourcelog",
+      "source": "b-development-20261021/evidence/v093-b2-imported-source.json",
+      "sourceSha256": "0f28832a9f6e9b055440c016c5be462c05f52871b338aff0f305008b334975e3",
+      "fixtureSha256": "2e5b3728e07403981a88ca8040ce47a1070c08129f3ee0e8fd3e9cc4f4b6b7e1",
+      "bytes": 43750,
+      "method": "extract result.data.source; omit request/instance/time wrapper"
+    },
+    {
+      "fixture": "footprint-v093-library.sourcelog",
+      "source": "b-development-20261021/evidence/v093-b2-imported-footprint.json",
+      "sourceSha256": "99a2aaff31b2a8e2e85e49ca1c748fb83f7895030a9a0315157732c7e5e323c4",
+      "fixtureSha256": "a02a51f04586251de6571f6bb251db43afa5b2986bdfba3c764dac6183a4ec0f",
+      "bytes": 11236,
+      "method": "extract result.data.source; omit request/instance/time wrapper"
+    },
+    {
+      "fixture": "silkscreen-source-before.sourcelog",
+      "source": "b-development-20261021/evidence/v074-host-before-source.json",
+      "sourceSha256": "01684194606bdfbbbeb3c22a33297ae33abecac667596e80debbaf2588056f2a",
+      "fixtureSha256": "e0fbdb42c83a74058ebc293767956998a3f2388945f121c18a8df5806a86f2f8",
+      "bytes": 49586,
+      "method": "extract result.data.source; omit request/instance/time wrapper"
+    },
+    {
+      "fixture": "silkscreen-source-after.sourcelog",
+      "source": "b-development-20261021/evidence/v074-host-after-silk-source.json",
+      "sourceSha256": "436af55e93ca057b5ad98aa30e90ab91e08fc313f78aa9f48fcb5b4aa2915405",
+      "fixtureSha256": "a929ec394fc172b1257aeb8dc16694f6660d6d4e2d88fcfb3f8eb8c31286e400",
+      "bytes": 49586,
+      "method": "extract result.data.source; omit request/instance/time wrapper"
+    },
+    {
+      "fixture": "ses-arc-v115-route-baseline.json",
+      "source": "b5-oval-arc-20261026/evidence/v115-combo-result.json",
+      "sourceSha256": "a7decb06b24f9ee739b03d4c56667ea432ef1b75adcc3c57981cdbefc5c27da0",
+      "fixtureSha256": "019dccd1eaf4f2cbf114464efb828b4f3fc7fabbc9071bdda077675aa799757e",
+      "bytes": 8747,
+      "method": "extract result.data.routeBaseline; omit runtime wrapper"
+    },
+    {
+      "fixture": "silkscreen-gerber-v073.zip",
+      "source": "b-development-20261021/evidence/v073-gerber.zip",
+      "sourceSha256": "406b092aed476da9bc6214dde63273ff1794adec6c86b0e6568b63f8a7ba15e9",
+      "fixtureSha256": "f8567756329dfbde21806b38935a70e9bbc677bbab8ce8a32b29e88f4dce103b",
+      "bytes": 7729,
+      "method": "copy only five Gerber layers read by regression; omit order/test metadata",
+      "retained": [
+        {
+          "name": "Gerber_TopSilkscreenLayer.GTO",
+          "sha256": "d7c82c7eaf1a570cb8b1a338232deab7b22145ad2cd3dcbe44a4b84a9333d811"
+        },
+        {
+          "name": "Gerber_BottomSilkscreenLayer.GBO",
+          "sha256": "11abd44b4efae5ebe22879121364e27d3fb75f3c732b7d9b4612a12939d5f762"
+        },
+        {
+          "name": "Gerber_TopSolderMaskLayer.GTS",
+          "sha256": "b43249b35e9fdd3bc1af602f71bd99ba659a9ed16d7bdacc05276b9a91708b31"
+        },
+        {
+          "name": "Gerber_BottomSolderMaskLayer.GBS",
+          "sha256": "5607619e83e6066c65107de4bedbd6ced0ac5c5f0e71b00e810a9beb571ae435"
+        },
+        {
+          "name": "Gerber_BoardOutlineLayer.GKO",
+          "sha256": "f9f3299f12413b5ae01ef152fddeff39dc9ce3b95e0c79b331ed2221b7ca400e"
+        }
+      ]
+    },
+    {
+      "fixture": "silkscreen-gerber-v094.zip",
+      "source": "b-development-20261021/evidence/v094-installed-fixture-gerber.zip",
+      "sourceSha256": "1122e08e2a1a029480f11d22f1ebaa72b9c98f6dd08b1fa1e70ee4f57eb17582",
+      "fixtureSha256": "7b6f1c4a5fdb59dc7f64cd4a854d82847fc18c84920a7aaa4f9acbd24e9016eb",
+      "bytes": 4781,
+      "method": "copy only five Gerber layers read by regression; omit order/test metadata",
+      "retained": [
+        {
+          "name": "Gerber_TopSilkscreenLayer.GTO",
+          "sha256": "a468f3e78c606221a147e0cd3c3b6269be18cd2a4e91f2a6b9ebdc5bf0060ffb"
+        },
+        {
+          "name": "Gerber_BottomSilkscreenLayer.GBO",
+          "sha256": "d8566b0796ce8a5c057a136bd6bbc63f28dd10c03a743dad0b3e3f0ae6278fcb"
+        },
+        {
+          "name": "Gerber_TopSolderMaskLayer.GTS",
+          "sha256": "240a9cdb144b3fc9a82e251c849f20ab6cb52970835035108464a09fe8b15c37"
+        },
+        {
+          "name": "Gerber_BottomSolderMaskLayer.GBS",
+          "sha256": "c2a156b4a686831403296bb9e48ea0f1e6e60e63897333b321a7e716459e9033"
+        },
+        {
+          "name": "Gerber_BoardOutlineLayer.GKO",
+          "sha256": "4637fb80d964c5eaa8c4fb3b72023269ad987a6ce04619f0ba0e5c60ab35669e"
+        }
+      ]
+    },
+    {
+      "fixture": "silkscreen-gerber-v094-arc-oracle.json",
+      "source": "b-development-20261021/evidence/v094-installed-fixture-arc-verification-geometry.json",
+      "sourceSha256": "b1b93c94c6540cb439fad1a91137f16869d41fcb841a3f891d1e90b04aa4352f",
+      "fixtureSha256": "8d2e51c0311755bc8911efb548bc025c96ca9ed3ef33997aa5fdfcf042ea37be",
+      "bytes": 21512,
+      "method": "retain fields read by regression only",
+      "retained": [
+        "observations[].layer",
+        "observations[].segments[].local.type",
+        "observations[].segments[].manufacturing.actual"
+      ]
+    },
+    {
+      "fixture": "footprint-v094-arc-oracle.json",
+      "source": "b-development-20261021/evidence/v094-b2-arc-verification.json",
+      "sourceSha256": "dfd45e5c5e6b12a1ad7feee71411815af3ac28ead6d95f667aff3fb451f9bf31",
+      "fixtureSha256": "3d9c1ab602bb155e5540e0db529c4a5aed3b86b156739fcdf8146e564b08bef6",
+      "bytes": 50280,
+      "method": "retain fields read by regression only",
+      "retained": [
+        "observations[].{componentId,localPrimitiveId,localLayerId,layer,widthMil,segments[].{local,global,bounds,manufacturing.actual}}",
+        "matchedArcs",
+        "matchedExtraLines"
+      ]
+    },
+    {
+      "fixture": "footprint-v093-path-oracle.json",
+      "source": "b-development-20261021/evidence/v093-b2-path-verification.json",
+      "sourceSha256": "d95b2568ffa2c429cf5b5381782df0324a19e8b0d69d8db4da91c1a196199c92",
+      "fixtureSha256": "d8865bf7e635237f31cf6d7b0fcb3c456da992e9438c8a563ec388097da3d728",
+      "bytes": 21205,
+      "method": "retain fields read by regression only",
+      "retained": [
+        "pathObjects",
+        "centerlineSegments",
+        "maxEndpointErrorMil",
+        "observations[].{componentId,localPrimitiveId,localLayerId,gerberLayer,widthMil,localPoints,globalPoints,closed}"
+      ]
+    },
+    {
+      "fixture": "a9-v067-host-lines.json",
+      "source": "existing project test fixture",
+      "sourceSha256": "eb4dfdf136b1d1a4f05590949b3121ce041bc68f0e6fcb79061ce3f4c6867029",
+      "fixtureSha256": "eb4dfdf136b1d1a4f05590949b3121ce041bc68f0e6fcb79061ce3f4c6867029",
+      "bytes": 3066,
+      "method": "retain existing fixture bytes unchanged"
+    },
+    {
+      "fixture": "ac-a16-explicit-project-footprint-source.sourcelog",
+      "source": "existing project test fixture",
+      "sourceSha256": "076fec6e3215ed4a4da0c4dc386b3db5359b30d764bbaa2a34a123fc9a2d14f5",
+      "fixtureSha256": "076fec6e3215ed4a4da0c4dc386b3db5359b30d764bbaa2a34a123fc9a2d14f5",
+      "bytes": 16336,
+      "method": "retain existing fixture bytes unchanged"
+    },
+    {
+      "fixture": "ac-v058b-after-dsn-source.sourcelog",
+      "source": "existing project test fixture",
+      "sourceSha256": "061113dede280864ca52be546c9aa5601bc08c006f85191efcaf4aaff93a775e",
+      "fixtureSha256": "061113dede280864ca52be546c9aa5601bc08c006f85191efcaf4aaff93a775e",
+      "bytes": 40287,
+      "method": "retain existing fixture bytes unchanged"
+    },
+    {
+      "fixture": "ac-v058b-baseline-source.sourcelog",
+      "source": "existing project test fixture",
+      "sourceSha256": "2fb99e30b41e313be0c5870deb4d231146c42a5dd386a69648caaa1b18fecacb",
+      "fixtureSha256": "2fb99e30b41e313be0c5870deb4d231146c42a5dd386a69648caaa1b18fecacb",
+      "bytes": 40287,
+      "method": "retain existing fixture bytes unchanged"
+    },
+    {
+      "fixture": "ac-v059-reopened-slot.dsn",
+      "source": "existing project test fixture",
+      "sourceSha256": "46c99d9c93045b7722d711318da27971e196d530cca2058ab646ee960d35042f",
+      "fixtureSha256": "46c99d9c93045b7722d711318da27971e196d530cca2058ab646ee960d35042f",
+      "bytes": 4268,
+      "method": "retain existing fixture bytes unchanged"
+    },
+    {
+      "fixture": "auto-route-inner-host-v062-layers.json",
+      "source": "existing project test fixture",
+      "sourceSha256": "a0df94aa51bb52fe2928dea32d1ead8d7fada6bf46f4b8286089496202248570",
+      "fixtureSha256": "a0df94aa51bb52fe2928dea32d1ead8d7fada6bf46f4b8286089496202248570",
+      "bytes": 1167,
+      "method": "retain existing fixture bytes unchanged"
+    },
+    {
+      "fixture": "auto-route-inner-host-v062.ses",
+      "source": "existing project test fixture",
+      "sourceSha256": "7a096cf9016a87175a76bd51201c8a4cbf009834f772871d9f009f7192ec5f14",
+      "fixtureSha256": "7a096cf9016a87175a76bd51201c8a4cbf009834f772871d9f009f7192ec5f14",
+      "bytes": 1954,
+      "method": "retain existing fixture bytes unchanged"
+    },
+    {
+      "fixture": "auto-route-inner-host-v063-exact-widths.ses",
+      "source": "existing project test fixture",
+      "sourceSha256": "9de84fd3501d2ac7ed2980f724f1b3217f6b862d2395356cbf407dd0f5d8ebd7",
+      "fixtureSha256": "9de84fd3501d2ac7ed2980f724f1b3217f6b862d2395356cbf407dd0f5d8ebd7",
+      "bytes": 1991,
+      "method": "retain existing fixture bytes unchanged"
+    },
+    {
+      "fixture": "drawwire-named-t-after.sourcelog",
+      "source": "existing project test fixture",
+      "sourceSha256": "cdf9b35bd7c7229f74f216a2187849352d6e91c2022dea5cca61b7d95cd3bdea",
+      "fixtureSha256": "cdf9b35bd7c7229f74f216a2187849352d6e91c2022dea5cca61b7d95cd3bdea",
+      "bytes": 12957,
+      "method": "retain existing fixture bytes unchanged"
+    },
+    {
+      "fixture": "drawwire-named-t-before.sourcelog",
+      "source": "existing project test fixture",
+      "sourceSha256": "e32a002fc58d72d6e5dbfc592e4205b9524707b8c2cbeeee5c4f3a8c95d97d0f",
+      "fixtureSha256": "e32a002fc58d72d6e5dbfc592e4205b9524707b8c2cbeeee5c4f3a8c95d97d0f",
+      "bytes": 12485,
+      "method": "retain existing fixture bytes unchanged"
+    },
+    {
+      "fixture": "dsn-host-class-quotes.dsn",
+      "source": "existing project test fixture",
+      "sourceSha256": "1e3b6b72448e378d7a339f463fc77a63f594cda50df04e7805adae560dbcb29a",
+      "fixtureSha256": "1e3b6b72448e378d7a339f463fc77a63f594cda50df04e7805adae560dbcb29a",
+      "bytes": 3463,
+      "method": "retain existing fixture bytes unchanged"
+    },
+    {
+      "fixture": "routing-width-empty-net-real-host.json",
+      "source": "existing project test fixture",
+      "sourceSha256": "84c64431e04c6fa551483f9ea8f7bbbb7246699ce39cd7ec136e5d96e18bbb52",
+      "fixtureSha256": "84c64431e04c6fa551483f9ea8f7bbbb7246699ce39cd7ec136e5d96e18bbb52",
+      "bytes": 2926,
+      "method": "retain existing fixture bytes unchanged"
+    },
+    {
+      "fixture": "drawwire-named-t-after-model.json",
+      "source": "drawwire-named-t-after-wires.json",
+      "sourceSha256": "bc2fd45247e9aa6b50e33b17263e11aaa441ce1ba591e44d327fe9794400dfc1",
+      "fixtureSha256": "e0e1c4c2ec3451bf05ec687097bab8dbd418b7a0072c00030e7c764879a6708b",
+      "bytes": 291,
+      "method": "extract result.data array; omit request/instance/time wrapper"
+    },
+    {
+      "fixture": "drawwire-named-t-before-model.json",
+      "source": "drawwire-named-t-before-wires.json",
+      "sourceSha256": "f27685b2afc2f10ce55e8a006eaab57d89c5e69902b22ab1f11699686d3cfc4a",
+      "fixtureSha256": "cdadbe51b91f338593fca3aa4685d64c4fac491c9919e4c94e4051789592688c",
+      "bytes": 203,
+      "method": "extract result.data array; omit request/instance/time wrapper"
+    },
+    {
+      "fixture": "drawwire-t-host-0.20.53-fixture.json",
+      "source": "drawwire-t-host-0.20.53.json",
+      "sourceSha256": "ac4d346099f21d7566be6a6e17dd8a6a8747419a1a0940963d0ce36b18aa3f81",
+      "fixtureSha256": "a47c5ba1de579a75f005ee84b5b82ee60049d31881e8ec0af28740a65711c193",
+      "bytes": 29534,
+      "method": "retain source/models/request params read by test; omit description/request envelope/result/time"
+    },
+    {
+      "fixture": "drawwire-t-host-0.20.54-fixture.json",
+      "source": "drawwire-t-host-0.20.54.json",
+      "sourceSha256": "becd46562c4292a2206f180d7b7c520a09c313d878c034ed57a70243fb9e2b8e",
+      "fixtureSha256": "149da3a542e85d606f41618c3dfde7074254df1068472ca4c16835c1ba44209b",
+      "bytes": 29534,
+      "method": "retain source/models/request params read by test; omit description/request envelope/result/time"
+    },
+    {
+      "fixture": "regression-baselines/schematic-v053-host-recheck.ts",
+      "source": "stored 0.20.53 handler comparison baseline",
+      "sourceSha256": "3935cf06d4b7636e9735756e8ad86d0ce9e4ab67be9face05e1978b79b02ae34",
+      "fixtureSha256": "3935cf06d4b7636e9735756e8ad86d0ce9e4ab67be9face05e1978b79b02ae34",
+      "bytes": 378197,
+      "method": "copy baseline bytes unchanged; test only"
+    },
+    {
+      "fixture": "regression-baselines/schematic-v054-host-recheck.ts",
+      "source": "stored 0.20.54 handler comparison baseline",
+      "sourceSha256": "3f7344c98003d1c5aeb9ba2c8d534482d30fe6354750a79d96378d2127fbdf59",
+      "fixtureSha256": "3f7344c98003d1c5aeb9ba2c8d534482d30fe6354750a79d96378d2127fbdf59",
+      "bytes": 386576,
+      "method": "copy baseline bytes unchanged; test only"
+    }
+  ]
+}

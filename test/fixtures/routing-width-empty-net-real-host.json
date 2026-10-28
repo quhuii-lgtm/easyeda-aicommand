@@ -1,0 +1,27 @@
+{
+  "evidenceSource": {
+    "source": "b-development-20261021/evidence/v096-b6-reopened-source.json",
+    "netRules": "b-development-20261021/evidence/v096-b6-reopened-netrules.json",
+    "layers": "b-development-20261021/evidence/v096-b6-layers.json",
+    "dsn": "b-development-20261021/evidence/v096-b6-reopened-dsn.json"
+  },
+  "extraction": "Minimal real-host subset: DOCHEAD, +5V and ACE_VIA NET records, the DEFAULT/ACE_CLASS30 TRACK rules and their selectors; SDK top/bottom SIGNAL layers and ACE_TEST_CLASS with its two net entries; decoded DSN width and class entries. Observed values are retained.",
+  "editorVersion": "4.1.78",
+  "source": "{\"type\":\"DOCHEAD\"}||{\"docType\":\"PCB\",\"uuid\":\"3883ab720d203769\"}|\n{\"type\":\"RULE\",\"ticket\":85,\"id\":\"[\\\"RULE\\\",\\\"TRACK\\\",\\\"copperThickness1oz\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mil\",\"track\":{\"isOpen\":true,\"content\":[{\"layerId\":1,\"stroMin\":22,\"stroDef\":27,\"stroMax\":38}]}}}|\n{\"type\":\"RULE\",\"ticket\":88,\"id\":\"[\\\"RULE\\\",\\\"TRACK\\\",\\\"ACE_CLASS30\\\"]\"}||{\"ruleState\":\"NORMAL\",\"ruleContext\":{\"unit\":\"mil\",\"track\":{\"isOpen\":true,\"content\":[{\"layerId\":1,\"stroMin\":25,\"stroDef\":30,\"stroMax\":35}]}}}|\n{\"type\":\"NET\",\"ticket\":78,\"id\":\"[\\\"NET\\\",\\\"+5V\\\"]\"}||{\"netType\":\"ACE_TEST_CLASS\"}|\n{\"type\":\"NET\",\"ticket\":79,\"id\":\"[\\\"NET\\\",\\\"ACE_VIA\\\"]\"}||{\"netType\":\"ACE_TEST_CLASS\"}|\n{\"type\":\"RULE_SELECTOR\",\"ticket\":99,\"id\":\"[\\\"RULE_SELECTOR\\\",[\\\"NET_CLASS\\\",\\\"ACE_TEST_CLASS\\\"]]\"}||{\"ruleOrder\":4,\"ruleKeyValue\":{\"TRACK\":\"ACE_CLASS30\"},\"copperValue\":{},\"innerPlaneValue\":{},\"parent\":null}|\n{\"type\":\"RULE_SELECTOR\",\"ticket\":100,\"id\":\"[\\\"RULE_SELECTOR\\\",[\\\"NET\\\",\\\"+5V\\\"]]\"}||{\"ruleOrder\":4,\"ruleKeyValue\":{\"TRACK\":\"ACE_CLASS30\"},\"copperValue\":{},\"innerPlaneValue\":{},\"parent\":null}|\n{\"type\":\"RULE_SELECTOR\",\"ticket\":101,\"id\":\"[\\\"RULE_SELECTOR\\\",[\\\"NET\\\",\\\"ACE_VIA\\\"]]\"}||{\"ruleOrder\":4,\"ruleKeyValue\":{},\"copperValue\":{},\"innerPlaneValue\":{},\"parent\":null}|",
+  "layers": [
+    { "id": 1, "name": "Top Layer", "type": "SIGNAL", "layerStatus": 1 },
+    { "id": 2, "name": "Bottom Layer", "type": "SIGNAL", "layerStatus": 1 }
+  ],
+  "netRules": [
+    {
+      "type": "netClass",
+      "name": "ACE_TEST_CLASS",
+      "Track": "ACE_CLASS30",
+      "sub": [
+        { "type": "net", "name": "+5V", "Track": "ACE_CLASS30" },
+        { "type": "net", "name": "ACE_VIA", "Track": "default" }
+      ]
+    }
+  ],
+  "dsn": "(PCB \"\" (resolution mil 1000) (structure (rule (width 27.05)) (layer TopLayer (type signal)) (layer Inner1 (type signal)) (layer Inner2 (type signal)) (layer BottomLayer (type signal))) (network (net +5V) (net ACE_VIA) (class +5V \"+5V\" (rule (width 30))) (class ACE_VIA \"ACE_VIA\" (rule (width 27)))) )"
+}
