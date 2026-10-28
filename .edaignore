@@ -27,3 +27,9 @@ debug.log
 __pycache__/
 *.tsbuildinfo
 /images/logo.png
+
+/skills/
+
+/SKILL.md
+
+/AGENTS.md

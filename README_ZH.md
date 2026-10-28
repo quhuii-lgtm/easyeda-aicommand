@@ -2,6 +2,8 @@
 
 **English:** [README.md](README.md) | **简体中文：** [README_ZH.md](README_ZH.md)
 
+**仓库与下载：**[插件与 Node 代理](https://github.com/quhuii-lgtm/easyeda-aicommand) | [插件发布页](https://github.com/quhuii-lgtm/easyeda-aicommand/releases) | [独立 AI 技能仓库](https://github.com/quhuii-lgtm/easyeda-aicommand-skill) | [最新技能版本](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/latest)
+
 
 嘉立创 EDA 专业版的 AI 操作扩展：AI 按任务调用配套技能中的简明指令，由本地代理转发至已连接的 EDA 窗口，用于原理图、PCB、工程和元件库查询及编辑。具体操作仍需按项目目标检查结果并由使用者验收。
 
@@ -23,7 +25,7 @@
 1. 检查你能否访问本机文件和终端，并确认操作系统、Node.js 和 npm。按项目 package.json 检查版本要求，当前要求 Node.js >=20.17.0。缺少工具时指导我从官方来源安装，安装后重新检查；Git可选，Python不是直接HTTP连接的必需项。
 2. 确认我安装或准备安装的插件版本，获取对应的完整源码仓库。读取 README.md、docs/QUICKSTART.md、package.json 和 package-lock.json。说明插件、代理和AI技能分别从哪里获取、版本是否匹配；若渠道版本不同或对应源码不可得，先说明，不能猜造下载地址或默认视为匹配。
 3. 把源码保存在固定目录。发现已有仓库、技能或配置时先检查并保留个人改动，不覆盖旧目录或密钥。确认源码目录同时有 package.json、package-lock.json 和 bridge/command-proxy.mjs。
-4. 在源码目录执行 npm ci，确认依赖安装成功。不要添加 --omit=dev；使用已下载的插件包不需要运行构建。将完整 skills/ai-command-engine/ 安装到当前AI工具的技能目录，保留 references、scripts 和 SKILL.md；不要把仓库根目录的 SKILL.md 当作技能入口。确认你已读取技能及 references/setup.md。
+4. 在源码目录执行 npm ci，确认依赖安装成功。不要添加 --omit=dev；使用已下载的插件包不需要运行构建。从独立技能仓库或技能 ZIP 安装完整的 ai-command-engine/ 目录，保留 references/、scripts/ 和 SKILL.md。不要从本插件源码仓库复制技能目录。
 5. 检查 http://127.0.0.1:49720/health。如果没有代理，运行 node bridge/command-proxy.mjs，并保持进程可用；若端口已占用，先识别服务，不结束未知进程，不擅自改端口。检查健康响应和代理版本；失败时停在本步排查。Windows自动启动注册是可选项，不是首次连接的必需项。
 6. 指导我在嘉立创EDA专业版中导入或安装 .eext、启用插件、允许外部交互，并打开一个用于试用的工程和图页。登录、验证码、系统确认及需要我手动点击的步骤，明确告诉我在哪里完成，等我完成后再继续。不要替我创建或修改电路。
 7. 指导我点击“AI 指令引擎 → 启动桥接”。查询 GET /connections，核对插件版本与工程身份；没有实例时检查插件启用、外部交互、桥接状态和代理，不能跳过。多个实例时按我指定的工程选择，不自动选第一项。
@@ -84,7 +86,7 @@
 
 已有原理图也可按指定器件或区域预览整理方案，再执行重排和连线重建。适合重复通道、MCU 外围、接口模块等具有明确连接关系的绘制任务。
 
-完整换件使用新临时实例，并按配套技能完成核验、删除旧实例、属性修改、身份转移和持久性检查。这不是保留旧实例 ID 的原位更新；具体步骤和字段来源以[原理图指令说明](skills/ai-command-engine/references/zh/commands-schematic.md#完整器件更换)为准。v0.10.143 的器件更新指令已移除。若需把原理图变更同步到已有 PCB，由使用者在 EDA 界面发起并确认导入；AI 只在操作前后做只读检查。
+完整换件使用新临时实例，并按配套技能完成核验、删除旧实例、属性修改、身份转移和持久性检查。这不是保留旧实例 ID 的原位更新；具体步骤和字段来源以[原理图指令说明](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/blob/main/ai-command-engine/references/zh/commands-schematic.md#完整器件更换)为准。v0.10.143 的器件更新指令已移除。若需把原理图变更同步到已有 PCB，由使用者在 EDA 界面发起并确认导入；AI 只在操作前后做只读检查。
 
 ### 5. 批量连线、网络标签与连接核对
 
@@ -109,15 +111,15 @@
 
 ### 8. 嘉立创下单检查（DFM）
 
-提供 PCB DFM、SMT 和同网间距检查，分别返回 18、7、1 项结果，并保留完整性和几何覆盖信息。运行 DFM 时必须明确输入外层铜厚 `outerCopperOz` 与内层铜厚 `innerCopperOz`；图纸读取到的铜厚单独报告，不能代替输入值。结果不等于制造放行，也不代表完整在线 DFM 服务。详见[下单检查说明](skills/ai-command-engine/references/zh/commands-frequency.md)。
+提供 PCB DFM、SMT 和同网间距检查，分别返回 18、7、1 项结果，并保留完整性和几何覆盖信息。运行 DFM 时必须明确输入外层铜厚 `outerCopperOz` 与内层铜厚 `innerCopperOz`；图纸读取到的铜厚单独报告，不能代替输入值。结果不等于制造放行，也不代表完整在线 DFM 服务。详见[下单检查说明](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/blob/main/ai-command-engine/references/zh/commands-frequency.md)。
 
 ### 9. 焊盘扇出与自动局部铜皮
 
-`pcb.getFanoutPlan` 和 `pcb.getAutoCopperPlan` 先生成只读计划；`pcb.fanout` 与 `pcb.autoCopper` 按完整计划执行。扇出线长、线宽、过孔外径、孔径和安全间距都须以 mil 明确输入。几何支持范围、保守近似和拒绝条件见[几何命令说明](skills/ai-command-engine/references/zh/commands-pcb-special.md)。历史隔离工程验收覆盖了部分较大 MCU 扇出样本，不代表所有封装形状、所有板子或完整 MCU 扇出流程均已通过。独立的填充读回路径也曾对特定铺铜区完成保存、关闭、重开后的核验；证据仅适用于对应测试对象，实际操作仍须审查计划、几何和生产输出。
+`pcb.getFanoutPlan` 和 `pcb.getAutoCopperPlan` 先生成只读计划；`pcb.fanout` 与 `pcb.autoCopper` 按完整计划执行。扇出线长、线宽、过孔外径、孔径和安全间距都须以 mil 明确输入。几何支持范围、保守近似和拒绝条件见[几何命令说明](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/blob/main/ai-command-engine/references/zh/commands-pcb-special.md)。历史隔离工程验收覆盖了部分较大 MCU 扇出样本，不代表所有封装形状、所有板子或完整 MCU 扇出流程均已通过。独立的填充读回路径也曾对特定铺铜区完成保存、关闭、重开后的核验；证据仅适用于对应测试对象，实际操作仍须审查计划、几何和生产输出。
 
 ### 10. 焊盘外扩与网络文字丝印
 
-可用 `pcb.getPadExpansionPlan` / `pcb.expandPads` 规划并执行焊盘外扩，也可用 `pcb.getNetSilkscreenPlan` / `pcb.generateNetSilkscreen` 为焊盘网络生成可编辑丝印文字。外扩的支持形状、区域拆分与持久性限制，以及网络文字的放置和避让限制，见[几何命令说明](skills/ai-command-engine/references/zh/commands-pcb-special.md)；本功能不替代对实际图形、间距和生产结果的检查。
+可用 `pcb.getPadExpansionPlan` / `pcb.expandPads` 规划并执行焊盘外扩，也可用 `pcb.getNetSilkscreenPlan` / `pcb.generateNetSilkscreen` 为焊盘网络生成可编辑丝印文字。外扩的支持形状、区域拆分与持久性限制，以及网络文字的放置和避让限制，见[几何命令说明](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/blob/main/ai-command-engine/references/zh/commands-pcb-special.md)；本功能不替代对实际图形、间距和生产结果的检查。
 
 ## 实际操作演示
 
@@ -145,7 +147,7 @@
 
 ## 版本状态
 
-**v0.20.50 是基于 v0.20.49 核心的中文菜单与文档打包版，本版不新增核心写入操作。**本版汇总 v0.20.11–v0.20.49 期间的修正与已明确边界。类型检查、正式构建和 31 组现有模拟回归通过；运行程序去掉构建路径标记后与市场候选版本一致，manifest 字段也无差异。发布包尚未重新安装到 EDA 宿主验证。中文市场包已重新提交，正在审核；当前公开上架版本仍为 v0.10.143，不能据此认定 v0.20.50 已通过审核或上架。v0.20.50 按 GitHub 正式发布（非预发布）交付。详见 [v0.20.50 版本说明](docs/releases/v0.20.50_ZH.md)和[英文版](docs/releases/v0.20.50.md)。
+原插件仓库当前正式版为 **v0.20.50**。本次只是拆分资料，不改变插件功能或版本。v0.20.50 尚未重新安装到 EDA 宿主验证。市场上架状态和版本可能变化，请以[扩展市场页面](https://lceda.cn/page/extensions)实际显示为准。既有功能说明和验证范围见 [v0.20.50 版本说明](docs/releases/v0.20.50_ZH.md)和[英文版](docs/releases/v0.20.50.md)。
 
 当前兼容性和操作边界：
 
@@ -158,20 +160,18 @@
 
 页面展示的“小机器人画电路板”图标是项目 Logo；市场发布图标文件为 `images/logo-marketplace.png`。
 
-## v0.20.50 下载与安装
+## 下载与安装
 
-下载 v0.20.50 GitHub 正式发布附件：
+原插件仓库提供扩展包，以及运行本地 Node 代理所需的源码。其 v0.20.50 正式版附件为插件包和源码 ZIP；源码仓库不再提供完整 AI 技能。历史标签源码包可能包含旧技能文件；当前 main 分支源码 ZIP 仅含插件/代理和迁移说明。本地准备的 v0.20.124 尚未公开，不能作为下载版本。
 
-- [中文版市场扩展包 ai-command-engine_v0.20.50_zh-CN.eext](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/download/v0.20.50/ai-command-engine_v0.20.50_zh-CN.eext)
-- [英文主版、中文备用的独立技能包 ai-command-engine-skill_en-zh_v0.20.50.zip](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/download/v0.20.50/ai-command-engine-skill_en-zh_v0.20.50.zip)
-- [v0.20.50 源码 ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand/archive/refs/tags/v0.20.50.zip)
+- [插件 GitHub Releases](https://github.com/quhuii-lgtm/easyeda-aicommand/releases)：下载扩展包与插件/代理源码 ZIP。
+- [独立技能仓库](https://github.com/quhuii-lgtm/easyeda-aicommand-skill)：查看技能文档。
+- [最新独立技能版本](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/latest)：下载技能 ZIP，再安装其中完整的 `ai-command-engine/` 目录。
+- [技能入口文件](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/blob/main/ai-command-engine/SKILL.md)。
 
+技能仓库使用独立的日期版本，本次拆分日期为 2026.10.28。技能版本与插件版本相互独立，不需要随插件每次升级。英文 `SKILL.md` 和中文 `SKILL_ZH.md` 共用一个安装目录；保留 `references/zh/` 和脚本。不要从插件源码仓库复制技能目录。
 
-
-新版技能包以英文 `SKILL.md` 和参考文件为主，中文备用位于 `SKILL_ZH.md` 与 `references/zh/`。两种说明共用一个技能目录，不需安装两个自动触发技能。请按发布页的校验文件核对附件 SHA-256。
-
-技能 ZIP 解压后，将 `ai-command-engine/` 整个目录安装到所用 AI 工具的技能目录，保留 `references/` 和脚本等子目录，不能只复制 `SKILL.md`。代理不单独打包；下载源码 ZIP 后，按[安装与使用指南](docs/QUICKSTART.md)安装 Node.js 依赖并运行本地代理。扩展、代理和技能分别安装，扩展市场不会替使用者安装代理或技能。
-
+扩展、代理和 AI 技能需要分别安装。Node.js 代理安装步骤见[安装与使用指南](docs/QUICKSTART.md)；市场扩展不会自动安装代理或 AI 技能。
 ## 首次使用
 
 请按[安装与使用指南](https://github.com/quhuii-lgtm/easyeda-aicommand/blob/main/docs/QUICKSTART.md)完成 Node.js 与代理依赖、EDA 扩展安装、外部交互授权、首次只读验证和 AI 技能安装。要运行代理，请在仓库目录执行：
@@ -183,7 +183,7 @@ npm ci
 node bridge/command-proxy.mjs
 ```
 
-ZIP 用户在解压后的仓库目录运行 `npm ci` 和 `node bridge/command-proxy.mjs`。保留代理终端，再从 [Releases](https://github.com/quhuii-lgtm/easyeda-aicommand/releases) 下载 `.eext`，在 EDA 插件管理界面导入、启用并允许外部交互。然后将完整的 [`skills/ai-command-engine/`](https://github.com/quhuii-lgtm/easyeda-aicommand/tree/main/skills/ai-command-engine) 安装到 AI 工具的技能目录，并在 EDA 菜单点击“AI 指令引擎”→“启动桥接”。安装扩展不会在本机部署代理或向 AI 工具安装技能；完整步骤见[首次使用指南](https://github.com/quhuii-lgtm/easyeda-aicommand/blob/main/docs/QUICKSTART.md)。
+ZIP 用户在解压后的仓库目录运行 `npm ci` 和 `node bridge/command-proxy.mjs`。保留代理终端，再从 [Releases](https://github.com/quhuii-lgtm/easyeda-aicommand/releases) 下载 `.eext`，在 EDA 插件管理界面导入、启用并允许外部交互。再从[独立技能仓库最新版本](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/latest)下载技能 ZIP，并将完整的 `ai-command-engine/` 目录安装到 AI 工具的技能目录，并在 EDA 菜单点击“AI 指令引擎”→“启动桥接”。安装扩展不会在本机部署代理或向 AI 工具安装技能；完整步骤见[首次使用指南](https://github.com/quhuii-lgtm/easyeda-aicommand/blob/main/docs/QUICKSTART.md)。
 
 Windows 提供可选的 URL 协议启动方式；注册和生命周期说明见[桥接生命周期文档](https://github.com/quhuii-lgtm/easyeda-aicommand/blob/main/docs/BRIDGE-LIFECYCLE.md)。普通调用不需要 GitHub CLI；只有选择使用可选的问题上报功能时才需要它。SMT 物料查询另需[嘉立创开放平台](https://open.jlc.com)凭据，配置见[物料查询指南](https://github.com/quhuii-lgtm/easyeda-aicommand/blob/main/docs/QUICKSTART.md#5-可选-smt-物料查询)。
 
@@ -196,6 +196,6 @@ Windows 提供可选的 URL 协议启动方式；注册和生命周期说明见[
 
 ## 开发者资料
 
-源码、代理与完整 AI 技能见[仓库](https://github.com/quhuii-lgtm/easyeda-aicommand)。本地回归、构建、宿主验证等信息会在对应版本说明中分别标明。项目更新记录见 [CHANGELOG](https://github.com/quhuii-lgtm/easyeda-aicommand/blob/main/CHANGELOG.md)，构建框架历史见 [SDK changelog](https://github.com/quhuii-lgtm/easyeda-aicommand/blob/main/docs/SDK-CHANGELOG.md)。
+插件源码与代理见[原仓库](https://github.com/quhuii-lgtm/easyeda-aicommand)，完整 AI 技能见[独立技能仓库](https://github.com/quhuii-lgtm/easyeda-aicommand-skill)。本地回归、构建、宿主验证等信息会在对应版本说明中分别标明。项目更新记录见 [CHANGELOG](https://github.com/quhuii-lgtm/easyeda-aicommand/blob/main/CHANGELOG.md)，构建框架历史见 [SDK changelog](https://github.com/quhuii-lgtm/easyeda-aicommand/blob/main/docs/SDK-CHANGELOG.md)。
 
 [Apache-2.0 许可](https://github.com/quhuii-lgtm/easyeda-aicommand/blob/main/LICENSE)。

@@ -1,5 +1,13 @@
 # 更新日志
 
+## 2026-10-28 — Separate source and skill distribution / 源码与技能分开发布
+
+- Move the installable AI skill to [its own repository](https://github.com/quhuii-lgtm/easyeda-aicommand-skill), with independent documentation versions and skill-only ZIPs.
+- Keep plugin source and the proxy here. Exclude skill contents and migration notices from new plugin/source packages; preserve existing tags and release assets.
+- Update installation and migration links. This is a repository/documentation change, not a plugin runtime version change. See [migration notes](docs/REPOSITORY-SPLIT.md).
+- 完整技能迁至独立仓库，使用自己的文档版本和ZIP；原仓库仅维护插件及代理，旧标签和附件保留。此次不修改插件运行程序。详见[中文迁移说明](docs/REPOSITORY-SPLIT_ZH.md)。
+
+
 ## 0.20.50 — 中文正式发布
 
 0.20.50 是中文菜单与文档打包版，核心逻辑继承 0.20.49，本版不新增核心写入功能。以下内容汇总 0.20.11–0.20.49 期间完成的修正和已明确的能力边界；本次发布包尚未在 EDA 中重新安装实测。

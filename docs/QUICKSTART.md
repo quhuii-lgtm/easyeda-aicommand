@@ -1,6 +1,6 @@
 # 首次安装与使用
 
-本指南从一台尚未配置本插件的电脑开始。插件、代理和 AI 技能是三个独立部分；只下载 `.eext` 不会安装 Node.js、代理依赖或 AI 技能。
+本指南从一台尚未配置本插件的电脑开始。插件、代理和 AI 技能是三个独立部分；只下载 `.eext` 不会安装 Node.js、代理依赖或 AI 技能。插件与代理位于 [easyeda-aicommand](https://github.com/quhuii-lgtm/easyeda-aicommand)，完整技能位于[独立技能仓库](https://github.com/quhuii-lgtm/easyeda-aicommand-skill)。
 
 ## 环境与兼容范围
 
@@ -9,15 +9,15 @@
 | EDA | 嘉立创 EDA 专业版桌面客户端。仓库历史操作记录包含 4.1.60；部分指令注明需要 4.2+，不能据此认为所有版本都支持所有指令。插件声明的 `^3.2.0` 是宿主加载范围，不是完整实测兼容矩阵。 |
 | 操作系统 | 以下给出 Windows PowerShell 步骤；macOS/Linux 的完整安装链路尚未验证。 |
 | Node.js / npm | Node.js >=20.17.0，附带 npm。用 `node --version`、`npm --version` 检查。 |
-| Python | 可选，仅 `scripts/eda.py` 助手及其测试需要；已使用 Python 3.12 测试。直接 HTTP 调用不需要 Python。 |
+| Python | 可选，仅独立技能目录中的 `scripts/eda.py` 助手及其测试需要；已使用 Python 3.12 测试。直接 HTTP 调用不需要 Python。 |
 | 网络与账号 | 按 EDA 本身要求登录；下载仓库、插件和 npm 依赖需要联网。普通画图无需配置嘉立创开放平台密钥。 |
 
 ## 1. 下载仓库并安装代理依赖
 
-从 [v0.20.50 正式版源码 ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand/archive/refs/tags/v0.20.50.zip) 下载并解压到固定目录，或检出同一发布 tag：
+从 [v0.20.50 正式版源码 ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/download/plugin-v0.20.50/easyeda-aicommand-plugin-source_v0.20.50.zip) 下载并解压到固定目录，或检出同一发布 tag：
 
 ```powershell
-git clone --branch v0.20.50 --depth 1 https://github.com/quhuii-lgtm/easyeda-aicommand.git
+git clone --branch plugin-v0.20.50 --depth 1 https://github.com/quhuii-lgtm/easyeda-aicommand.git
 Set-Location easyeda-aicommand
 ```
 
@@ -44,16 +44,16 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\bridge\install-url-sch
 
 ## 2. 安装并连接 EDA 插件
 
-1. 从 [v0.20.50 GitHub 正式发布](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.20.50)下载[中文版扩展包 `ai-command-engine_v0.20.50_zh-CN.eext`](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/download/v0.20.50/ai-command-engine_v0.20.50_zh-CN.eext)。中文版嘉立创 EDA 市场包已重新提交，正在审核；公开上架版本仍为 v0.10.143，v0.20.50 尚未确认通过审核或上架。
+1. 从 [v0.20.50 GitHub 正式发布](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/plugin-v0.20.50)下载[中文版扩展包 `ai-command-engine_v0.20.50_zh-CN.eext`](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/download/plugin-v0.20.50/ai-command-engine_v0.20.50_zh-CN.eext)。市场上架状态和版本可能变化，请以[扩展市场页面](https://lceda.cn/page/extensions)实际显示为准。
 2. 在 EDA 的扩展/插件管理界面导入该 `.eext`，启用插件并勾选“允许外部交互”。不同 EDA 版本菜单位置可能不同，以当前客户端的插件导入入口为准。
 3. 新建一个用于试用的空白工程及原理图页，打开该页。
 4. 在“AI 指令引擎”菜单使用“启动桥接”“停止桥接”或“重新连接桥接”。启动已连接的窗口是幂等操作；重新连接会先排空本窗口已有请求，再换连。停止会拒绝排队中的新写请求，交付已派发请求的结果后再断开本窗口。partial 或结果不确定时停止会明确报告并保留写保护。
 
-v0.20.50 附件校验值见 [SHA256SUMS.txt](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/download/v0.20.50/SHA256SUMS.txt)。
+v0.20.50 附件校验值见 [SHA256SUMS.txt](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/download/plugin-v0.20.50/SHA256SUMS.txt)。
 
 可用 PowerShell `Get-FileHash -Algorithm SHA256 -LiteralPath '<下载的 eext 路径>'` 核对。校验值只适用于本次发布附件，不适用于自行重新打包的文件。
 
-v0.20.50 是中文菜单与文档打包版，核心逻辑继承 v0.20.49，本版不新增核心写入操作。类型检查、正式构建和 31 组现有模拟回归通过；运行程序去掉构建路径标记后与市场候选版本一致，manifest 字段无差异。发布包尚未重新安装到 EDA 宿主，不能据此声称完成本版实机验收。代理从 v0.20.50 源码包安装，技能请下载[同版本英文主版、中文备用技能 ZIP `ai-command-engine-skill_en-zh_v0.20.50.zip`](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/download/v0.20.50/ai-command-engine-skill_en-zh_v0.20.50.zip)，与扩展保持同一版本。EDA 4.1.78 下，需要 4.2 的 14 条指令已停用；4.2 的正向执行尚未验收。`routeTrack` 与 SES 段的 1 mil 限制是插件输入策略，不是 SDK 限制；`pcb.connectComponentPadDirect` 暂停，`modifyPour` 改网/改名写前拒绝，自动 SES 回灌禁用。详见 [v0.20.50 版本说明](releases/v0.20.50_ZH.md)。升级后先在试用工程核对；从旧版升级需关闭并重新打开 EDA 窗口。
+v0.20.50 是中文菜单与文档打包版，核心逻辑继承 v0.20.49，本版不新增核心写入操作。类型检查、正式构建和 31 组现有模拟回归通过；运行程序去掉构建路径标记后与市场候选版本一致，manifest 字段无差异。发布包尚未重新安装到 EDA 宿主，不能据此声称完成本版实机验收。代理从 v0.20.50 源码包安装；技能请从[独立技能仓库最新发布](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/latest)下载并安装完整目录。技能使用独立日期版本，与插件版本相互独立。EDA 4.1.78 下，需要 4.2 的 14 条指令已停用；4.2 的正向执行尚未验收。`routeTrack` 与 SES 段的 1 mil 限制是插件输入策略，不是 SDK 限制；`pcb.connectComponentPadDirect` 暂停，`modifyPour` 改网/改名写前拒绝，自动 SES 回灌禁用。详见 [v0.20.50 版本说明](releases/v0.20.50_ZH.md)。升级后先在试用工程核对；从旧版升级需关闭并重新打开 EDA 窗口。
 
 ## 3. 完成第一次只读调用
 
@@ -84,7 +84,7 @@ $result | ConvertTo-Json -Depth 12
 
 ## 4. 安装 AI 技能
 
-唯一维护的技能目录是 `skills/ai-command-engine/`。完整复制目录，保留 `references`、`scripts` 和 `SKILL.md`，不要只复制一个文件，也不要把仓库根目录当成技能安装。
+技能已拆分到独立仓库。请从[最新技能发布](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/latest)下载 ZIP，或从仓库取得 `ai-command-engine/`，然后安装完整目录，保留 `references/`、`scripts/`、`SKILL.md` 和 `SKILL_ZH.md`。不要从插件源码仓库复制旧的 skills/ 目录。
 
 Codex 本地安装位置通常是 `~/.codex/skills/ai-command-engine/`（Windows 为 `%USERPROFILE%\.codex\skills\ai-command-engine\`）。已有同名技能时先备份并比较差异，避免覆盖个人规则。其他 AI 工具通过其技能管理功能导入该目录；不支持技能加载的工具可以读取该目录的 `SKILL.md` 及所引用手册。
 
@@ -97,7 +97,7 @@ Codex 本地安装位置通常是 `~/.codex/skills/ai-command-engine/`（Windows
 可选 Python 助手：
 
 ```powershell
-python skills/ai-command-engine/scripts/eda.py project.getInfo --instance-id '<刚查询并核对的目标 instanceId>'
+python "<已安装的 ai-command-engine 目录>\scripts\eda.py" project.getInfo --instance-id '<刚查询并核对的目标 instanceId>'
 ```
 
 ## 5. 可选 SMT 物料查询

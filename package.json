@@ -13,6 +13,7 @@
 		"node": ">=20.17.0"
 	},
 	"scripts": {
+		"package:source": "node ./build/package-source.mjs",
 		"compile": "rimraf ./dist/ && ts-node ./config/esbuild.prod.ts",
 		"lint": "eslint",
 		"fix": "eslint --fix",
