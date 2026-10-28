@@ -2,6 +2,8 @@
 
 **English:** [README.md](README.md) | **简体中文：** [README_ZH.md](README_ZH.md)
 
+**Repositories and downloads:** [Plugin and Node proxy](https://github.com/quhuii-lgtm/easyeda-aicommand) | [Plugin releases](https://github.com/quhuii-lgtm/easyeda-aicommand/releases) | [Standalone AI skill](https://github.com/quhuii-lgtm/easyeda-aicommand-skill) | [Latest skill release](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/latest)
+
 EasyEDA AI Command is an AI operation extension for JLCEDA Pro. An AI uses concise instructions from the companion skill, and a local proxy forwards them to a connected EDA window. The extension supports schematic, PCB, project, and component-library queries and editing. Always check the results against the project requirements; the user remains responsible for final acceptance.
 
 Describe a task to your AI tool, such as “check this chip’s stock and price breaks,” “group the PCB components by schematic function block,” “combine this symbol and footprint into a library component,” or “place the MCU and its supporting parts, wire them, and organize the net labels.” The AI can inspect the current project, look up components and pins, call drawing commands, and read back the results. The extension brings **parts lookup, custom component libraries, batch drawing, PCB functional grouping, and result checks** into one workflow.
@@ -24,7 +26,7 @@ Inspect the current setup first. Work one step at a time and report the result, 
 1. Confirm that you can access local files and a terminal. Identify the operating system and check Node.js and npm against package.json; the current requirement is Node.js >=20.17.0. If a tool is missing, guide me through installation from its official source and check again. Git is optional; Python is not required for direct HTTP access.
 2. Identify the extension version I have or plan to install and obtain the corresponding complete source repository. Read README.md, docs/QUICKSTART.md, package.json, and package-lock.json. Identify the extension, proxy, and skill sources and versions. If channels differ or matching source is unavailable, explain the mismatch instead of inventing a download URL or assuming compatibility.
 3. Use a fixed source directory. Inspect existing repositories, skills, and settings before making changes; preserve personal edits and credentials. Confirm that package.json, package-lock.json, and bridge/command-proxy.mjs exist.
-4. Run npm ci in that directory and check that dependencies installed successfully. Do not add --omit=dev; installing a downloaded extension does not require a build. Install the entire skills/ai-command-engine/ directory through this AI tool's supported skill mechanism, keeping references/, scripts/, and SKILL.md. The repository-root SKILL.md is only a navigation file. Confirm you can read the installed skill and references/setup.md.
+4. Run npm ci in that directory and check that dependencies installed successfully. Do not add --omit=dev; installing a downloaded extension does not require a build. Install the complete ai-command-engine/ directory from the standalone skill repository or its skill ZIP. Keep references/, scripts/, and SKILL.md. Do not copy a skills/ directory from this plugin repository.
 5. Check http://127.0.0.1:49720/health. If the proxy is absent, start node bridge/command-proxy.mjs and keep it running. If the port is occupied, identify the service first; do not terminate an unknown process or change the port. Check the health response and proxy version. Resolve failures before continuing. Windows URL-based automatic startup is optional.
 6. Guide me through importing or installing the .eext in JLCEDA Pro, enabling it, allowing external interaction, and opening a trial project and document. Explain where I must complete login, verification codes, system confirmations, or manual EDA actions, then wait for me. Do not create or modify a circuit.
 7. Guide me to the Chinese menu “AI 指令引擎 → 启动桥接” (AI Command Engine → Start Bridge). Query GET /connections and verify the extension version and project identity. If no instance appears, inspect extension enablement, external interaction, bridge state, and the proxy. When multiple instances exist, use my intended project instead of choosing the first entry.
@@ -75,7 +77,7 @@ Place components by JLC part number, read their actual pins, edit reference desi
 
 For an existing schematic, preview an organization plan for selected components or regions before rearranging them and rebuilding connections. This is suitable for repeated channels, MCU peripherals, interface modules, and other drawing tasks with clear connection relationships.
 
-Complete component replacement uses a temporary new instance and the companion skill's full verification, deletion, property-update, identity-transfer, and persistence procedure. It does not preserve the old instance ID through an in-place update; follow the [current schematic workflow](skills/ai-command-engine/references/commands-schematic.md#complete-component-replacement) for the exact steps and field sources. The v0.10.143 update commands are removed. If an existing PCB must reflect schematic changes, the user starts and confirms import in the EDA interface; AI only performs read-only checks before and after.
+Complete component replacement uses a temporary new instance and the companion skill's full verification, deletion, property-update, identity-transfer, and persistence procedure. It does not preserve the old instance ID through an in-place update; follow the [current schematic workflow](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/blob/main/ai-command-engine/references/commands-schematic.md#complete-component-replacement) for the exact steps and field sources. The v0.10.143 update commands are removed. If an existing PCB must reflect schematic changes, the user starts and confirms import in the EDA interface; AI only performs read-only checks before and after.
 
 ### 5. Batch wiring, net labels, and connection checks
 
@@ -100,15 +102,15 @@ These capabilities work together with the local proxy and companion AI skill. Th
 
 ### 8. JLC manufacturing checks (DFM)
 
-PCB DFM, SMT, and same-net spacing checks return 18, 7, and 1 check items respectively, along with completeness and geometry coverage information. A DFM run requires explicit outer and inner copper thickness inputs: `outerCopperOz` and `innerCopperOz`. Copper thickness read from the design is reported separately and does not replace these inputs. Results do not constitute manufacturing approval or a complete online DFM service. See [DFM check details](skills/ai-command-engine/references/commands-frequency.md).
+PCB DFM, SMT, and same-net spacing checks return 18, 7, and 1 check items respectively, along with completeness and geometry coverage information. A DFM run requires explicit outer and inner copper thickness inputs: `outerCopperOz` and `innerCopperOz`. Copper thickness read from the design is reported separately and does not replace these inputs. Results do not constitute manufacturing approval or a complete online DFM service. See [DFM check details](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/blob/main/ai-command-engine/references/commands-frequency.md).
 
 ### 9. Pad fanout and local copper generation
 
-`pcb.getFanoutPlan` and `pcb.getAutoCopperPlan` first produce read-only plans. `pcb.fanout` and `pcb.autoCopper` execute the complete plans. Fanout length, track width, via outer diameter, drill diameter, and clearance must all be specified explicitly in mils. Supported geometry, conservative approximations, and rejection conditions are described in [Geometry command details](skills/ai-command-engine/references/commands-pcb-special.md). Historical isolated-project checks cover selected larger-MCU fanout samples; they do not establish a pass for every package shape, every board, or a complete MCU fanout workflow. The separate fill-readback path has also been verified on a specific copper area after save/close/reopen. These records are scoped to those tested objects and do not replace review of the current plan, geometry, or manufacturing output.
+`pcb.getFanoutPlan` and `pcb.getAutoCopperPlan` first produce read-only plans. `pcb.fanout` and `pcb.autoCopper` execute the complete plans. Fanout length, track width, via outer diameter, drill diameter, and clearance must all be specified explicitly in mils. Supported geometry, conservative approximations, and rejection conditions are described in [Geometry command details](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/blob/main/ai-command-engine/references/commands-pcb-special.md). Historical isolated-project checks cover selected larger-MCU fanout samples; they do not establish a pass for every package shape, every board, or a complete MCU fanout workflow. The separate fill-readback path has also been verified on a specific copper area after save/close/reopen. These records are scoped to those tested objects and do not replace review of the current plan, geometry, or manufacturing output.
 
 ### 10. Pad expansion and net-name silkscreen text
 
-Use `pcb.getPadExpansionPlan` / `pcb.expandPads` to plan and perform pad expansion. Use `pcb.getNetSilkscreenPlan` / `pcb.generateNetSilkscreen` to create editable silkscreen text for pad nets. Supported shapes, region splitting and persistence limits for expansion, and placement and clearance limits for net text are described in [Geometry command details](skills/ai-command-engine/references/commands-pcb-special.md). These features do not replace checks of the actual graphics, clearances, or manufacturing output.
+Use `pcb.getPadExpansionPlan` / `pcb.expandPads` to plan and perform pad expansion. Use `pcb.getNetSilkscreenPlan` / `pcb.generateNetSilkscreen` to create editable silkscreen text for pad nets. Supported shapes, region splitting and persistence limits for expansion, and placement and clearance limits for net text are described in [Geometry command details](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/blob/main/ai-command-engine/references/commands-pcb-special.md). These features do not replace checks of the actual graphics, clearances, or manufacturing output.
 
 ## Operation demonstrations
 
@@ -136,7 +138,7 @@ The extension, proxy, and AI skill are installed separately. The proxy runs loca
 
 ## Release status
 
-**v0.20.50 is the Chinese-menu and documentation package built on the v0.20.49 core. It adds no core write operations.** Its changes collect fixes and documented boundaries from v0.20.11–v0.20.49. TypeScript checking, the production build, and 31 existing simulated regression suites passed. Runtime verification found no difference from the marketplace-candidate program after removing build-path markers, and the manifest fields matched. The v0.20.50 package has not been reinstalled for host verification. The Chinese marketplace package has been resubmitted and is under review; the publicly listed marketplace version remains v0.10.143, and approval or listing of v0.20.50 has not been confirmed. v0.20.50 is a formal GitHub release, not a prerelease. See the [v0.20.50 release notes](docs/releases/v0.20.50.md) and [Chinese release notes](docs/releases/v0.20.50_ZH.md).
+The original plugin repository's current formal release is **v0.20.50**. This documentation split does not change plugin functionality or its release version. The v0.20.50 package has not been reinstalled for host verification. The marketplace listing and version can change; check the [marketplace page](https://lceda.cn/page/extensions) for its current status. See the [v0.20.50 release notes](docs/releases/v0.20.50.md) and [Chinese release notes](docs/releases/v0.20.50_ZH.md) for the preserved feature history and verification scope.
 
 Current compatibility and operation boundaries include:
 
@@ -149,23 +151,18 @@ These controls and scoped checks do not mean that all underlying issues, geometr
 
 The “little robot drawing a circuit board” shown on the page is the project logo. The marketplace icon file is `images/logo-marketplace.png`.
 
-<a id="v02050-downloads-and-installation"></a>
-<a id="v0200-downloads-and-installation"></a>
+## Downloads and installation
 
-## v0.20.50 downloads and installation
+The plugin repository provides the extension package and the source needed to run the local Node proxy. Its formal v0.20.50 release contains the plugin package and a source ZIP; the source repository does not provide the complete AI skill. Historical tag archives may contain earlier skill files. The current main-branch source ZIP contains the plugin/proxy and migration documentation only. Local candidate v0.20.124 has not been published and is not a download option.
 
-Download these v0.20.50 formal release assets:
+- [Plugin GitHub Releases](https://github.com/quhuii-lgtm/easyeda-aicommand/releases): extension package and plugin/proxy source ZIP.
+- [Standalone skill repository](https://github.com/quhuii-lgtm/easyeda-aicommand-skill): skill documentation.
+- [Latest standalone skill release](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/latest): download the skill ZIP, then install its complete `ai-command-engine/` directory.
+- [Skill entry on main](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/blob/main/ai-command-engine/SKILL.md).
 
-- [Chinese marketplace extension package: ai-command-engine_v0.20.50_zh-CN.eext](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/download/v0.20.50/ai-command-engine_v0.20.50_zh-CN.eext)
-- [English-primary, Chinese-fallback skill package: ai-command-engine-skill_en-zh_v0.20.50.zip](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/download/v0.20.50/ai-command-engine-skill_en-zh_v0.20.50.zip)
-- [v0.20.50 source ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand/archive/refs/tags/v0.20.50.zip)
+The skill repository uses its own date-based versions; the current split is dated 2026.10.28. Skill versioning is independent of plugin releases. The English `SKILL.md` and Chinese `SKILL_ZH.md` share one installed directory; keep `references/zh/` and scripts. Do not copy a skills directory from the plugin repository.
 
-
-
-The English-first skill ZIP includes `SKILL.md` and English references, plus `SKILL_ZH.md` and `references/zh/` as the Chinese fallback. These are two documentation versions inside one installed skill; do not install the fallback as a second automatic skill. Verify the release assets against the published checksum file.
-
-After extracting the skill ZIP, install the entire `ai-command-engine/` directory in your AI tool’s skill directory, keeping subdirectories such as `references/` and scripts; do not copy only `SKILL.md`. The proxy is not packaged separately. Download the source ZIP, then follow the [installation and usage guide](docs/QUICKSTART.md) to install Node.js dependencies and run the local proxy. The extension, proxy, and skill are separate installs; the extension marketplace will not install the proxy or skill for you.
-
+The extension, proxy, and AI skill are separate installs. Follow the [installation and usage guide](docs/QUICKSTART.md) for the Node.js proxy. The extension marketplace does not install the proxy or AI skill.
 ## First use
 
 Follow the [installation and usage guide](https://github.com/quhuii-lgtm/easyeda-aicommand/blob/main/docs/QUICKSTART.md) to install Node.js and proxy dependencies, install the EDA extension, allow external interaction, perform the first read-only check, and install the AI skill. To run the proxy, execute these commands in the repository directory:
@@ -177,7 +174,7 @@ npm ci
 node bridge/command-proxy.mjs
 ```
 
-If you downloaded a ZIP, run `npm ci` and `node bridge/command-proxy.mjs` from the extracted repository directory. Keep the proxy terminal open. Then download the `.eext` package from [Releases](https://github.com/quhuii-lgtm/easyeda-aicommand/releases), import and enable it in the EDA extension manager, and allow external interaction. Install the complete [`skills/ai-command-engine/`](https://github.com/quhuii-lgtm/easyeda-aicommand/tree/main/skills/ai-command-engine) directory in your AI tool’s skill directory, then use the Chinese EDA menu AI 指令引擎 → 启动桥接. Installing the extension does not deploy the proxy locally or install the skill in your AI tool. See the [first-use guide](https://github.com/quhuii-lgtm/easyeda-aicommand/blob/main/docs/QUICKSTART.md) for complete instructions.
+If you downloaded a ZIP, run `npm ci` and `node bridge/command-proxy.mjs` from the extracted repository directory. Keep the proxy terminal open. Then download the `.eext` package from [Releases](https://github.com/quhuii-lgtm/easyeda-aicommand/releases), import and enable it in the EDA extension manager, and allow external interaction. Download the complete `ai-command-engine/` directory from the [standalone skill repository](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/latest) and install it in your AI tool skill directory, then use the Chinese EDA menu AI 指令引擎 → 启动桥接. Installing the extension does not deploy the proxy locally or install the skill in your AI tool. See the [first-use guide](https://github.com/quhuii-lgtm/easyeda-aicommand/blob/main/docs/QUICKSTART.md) for complete instructions.
 
 Windows users can optionally start the proxy through a URL protocol. See the [bridge lifecycle documentation](https://github.com/quhuii-lgtm/easyeda-aicommand/blob/main/docs/BRIDGE-LIFECYCLE.md) for registration and lifecycle details. GitHub CLI is not needed for ordinary use; it is needed only if you choose the optional issue-reporting feature. SMT parts lookup also requires [JLC Open Platform](https://open.jlc.com) credentials; see the [parts lookup guide](https://github.com/quhuii-lgtm/easyeda-aicommand/blob/main/docs/QUICKSTART.md#5-可选-smt-物料查询).
 
@@ -190,6 +187,6 @@ Windows users can optionally start the proxy through a URL protocol. See the [br
 
 ## Developer resources
 
-See the [repository](https://github.com/quhuii-lgtm/easyeda-aicommand) for source code, the proxy, and the complete AI skill. Local regression, build, and host verification details are stated separately in the relevant release notes. See the project [CHANGELOG](https://github.com/quhuii-lgtm/easyeda-aicommand/blob/main/CHANGELOG.md) and [SDK changelog](https://github.com/quhuii-lgtm/easyeda-aicommand/blob/main/docs/SDK-CHANGELOG.md) for project and build-framework history.
+See the [plugin repository](https://github.com/quhuii-lgtm/easyeda-aicommand) for plugin source and the Node proxy; use the [standalone skill repository](https://github.com/quhuii-lgtm/easyeda-aicommand-skill) for the complete AI skill. Local regression, build, and host verification details are stated separately in the relevant release notes. See the project [CHANGELOG](https://github.com/quhuii-lgtm/easyeda-aicommand/blob/main/CHANGELOG.md) and [SDK changelog](https://github.com/quhuii-lgtm/easyeda-aicommand/blob/main/docs/SDK-CHANGELOG.md) for project and build-framework history.
 
 [Apache-2.0 License](https://github.com/quhuii-lgtm/easyeda-aicommand/blob/main/LICENSE).
