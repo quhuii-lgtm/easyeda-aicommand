@@ -4,9 +4,9 @@ English | [简体中文](QUICKSTART_ZH.md)
 
 Updated: 2026-10-28.
 
-GitHub Release v0.20.124 was published on 2026-10-28. Its three final fixes and help correction have local regression, type-check, and production-config compilation evidence, but have not been installed for EDA host acceptance. Existing major-feature acceptance remains based on installed v0.20.123 and applicable earlier records; see the [release notes](releases/v0.20.124-en.md).
+Compared with v0.20.124, v0.20.125 narrows the extra ARC duplicate/split candidate check and completes the source regression fixtures. Seventeen focused regression groups, type checking, and the production build passed locally; no new EDA host installation was performed. Marketplace status is shown on the [marketplace page](https://jlc-ext.com/item/eda_gdqnxffl/ai-command-engine). See the [release notes](releases/v0.20.125-en.md).
 
-Install the EDA extension, the local Node.js proxy, and the complete AI skill separately. The extension does not install Node.js, proxy dependencies, or the AI skill. The proxy requires Node.js >=20.17.0 and the full source repository; run `npm ci` and `node bridge/command-proxy.mjs` from that source. Download skill v2026.10.28.2 from the [skill release page](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.10.28.2) or the [complete ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.10.28.2/ai-command-engine-skill_v2026.10.28.2_en-zh.zip). Plugin and skill have independent version numbers; compare the skill's relevant command help with the plugin functionality.
+Install the EDA extension, the local Node.js proxy, and the complete AI skill separately. The extension does not install Node.js, proxy dependencies, or the AI skill. The proxy requires Node.js >=20.17.0 and the full source repository; run `npm ci` and `node bridge/command-proxy.mjs` from that source. Download skill v2026.10.28.3 from the [skill release page](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.10.28.3) or the [complete ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.10.28.3/ai-command-engine-skill_v2026.10.28.3_en-zh.zip). Plugin and skill have independent version numbers; compare the skill's relevant command help with the plugin functionality.
 
 ## First-time setup prompt
 
@@ -27,13 +27,13 @@ Use Node.js >=20.17.0. For a ZIP download, run `npm ci` and the proxy command fr
 
 ## 2. Install and connect the EDA extension
 
-Download `ai-command-engine_v0.20.124_en.eext` or `ai-command-engine_v0.20.124_zh-CN.eext` from the [v0.20.124 GitHub Release](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.20.124), then import and enable it in JLCEDA Pro. Allow external interaction and open a trial project. In EDA, choose “AI Command Engine → Start bridge” (“AI 指令引擎 → 启动桥接” in Chinese).
+Download `ai-command-engine_v0.20.125_en.eext` or `ai-command-engine_v0.20.125_zh-CN.eext` from the [v0.20.125 GitHub Release](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.20.125), then import and enable it in JLCEDA Pro. Allow external interaction and open a trial project. Downloaded `.eext` files can be checked against `SHA256SUMS.txt` attached to the same GitHub release. In EDA, choose “AI Command Engine → Start bridge” (“AI 指令引擎 → 启动桥接” in Chinese).
 
 The extension does not install or start the proxy, and it does not install the AI skill.
 
 ## 3. Verify the connection with a read-only call
 
-Check `http://127.0.0.1:49720/health`, then query `GET /connections`. Verify the extension version and project identity. If multiple instances are listed, use the intended instance; do not choose the first automatically.
+Check `http://127.0.0.1:49720/health` and `http://127.0.0.1:49720/connections`. Verify the extension version and project identity. If multiple instances are listed, use the intended instance; do not choose the first automatically.
 
 Send `POST /command` with the selected `instanceId` at the top level and call `project.getInfo`. Confirm the JSON response has `ok: true` and identifies the intended project. HTTP 200 alone does not prove success. Use the selected instance's command help rather than guessing parameters.
 
@@ -41,7 +41,7 @@ Do not create or modify a circuit during this first connection check.
 
 ## 4. Install the AI skill
 
-Download [skill v2026.10.28.2](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.10.28.2) or its [complete ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.10.28.2/ai-command-engine-skill_v2026.10.28.2_en-zh.zip). Extract and install the complete `ai-command-engine/` folder in the AI tool's skill directory. Preserve English `SKILL.md`, alternate Chinese `SKILL_ZH.md`, `references/`, `scripts/`, and `VERSION`. Reload the AI tool, ask it to read `SKILL.md`, and confirm the skill version. Do not install only a repository-root `SKILL.md`; it is a navigation file. The skill version is independent of the plugin version, so check relevant functionality and help rather than matching version numbers.
+Download [skill v2026.10.28.3](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.10.28.3) or its [complete ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.10.28.3/ai-command-engine-skill_v2026.10.28.3_en-zh.zip). Extract and install the complete `ai-command-engine/` folder in the AI tool's skill directory. Preserve English `SKILL.md`, alternate Chinese `SKILL_ZH.md`, `references/`, `scripts/`, and `VERSION`. Reload the AI tool, ask it to read `SKILL.md`, and confirm the skill version. Do not install only a repository-root `SKILL.md`; it is a navigation file. The skill version is independent of the plugin version, so check relevant functionality and help rather than matching version numbers.
 
 Inspect an existing skill directory and preserve personal changes before updating it. Follow the AI tool's own skill installation procedure.
 
@@ -51,14 +51,14 @@ Only `smt.queryComponent` requires credentials from the [JLC Open Platform](http
 
 ## Troubleshooting
 
-- If `/health` is unavailable, check that the proxy is running from the complete source tree and that its dependencies installed successfully.
-- If `/connections` has no intended instance, check extension enablement, external interaction permission, and “Start Bridge” in EDA.
+- If `http://127.0.0.1:49720/health` is unavailable, check that the proxy is running from the complete source tree and that its dependencies installed successfully.
+- If `http://127.0.0.1:49720/connections` has no intended instance, check extension enablement, external interaction permission, and “Start Bridge” in EDA.
 - If the port is occupied, identify the process before taking action. Do not stop an unknown process or change the port automatically.
 - If a command result is uncertain after a timeout, read the current state before retrying a write.
 
 ## Upgrade, stop, and uninstall
 
-Use the same complete source repository and version-matched skill for upgrades. Back up personal changes before replacing files. Stop the proxy from the terminal where it was started. Remove the extension through EDA's extension manager and remove the installed skill through the AI tool's skill manager.
+Use the complete source repository and a compatible standalone skill version for upgrades. Skill and plugin version numbers are independent; check the skill guidance against the installed commands and help. Back up personal changes before replacing files. Stop the proxy from the terminal where it was started. Remove the extension through EDA's extension manager and remove the installed skill through the AI tool's skill manager.
 
 ## Feedback and verification limits
 

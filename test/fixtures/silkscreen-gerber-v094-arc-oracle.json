@@ -1,0 +1,979 @@
+{
+  "observations": [
+    {
+      "layer": "GTO",
+      "segments": [
+        {
+          "local": {
+            "type": "arc"
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                150,
+                460
+              ],
+              "b": [
+                200,
+                510.00000000000006
+              ],
+              "mode": 3,
+              "width": 3.0000000000000004,
+              "token": "G03X508000Y1295400I0J127000D01",
+              "center": [
+                150,
+                510
+              ],
+              "sweepDegrees": 90.00000000000006,
+              "radius": 50
+            }
+          }
+        }
+      ]
+    },
+    {
+      "layer": "GBO",
+      "segments": [
+        {
+          "local": {
+            "type": "arc"
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                210,
+                460
+              ],
+              "b": [
+                260,
+                510.00000000000006
+              ],
+              "mode": 2,
+              "width": 4,
+              "token": "G02X660400Y1295400I127000J0D01",
+              "center": [
+                260,
+                460
+              ],
+              "sweepDegrees": -90,
+              "radius": 50
+            }
+          }
+        }
+      ]
+    },
+    {
+      "layer": "GTO",
+      "segments": [
+        {
+          "local": {
+            "type": "arc"
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                150,
+                560
+              ],
+              "b": [
+                250,
+                560
+              ],
+              "mode": 3,
+              "width": 3.0000000000000004,
+              "token": "G03X635000Y1422400I127000J0D01",
+              "center": [
+                200,
+                560
+              ],
+              "sweepDegrees": 180,
+              "radius": 50
+            }
+          }
+        }
+      ]
+    },
+    {
+      "layer": "GBO",
+      "segments": [
+        {
+          "local": {
+            "type": "arc"
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                170,
+                650
+              ],
+              "b": [
+                230,
+                650
+              ],
+              "mode": 3,
+              "width": 4,
+              "token": "G03X584200Y1651000I76200J-76200D01",
+              "center": [
+                200,
+                620
+              ],
+              "sweepDegrees": 270,
+              "radius": 42.42640687119285
+            }
+          }
+        }
+      ]
+    },
+    {
+      "layer": "GTO",
+      "segments": [
+        {
+          "local": {
+            "type": "line"
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                125,
+                730
+              ],
+              "b": [
+                150,
+                730
+              ],
+              "mode": 1,
+              "width": 3.0000000000000004,
+              "token": "G01X381000Y1854200D01"
+            }
+          }
+        },
+        {
+          "local": {
+            "type": "arc"
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                150,
+                730
+              ],
+              "b": [
+                250,
+                730
+              ],
+              "mode": 2,
+              "width": 3.0000000000000004,
+              "token": "G02X635000Y1854200I127000J-8467D01",
+              "center": [
+                200,
+                726.6665354330709
+              ],
+              "sweepDegrees": -172.37155089704433,
+              "radius": 50.11099665760971
+            }
+          }
+        },
+        {
+          "local": {
+            "type": "line"
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                250,
+                730
+              ],
+              "b": [
+                275,
+                730
+              ],
+              "mode": 1,
+              "width": 3.0000000000000004,
+              "token": "G01X698500Y1854200D01"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "layer": "GBO",
+      "segments": [
+        {
+          "local": {
+            "type": "arc"
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                1050,
+                190
+              ],
+              "b": [
+                1100,
+                240
+              ],
+              "mode": 2,
+              "width": 3.0000000000000004,
+              "token": "G02X2794000Y609600I127000J0D01",
+              "center": [
+                1100,
+                190
+              ],
+              "sweepDegrees": -90,
+              "radius": 50
+            }
+          }
+        }
+      ]
+    },
+    {
+      "layer": "GTO",
+      "segments": [
+        {
+          "local": {
+            "type": "arc"
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                1050,
+                250
+              ],
+              "b": [
+                1100,
+                300
+              ],
+              "mode": 3,
+              "width": 4,
+              "token": "G03X2794000Y762000I0J127000D01",
+              "center": [
+                1050,
+                300
+              ],
+              "sweepDegrees": 90,
+              "radius": 50
+            }
+          }
+        }
+      ]
+    },
+    {
+      "layer": "GBO",
+      "segments": [
+        {
+          "local": {
+            "type": "arc"
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                1150,
+                190
+              ],
+              "b": [
+                1150,
+                290
+              ],
+              "mode": 2,
+              "width": 3.0000000000000004,
+              "token": "G02X2921000Y736600I0J127000D01",
+              "center": [
+                1150,
+                240
+              ],
+              "sweepDegrees": -180,
+              "radius": 50
+            }
+          }
+        }
+      ]
+    },
+    {
+      "layer": "GTO",
+      "segments": [
+        {
+          "local": {
+            "type": "arc"
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                1240,
+                210
+              ],
+              "b": [
+                1240,
+                270
+              ],
+              "mode": 2,
+              "width": 4,
+              "token": "G02X3149600Y685800I-76200J76200D01",
+              "center": [
+                1210,
+                240
+              ],
+              "sweepDegrees": -270,
+              "radius": 42.42640687119285
+            }
+          }
+        }
+      ]
+    },
+    {
+      "layer": "GBO",
+      "segments": [
+        {
+          "local": {
+            "type": "line"
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                1320,
+                165
+              ],
+              "b": [
+                1320,
+                190
+              ],
+              "mode": 1,
+              "width": 3.0000000000000004,
+              "token": "G01X3352800Y482600D01"
+            }
+          }
+        },
+        {
+          "local": {
+            "type": "arc"
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                1320,
+                190
+              ],
+              "b": [
+                1320,
+                290
+              ],
+              "mode": 3,
+              "width": 3.0000000000000004,
+              "token": "G03X3352800Y736600I-8467J127000D01",
+              "center": [
+                1316.666535433071,
+                240
+              ],
+              "sweepDegrees": 172.37155089704459,
+              "radius": 50.11099665760971
+            }
+          }
+        },
+        {
+          "local": {
+            "type": "line"
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                1320,
+                290
+              ],
+              "b": [
+                1320,
+                315
+              ],
+              "mode": 1,
+              "width": 3.0000000000000004,
+              "token": "G01X3352800Y800100D01"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "layer": "GTO",
+      "segments": [
+        {
+          "local": {
+            "type": "arc"
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                390,
+                250
+              ],
+              "b": [
+                340,
+                300
+              ],
+              "mode": 3,
+              "width": 3.0000000000000004,
+              "token": "G03X863600Y762000I-127000J0D01",
+              "center": [
+                340,
+                250
+              ],
+              "sweepDegrees": 90,
+              "radius": 50
+            }
+          }
+        }
+      ]
+    },
+    {
+      "layer": "GBO",
+      "segments": [
+        {
+          "local": {
+            "type": "arc"
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                390,
+                310
+              ],
+              "b": [
+                340,
+                360
+              ],
+              "mode": 2,
+              "width": 4,
+              "token": "G02X863600Y914400I0J127000D01",
+              "center": [
+                390,
+                360
+              ],
+              "sweepDegrees": -90,
+              "radius": 50
+            }
+          }
+        }
+      ]
+    },
+    {
+      "layer": "GTO",
+      "segments": [
+        {
+          "local": {
+            "type": "arc"
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                290,
+                250
+              ],
+              "b": [
+                290,
+                350
+              ],
+              "mode": 3,
+              "width": 3.0000000000000004,
+              "token": "G03X736600Y889000I0J127000D01",
+              "center": [
+                290,
+                300
+              ],
+              "sweepDegrees": 180,
+              "radius": 50
+            }
+          }
+        }
+      ]
+    },
+    {
+      "layer": "GBO",
+      "segments": [
+        {
+          "local": {
+            "type": "arc"
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                200,
+                270
+              ],
+              "b": [
+                200,
+                330
+              ],
+              "mode": 3,
+              "width": 4,
+              "token": "G03X508000Y838200I76200J76200D01",
+              "center": [
+                230,
+                300
+              ],
+              "sweepDegrees": 270,
+              "radius": 42.42640687119285
+            }
+          }
+        }
+      ]
+    },
+    {
+      "layer": "GTO",
+      "segments": [
+        {
+          "local": {
+            "type": "line"
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                120,
+                225
+              ],
+              "b": [
+                120,
+                250
+              ],
+              "mode": 1,
+              "width": 3.0000000000000004,
+              "token": "G01X304800Y635000D01"
+            }
+          }
+        },
+        {
+          "local": {
+            "type": "arc"
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                120,
+                250
+              ],
+              "b": [
+                120,
+                350
+              ],
+              "mode": 2,
+              "width": 3.0000000000000004,
+              "token": "G02X304800Y889000I8467J127000D01",
+              "center": [
+                123.33346456692914,
+                300
+              ],
+              "sweepDegrees": -172.3715508970443,
+              "radius": 50.11099665760971
+            }
+          }
+        },
+        {
+          "local": {
+            "type": "line"
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                120,
+                350
+              ],
+              "b": [
+                120,
+                375
+              ],
+              "mode": 1,
+              "width": 3.0000000000000004,
+              "token": "G01X304800Y952500D01"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "layer": "GBO",
+      "segments": [
+        {
+          "local": {
+            "type": "arc"
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                250,
+                540
+              ],
+              "b": [
+                300,
+                490
+              ],
+              "mode": 2,
+              "width": 3.0000000000000004,
+              "token": "G02X762000Y1244600I0J-127000D01",
+              "center": [
+                250,
+                490
+              ],
+              "sweepDegrees": -90,
+              "radius": 50
+            }
+          }
+        }
+      ]
+    },
+    {
+      "layer": "GTO",
+      "segments": [
+        {
+          "local": {
+            "type": "arc"
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                310,
+                540
+              ],
+              "b": [
+                360,
+                490
+              ],
+              "mode": 3,
+              "width": 4,
+              "token": "G03X914400Y1244600I127000J0D01",
+              "center": [
+                360,
+                540
+              ],
+              "sweepDegrees": 90,
+              "radius": 50
+            }
+          }
+        }
+      ]
+    },
+    {
+      "layer": "GBO",
+      "segments": [
+        {
+          "local": {
+            "type": "arc"
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                250,
+                440
+              ],
+              "b": [
+                350,
+                440
+              ],
+              "mode": 2,
+              "width": 3.0000000000000004,
+              "token": "G02X889000Y1117600I127000J0D01",
+              "center": [
+                300,
+                440
+              ],
+              "sweepDegrees": -180,
+              "radius": 50
+            }
+          }
+        }
+      ]
+    },
+    {
+      "layer": "GTO",
+      "segments": [
+        {
+          "local": {
+            "type": "arc"
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                270,
+                350
+              ],
+              "b": [
+                330,
+                350
+              ],
+              "mode": 2,
+              "width": 4,
+              "token": "G02X838200Y889000I76200J76200D01",
+              "center": [
+                300,
+                380
+              ],
+              "sweepDegrees": -270,
+              "radius": 42.42640687119285
+            }
+          }
+        }
+      ]
+    },
+    {
+      "layer": "GBO",
+      "segments": [
+        {
+          "local": {
+            "type": "line"
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                225,
+                270
+              ],
+              "b": [
+                250,
+                270
+              ],
+              "mode": 1,
+              "width": 3.0000000000000004,
+              "token": "G01X635000Y685800D01"
+            }
+          }
+        },
+        {
+          "local": {
+            "type": "arc"
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                250,
+                270
+              ],
+              "b": [
+                350,
+                270
+              ],
+              "mode": 3,
+              "width": 3.0000000000000004,
+              "token": "G03X889000Y685800I127000J8467D01",
+              "center": [
+                300,
+                273.33346456692914
+              ],
+              "sweepDegrees": 172.37155089704433,
+              "radius": 50.11099665760971
+            }
+          }
+        },
+        {
+          "local": {
+            "type": "line"
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                350,
+                270
+              ],
+              "b": [
+                375,
+                270
+              ],
+              "mode": 1,
+              "width": 3.0000000000000004,
+              "token": "G01X952500Y685800D01"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "layer": "GBO",
+      "segments": [
+        {
+          "local": {
+            "type": "arc"
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                856.3586614173228,
+                542.1275590551181
+              ],
+              "b": [
+                926.3811023622048,
+                532.2866141732284
+              ],
+              "mode": 2,
+              "width": 3.0000000000000004,
+              "token": "G02X2353008Y1352008I76431J-101427D01",
+              "center": [
+                886.4496062992125,
+                502.1956692913386
+              ],
+              "sweepDegrees": -89.9997284912361,
+              "radius": 50.000207839483686
+            }
+          }
+        }
+      ]
+    },
+    {
+      "layer": "GTO",
+      "segments": [
+        {
+          "local": {
+            "type": "arc"
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                904.2767716535434,
+                578.2366141732284
+              ],
+              "b": [
+                974.2992125984252,
+                568.3952755905513
+              ],
+              "mode": 3,
+              "width": 4,
+              "token": "G03X2474720Y1443724I101427J76431D01",
+              "center": [
+                944.2086614173229,
+                608.3275590551182
+              ],
+              "sweepDegrees": 89.99936819317747,
+              "radius": 50.000207839483686
+            }
+          }
+        }
+      ]
+    },
+    {
+      "layer": "GBO",
+      "segments": [
+        {
+          "local": {
+            "type": "arc"
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                916.540157480315,
+                462.26417322834646
+              ],
+              "b": [
+                996.4035433070867,
+                522.4456692913386
+              ],
+              "mode": 2,
+              "width": 3.0000000000000004,
+              "token": "G02X2530865Y1327012I101427J76431D01",
+              "center": [
+                956.4720472440945,
+                492.3551181102362
+              ],
+              "sweepDegrees": -180.00008879466745,
+              "radius": 50.000207839483686
+            }
+          }
+        }
+      ]
+    },
+    {
+      "layer": "GTO",
+      "segments": [
+        {
+          "local": {
+            "type": "arc"
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                986.6763779527558,
+                402.42322834645677
+              ],
+              "b": [
+                1034.5944881889764,
+                438.53188976377953
+              ],
+              "mode": 2,
+              "width": 4,
+              "token": "G02X2627870Y1113871I14998J106714D01",
+              "center": [
+                992.5811023622047,
+                444.4366141732284
+              ],
+              "sweepDegrees": -270.00000000000006,
+              "radius": 42.426293250538826
+            }
+          }
+        }
+      ]
+    },
+    {
+      "layer": "GBO",
+      "segments": [
+        {
+          "local": {
+            "type": "line"
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                998.8826771653544,
+                311.4507874015748
+              ],
+              "b": [
+                1018.8488188976378,
+                326.496062992126
+              ],
+              "mode": 1,
+              "width": 3.0000000000000004,
+              "token": "G01X2587876Y829300D01"
+            }
+          }
+        },
+        {
+          "local": {
+            "type": "arc"
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                1018.8488188976378,
+                326.496062992126
+              ],
+              "b": [
+                1098.7122047244095,
+                386.67755905511814
+              ],
+              "mode": 3,
+              "width": 3.0000000000000004,
+              "token": "G03X2790729Y982161I96331J83192D01",
+              "center": [
+                1056.774409448819,
+                359.2488188976378
+              ],
+              "sweepDegrees": 172.37196956084793,
+              "radius": 50.11081158853725
+            }
+          }
+        },
+        {
+          "local": {
+            "type": "line"
+          },
+          "manufacturing": {
+            "actual": {
+              "a": [
+                1098.7122047244095,
+                386.67755905511814
+              ],
+              "b": [
+                1118.6779527559056,
+                401.7228346456693
+              ],
+              "mode": 1,
+              "width": 3.0000000000000004,
+              "token": "G01X2841442Y1020376D01"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,123 @@
+(PCB ""
+  (parser
+    (host_cad "EasyEDA Pro")
+    (host_version "4.1.78")
+  )
+  (resolution mil 1000)
+  (structure
+    (boundary(path signal 0 0 0 0 1000 1200 1000 1200 0 0 0 )
+    )
+    (via via0
+    )
+    (grid via   0.25)
+    (grid wire   0.25)
+    (grid place   0.25)
+    (rule(clear 6.03))
+    (rule(clear 6.03 (type default_smd)))
+    (rule(clear 6.03 (type smd_smd)))
+    (rule(width 10.05))
+    (layer TopLayer
+      (type signal)
+    )
+    (layer Inner1
+      (type signal)
+    )
+    (layer Inner2
+      (type signal)
+    )
+    (layer BottomLayer
+      (type signal)
+    )
+  )
+
+  (placement
+    (component u1
+      (place u1 0 0 front 0
+      )
+    )
+  )
+  (library
+    (image u1
+      (pin p51611a06d79522747 51611a06d79522747 229.66 300)
+      (pin p51611a06d79522748 51611a06d79522748 170.34 300)
+      (pin p51611a06d79522747 3b6f628633b0709d7 900 329.66)
+      (pin p3b6f628633b0709d8 3b6f628633b0709d8 900 270.34)
+      (pin p51611a06d79522747 b2910000000000017 550 329.66)
+      (pin p3b6f628633b0709d8 b2910000000000018 550 270.34)
+      (pin p51611a06d79522747 b2910000000000047 329.66 700)
+      (pin p51611a06d79522748 b2910000000000048 270.34 700)
+      (pin p51611a06d79522747 b2910000000000057 823.69 717.85)
+      (pin pb2910000000000058 b2910000000000058 776.31 682.15)
+    )
+
+    (padstack via0
+      (shape(circle TopLayer 24))
+      (shape(circle Inner1 24))
+      (shape(circle Inner2 24))
+      (shape(circle BottomLayer 24))
+    )
+
+    (padstack p51611a06d79522747
+      (shape(circle TopLayer 32.13 0 0))
+      (shape(circle Inner1 32.13 0 0))
+      (shape(circle Inner2 32.13 0 0))
+      (shape(circle BottomLayer 32.13 0 0))
+    )
+    (padstack p51611a06d79522748
+      (shape(polygon TopLayer 0.1 -19.06 -13.22 -19.06 13.23 -19.06 13.23 19.06 13.23 19.06 13.23 19.06 -13.22 19.06 -13.22 -19.06 -13.22))
+      (shape(polygon Inner1 0.1 -19.06 -13.22 -19.06 13.23 -19.06 13.23 19.06 13.23 19.06 13.23 19.06 -13.22 19.06 -13.22 -19.06 -13.22))
+      (shape(polygon Inner2 0.1 -19.06 -13.22 -19.06 13.23 -19.06 13.23 19.06 13.23 19.06 13.23 19.06 -13.22 19.06 -13.22 -19.06 -13.22))
+      (shape(polygon BottomLayer 0.1 -19.06 -13.22 -19.06 13.23 -19.06 13.23 19.06 13.23 19.06 13.23 19.06 -13.22 19.06 -13.22 -19.06 -13.22))
+    )
+    (padstack p3b6f628633b0709d8
+      (shape(polygon TopLayer 0.1 13.23 -19.06 -13.22 -19.06 -13.22 -19.06 -13.22 19.06 -13.22 19.06 13.23 19.06 13.23 19.06 13.23 -19.06))
+      (shape(polygon Inner1 0.1 13.23 -19.06 -13.22 -19.06 -13.22 -19.06 -13.22 19.06 -13.22 19.06 13.23 19.06 13.23 19.06 13.23 -19.06))
+      (shape(polygon Inner2 0.1 13.23 -19.06 -13.22 -19.06 -13.22 -19.06 -13.22 19.06 -13.22 19.06 13.23 19.06 13.23 19.06 13.23 -19.06))
+      (shape(polygon BottomLayer 0.1 13.23 -19.06 -13.22 -19.06 -13.22 -19.06 -13.22 19.06 -13.22 19.06 13.23 19.06 13.23 19.06 13.23 -19.06))
+    )
+    (padstack pb2910000000000058
+      (shape(polygon TopLayer 0.1 -7.26 -22.03 -23.18 -0.91 -23.18 -0.91 7.26 22.03 7.26 22.03 23.18 0.91 23.18 0.91 -7.26 -22.03))
+      (shape(polygon Inner1 0.1 -7.26 -22.03 -23.18 -0.91 -23.18 -0.91 7.26 22.03 7.26 22.03 23.18 0.91 23.18 0.91 -7.26 -22.03))
+      (shape(polygon Inner2 0.1 -7.26 -22.03 -23.18 -0.91 -23.18 -0.91 7.26 22.03 7.26 22.03 23.18 0.91 23.18 0.91 -7.26 -22.03))
+      (shape(polygon BottomLayer 0.1 -7.26 -22.03 -23.18 -0.91 -23.18 -0.91 7.26 22.03 7.26 22.03 23.18 0.91 23.18 0.91 -7.26 -22.03))
+    )
+  )
+  (network
+    (net +5V
+      (pins u1-51611a06d79522747 u1-3b6f628633b0709d7)
+    )
+    (net ACE_VIA
+      (pins u1-51611a06d79522748 u1-3b6f628633b0709d8)
+    )
+    (class +5V '+5V'
+      (circuit 
+        (use_via via0)
+      )
+      (rule 
+        (width 20)
+        (clearance 4.02)
+      )
+    )
+    (class ACE_VIA 'ACE_VIA'
+      (circuit 
+        (use_via via0)
+      )
+      (rule 
+        (width 10)
+        (clearance 4.02)
+      )
+    )
+    (class  ''
+      (circuit 
+        (use_via via0)
+      )
+      (rule 
+        (width 10)
+        (clearance 4.02)
+      )
+    )
+  )
+
+  (wiring
+  )
+)

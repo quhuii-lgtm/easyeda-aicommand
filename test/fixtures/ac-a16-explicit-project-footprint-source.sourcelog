@@ -1,0 +1,143 @@
+{"type":"DOCHEAD","ticket":623}||{"docType":"FOOTPRINT","client":"004cb88563f14aac","uuid":"b11cd6ee16e22f94","updateTime":1792485764187,"version":"1787822560694","editVersion":"4.1.78","user":{}}|
+{"type":"META","ticket":560,"id":"META"}||{"title":"R0603","description":"0603;-;1206;1608;0201;SMD;0805;---;2.2KR;R0603;R603;603;插件;Res2;0603R;ESD0603;0603-S;0603-R;LC-0603_R;RES0603;RES0603-SMD-2P;5101%;Res0603;ROHM Semiconductor","tags":["RES-SMD"],"source":"e94539667e9148dd8e214ba75282626c|686654e49d3a4fe8a2fa54d27f61dd2b"}|
+{"type":"DOCHEAD"}||{"docType":"FOOTPRINT","client":"004cb88563f14aac","uuid":"b11cd6ee16e22f94","updateTime":1792485764187,"version":"1787822560694","editVersion":"4.1.78","user":{}}|
+{"type":"LAYER","ticket":16,"id":"[\"LAYER\",15]"}|||
+{"type":"LAYER","ticket":17,"id":"[\"LAYER\",16]"}|||
+{"type":"LAYER","ticket":18,"id":"[\"LAYER\",17]"}|||
+{"type":"LAYER","ticket":19,"id":"[\"LAYER\",18]"}|||
+{"type":"LAYER","ticket":20,"id":"[\"LAYER\",19]"}|||
+{"type":"LAYER","ticket":21,"id":"[\"LAYER\",20]"}|||
+{"type":"LAYER","ticket":22,"id":"[\"LAYER\",21]"}|||
+{"type":"LAYER","ticket":23,"id":"[\"LAYER\",22]"}|||
+{"type":"LAYER","ticket":24,"id":"[\"LAYER\",23]"}|||
+{"type":"LAYER","ticket":25,"id":"[\"LAYER\",24]"}|||
+{"type":"LAYER","ticket":26,"id":"[\"LAYER\",25]"}|||
+{"type":"LAYER","ticket":27,"id":"[\"LAYER\",26]"}|||
+{"type":"LAYER","ticket":28,"id":"[\"LAYER\",27]"}|||
+{"type":"LAYER","ticket":29,"id":"[\"LAYER\",28]"}|||
+{"type":"LAYER","ticket":30,"id":"[\"LAYER\",29]"}|||
+{"type":"LAYER","ticket":31,"id":"[\"LAYER\",30]"}|||
+{"type":"LAYER","ticket":32,"id":"[\"LAYER\",31]"}|||
+{"type":"LAYER","ticket":33,"id":"[\"LAYER\",32]"}|||
+{"type":"LAYER","ticket":34,"id":"[\"LAYER\",33]"}|||
+{"type":"LAYER","ticket":35,"id":"[\"LAYER\",34]"}|||
+{"type":"LAYER","ticket":36,"id":"[\"LAYER\",35]"}|||
+{"type":"LAYER","ticket":37,"id":"[\"LAYER\",36]"}|||
+{"type":"LAYER","ticket":38,"id":"[\"LAYER\",37]"}|||
+{"type":"LAYER","ticket":39,"id":"[\"LAYER\",38]"}|||
+{"type":"LAYER","ticket":40,"id":"[\"LAYER\",39]"}|||
+{"type":"LAYER","ticket":41,"id":"[\"LAYER\",40]"}|||
+{"type":"LAYER","ticket":42,"id":"[\"LAYER\",41]"}|||
+{"type":"LAYER","ticket":43,"id":"[\"LAYER\",42]"}|||
+{"type":"LAYER","ticket":44,"id":"[\"LAYER\",43]"}|||
+{"type":"LAYER","ticket":45,"id":"[\"LAYER\",44]"}|||
+{"type":"LAYER","ticket":46,"id":"[\"LAYER\",45]"}|||
+{"type":"LAYER","ticket":47,"id":"[\"LAYER\",46]"}|||
+{"type":"LAYER","ticket":48,"id":"[\"LAYER\",47]"}|||
+{"type":"LAYER","ticket":54,"id":"[\"LAYER\",53]"}|||
+{"type":"LAYER","ticket":55,"id":"[\"LAYER\",54]"}|||
+{"type":"LAYER","ticket":56,"id":"[\"LAYER\",55]"}|||
+{"type":"LAYER","ticket":57,"id":"[\"LAYER\",56]"}|||
+{"type":"LAYER","ticket":58,"id":"[\"LAYER\",71]"}|||
+{"type":"LAYER","ticket":59,"id":"[\"LAYER\",72]"}|||
+{"type":"LAYER","ticket":60,"id":"[\"LAYER\",73]"}|||
+{"type":"LAYER","ticket":61,"id":"[\"LAYER\",74]"}|||
+{"type":"LAYER","ticket":62,"id":"[\"LAYER\",75]"}|||
+{"type":"LAYER","ticket":63,"id":"[\"LAYER\",76]"}|||
+{"type":"LAYER","ticket":64,"id":"[\"LAYER\",77]"}|||
+{"type":"LAYER","ticket":65,"id":"[\"LAYER\",78]"}|||
+{"type":"LAYER","ticket":66,"id":"[\"LAYER\",79]"}|||
+{"type":"LAYER","ticket":67,"id":"[\"LAYER\",80]"}|||
+{"type":"LAYER","ticket":68,"id":"[\"LAYER\",81]"}|||
+{"type":"LAYER","ticket":69,"id":"[\"LAYER\",82]"}|||
+{"type":"LAYER","ticket":70,"id":"[\"LAYER\",83]"}|||
+{"type":"LAYER","ticket":71,"id":"[\"LAYER\",84]"}|||
+{"type":"LAYER","ticket":72,"id":"[\"LAYER\",85]"}|||
+{"type":"LAYER","ticket":73,"id":"[\"LAYER\",86]"}|||
+{"type":"LAYER","ticket":74,"id":"[\"LAYER\",87]"}|||
+{"type":"LAYER","ticket":75,"id":"[\"LAYER\",88]"}|||
+{"type":"LAYER","ticket":76,"id":"[\"LAYER\",89]"}|||
+{"type":"LAYER","ticket":77,"id":"[\"LAYER\",90]"}|||
+{"type":"LAYER","ticket":78,"id":"[\"LAYER\",91]"}|||
+{"type":"LAYER","ticket":79,"id":"[\"LAYER\",92]"}|||
+{"type":"LAYER","ticket":80,"id":"[\"LAYER\",93]"}|||
+{"type":"LAYER","ticket":81,"id":"[\"LAYER\",94]"}|||
+{"type":"LAYER","ticket":82,"id":"[\"LAYER\",95]"}|||
+{"type":"LAYER","ticket":83,"id":"[\"LAYER\",96]"}|||
+{"type":"LAYER","ticket":84,"id":"[\"LAYER\",97]"}|||
+{"type":"LAYER","ticket":85,"id":"[\"LAYER\",98]"}|||
+{"type":"LAYER","ticket":86,"id":"[\"LAYER\",99]"}|||
+{"type":"LAYER","ticket":87,"id":"[\"LAYER\",100]"}|||
+{"type":"LAYER","ticket":88,"id":"[\"LAYER\",361]"}|||
+{"type":"LAYER","ticket":89,"id":"[\"LAYER\",362]"}|||
+{"type":"LAYER","ticket":90,"id":"[\"LAYER\",363]"}|||
+{"type":"LAYER","ticket":91,"id":"[\"LAYER\",364]"}|||
+{"type":"LAYER","ticket":92,"id":"[\"LAYER\",365]"}|||
+{"type":"LAYER","ticket":93,"id":"[\"LAYER\",366]"}|||
+{"type":"LAYER","ticket":94,"id":"[\"LAYER\",367]"}|||
+{"type":"LAYER","ticket":95,"id":"[\"LAYER\",368]"}|||
+{"type":"LAYER","ticket":96,"id":"[\"LAYER\",369]"}|||
+{"type":"LAYER","ticket":97,"id":"[\"LAYER\",370]"}|||
+{"type":"LAYER","ticket":98,"id":"[\"LAYER\",371]"}|||
+{"type":"LAYER","ticket":99,"id":"[\"LAYER\",372]"}|||
+{"type":"LAYER","ticket":100,"id":"[\"LAYER\",373]"}|||
+{"type":"LAYER","ticket":101,"id":"[\"LAYER\",374]"}|||
+{"type":"LAYER","ticket":102,"id":"[\"LAYER\",375]"}|||
+{"type":"LAYER","ticket":103,"id":"[\"LAYER\",376]"}|||
+{"type":"LAYER","ticket":104,"id":"[\"LAYER\",377]"}|||
+{"type":"LAYER","ticket":105,"id":"[\"LAYER\",378]"}|||
+{"type":"LAYER","ticket":106,"id":"[\"LAYER\",379]"}|||
+{"type":"LAYER","ticket":107,"id":"[\"LAYER\",380]"}|||
+{"type":"LAYER","ticket":108,"id":"[\"LAYER\",381]"}|||
+{"type":"LAYER","ticket":109,"id":"[\"LAYER\",382]"}|||
+{"type":"LAYER","ticket":110,"id":"[\"LAYER\",383]"}|||
+{"type":"LAYER","ticket":111,"id":"[\"LAYER\",384]"}|||
+{"type":"LAYER","ticket":112,"id":"[\"LAYER\",385]"}|||
+{"type":"LAYER","ticket":113,"id":"[\"LAYER\",386]"}|||
+{"type":"LAYER","ticket":114,"id":"[\"LAYER\",387]"}|||
+{"type":"LAYER","ticket":115,"id":"[\"LAYER\",388]"}|||
+{"type":"LAYER","ticket":116,"id":"[\"LAYER\",389]"}|||
+{"type":"LAYER","ticket":117,"id":"[\"LAYER\",390]"}|||
+{"type":"LAYER","ticket":2,"id":"[\"LAYER\",1]"}||{"layerType":"TOP","layerName":"Top Layer","use":true,"show":true,"locked":false,"activeColor":"#FF0000","activateTransparency":1,"inactiveColor":"#7F0000","inactiveTransparency":1}|
+{"type":"LAYER","ticket":3,"id":"[\"LAYER\",2]"}||{"layerType":"BOTTOM","layerName":"Bottom Layer","use":true,"show":true,"locked":false,"activeColor":"#0000FF","activateTransparency":1,"inactiveColor":"#00007F","inactiveTransparency":1}|
+{"type":"LAYER","ticket":4,"id":"[\"LAYER\",3]"}||{"layerType":"TOP_SILK","layerName":"Top Silkscreen Layer","use":true,"show":true,"locked":false,"activeColor":"#FFCC00","activateTransparency":1,"inactiveColor":"#7F6600","inactiveTransparency":1}|
+{"type":"LAYER","ticket":5,"id":"[\"LAYER\",4]"}||{"layerType":"BOT_SILK","layerName":"Bottom Silkscreen Layer","use":true,"show":true,"locked":false,"activeColor":"#66CC33","activateTransparency":1,"inactiveColor":"#336619","inactiveTransparency":1}|
+{"type":"LAYER","ticket":6,"id":"[\"LAYER\",5]"}||{"layerType":"TOP_SOLDER_MASK","layerName":"Top Solder Mask Layer","use":true,"show":true,"locked":false,"activeColor":"#800080","activateTransparency":1,"inactiveColor":"#400040","inactiveTransparency":1}|
+{"type":"LAYER","ticket":7,"id":"[\"LAYER\",6]"}||{"layerType":"BOT_SOLDER_MASK","layerName":"Bottom Solder Mask Layer","use":true,"show":true,"locked":false,"activeColor":"#AA00FF","activateTransparency":1,"inactiveColor":"#55007F","inactiveTransparency":1}|
+{"type":"LAYER","ticket":8,"id":"[\"LAYER\",7]"}||{"layerType":"TOP_PASTE_MASK","layerName":"Top Paste Mask Layer","use":true,"show":true,"locked":false,"activeColor":"#808080","activateTransparency":1,"inactiveColor":"#404040","inactiveTransparency":1}|
+{"type":"LAYER","ticket":9,"id":"[\"LAYER\",8]"}||{"layerType":"BOT_PASTE_MASK","layerName":"Bottom Paste Mask Layer","use":true,"show":true,"locked":false,"activeColor":"#800000","activateTransparency":1,"inactiveColor":"#400000","inactiveTransparency":1}|
+{"type":"LAYER","ticket":10,"id":"[\"LAYER\",9]"}||{"layerType":"TOP_ASSEMBLY","layerName":"Top Assembly Layer","use":true,"show":true,"locked":false,"activeColor":"#33CC99","activateTransparency":1,"inactiveColor":"#19664C","inactiveTransparency":1}|
+{"type":"LAYER","ticket":11,"id":"[\"LAYER\",10]"}||{"layerType":"BOT_ASSEMBLY","layerName":"Bottom Assembly Layer","use":true,"show":true,"locked":false,"activeColor":"#5555FF","activateTransparency":1,"inactiveColor":"#2A2A7F","inactiveTransparency":1}|
+{"type":"LAYER","ticket":12,"id":"[\"LAYER\",11]"}||{"layerType":"OUTLINE","layerName":"Board Outline Layer","use":true,"show":true,"locked":false,"activeColor":"#FF00FF","activateTransparency":1,"inactiveColor":"#7F007F","inactiveTransparency":1}|
+{"type":"LAYER","ticket":13,"id":"[\"LAYER\",12]"}||{"layerType":"MULTI","layerName":"Multi-Layer","use":true,"show":true,"locked":false,"activeColor":"#C0C0C0","activateTransparency":1,"inactiveColor":"#606060","inactiveTransparency":1}|
+{"type":"LAYER","ticket":14,"id":"[\"LAYER\",13]"}||{"layerType":"DOCUMENT","layerName":"Document Layer","use":true,"show":true,"locked":false,"activeColor":"#FFFFFF","activateTransparency":1,"inactiveColor":"#7F7F7F","inactiveTransparency":1}|
+{"type":"LAYER","ticket":15,"id":"[\"LAYER\",14]"}||{"layerType":"MECHANICAL","layerName":"Mechanical Layer","use":true,"show":true,"locked":false,"activeColor":"#F022F0","activateTransparency":1,"inactiveColor":"#781178","inactiveTransparency":1}|
+{"type":"LAYER","ticket":49,"id":"[\"LAYER\",48]"}||{"layerType":"COMPONENT_SHAPE","layerName":"Component Shape Layer","use":true,"show":true,"locked":false,"activeColor":"#00CCCC","activateTransparency":1,"inactiveColor":"#006666","inactiveTransparency":1}|
+{"type":"LAYER","ticket":50,"id":"[\"LAYER\",49]"}||{"layerType":"COMPONENT_MARKING","layerName":"Component Marking Layer","use":true,"show":true,"locked":false,"activeColor":"#66FFCC","activateTransparency":1,"inactiveColor":"#337F66","inactiveTransparency":1}|
+{"type":"LAYER","ticket":51,"id":"[\"LAYER\",50]"}||{"layerType":"PIN_SOLDERING","layerName":"Pin Soldering Layer","use":true,"show":true,"locked":false,"activeColor":"#CC9999","activateTransparency":1,"inactiveColor":"#664C4C","inactiveTransparency":1}|
+{"type":"LAYER","ticket":52,"id":"[\"LAYER\",51]"}||{"layerType":"PIN_FLOATING","layerName":"Pin Floating Layer","use":true,"show":true,"locked":false,"activeColor":"#FF99FF","activateTransparency":1,"inactiveColor":"#7F4C7F","inactiveTransparency":1}|
+{"type":"LAYER","ticket":53,"id":"[\"LAYER\",52]"}||{"layerType":"COMPONENT_MODEL","layerName":"Component Model Layer","use":true,"show":true,"locked":false,"activeColor":"#FFFFFF","activateTransparency":1,"inactiveColor":"#7F7F7F","inactiveTransparency":1}|
+{"type":"ACTIVE_LAYER","ticket":118,"id":"ACTIVE_LAYER"}||{"layerId":1}|
+{"type":"CANVAS","ticket":119,"id":"CANVAS"}||{"originX":0,"originY":0,"unit":"mm","gridXSize":10,"gridYSize":10,"snapXSize":0.03937,"snapYSize":0.03937,"gridType":"NONE","multiGridType":"NONE","highlightValue":0.5}|
+{"type":"FILL","ticket":121,"id":"e1"}||{"groupId":0,"netName":"","layerId":49,"width":0.2,"fillStyle":"SOLID","path":[["CIRCLE",-31.5,-15.75,2.361]],"locked":false,"zIndex":1,"isBridgingCopper":false,"networkList":[],"refs":[]}|
+{"type":"FILL","ticket":122,"id":"e2"}||{"groupId":0,"netName":"","layerId":50,"width":0.2,"fillStyle":"SOLID","path":[[-31.496,-15.748,"L",-31.496,15.748,-19.685,15.748,-19.685,-15.748,-31.496,-15.748]],"locked":false,"zIndex":2,"isBridgingCopper":false,"networkList":[],"refs":[]}|
+{"type":"FILL","ticket":123,"id":"e3"}||{"groupId":0,"netName":"","layerId":50,"width":0.2,"fillStyle":"SOLID","path":[[31.496,-15.748,"L",31.496,15.748,19.685,15.748,19.685,-15.748,31.496,-15.748]],"locked":false,"zIndex":3,"isBridgingCopper":false,"networkList":[],"refs":[]}|
+{"type":"POLY","ticket":124,"id":"e4"}||{"groupId":0,"netName":"","layerId":48,"width":2,"path":[-31.496,-15.748,"L",-31.496,15.748,31.496,15.748,31.496,-15.748,-31.496,-15.748],"locked":false,"zIndex":4,"polyType":"NORMAL"}|
+{"type":"FILL","ticket":125,"id":"e5"}||{"groupId":0,"netName":"","layerId":7,"width":0.2,"fillStyle":"SOLID","path":[[47.048,17.716,"L",15.552,17.716,13.583,15.747,13.583,6.772,28.15,6.772,28.15,-6.22,13.583,-6.22,13.583,-15.749,15.552,-17.717,47.048,-17.717,49.016,-15.749,49.016,15.747,47.048,17.716]],"locked":false,"zIndex":5,"isBridgingCopper":false,"networkList":[],"refs":[]}|
+{"type":"FILL","ticket":126,"id":"e6"}||{"groupId":0,"netName":"","layerId":7,"width":0.2,"fillStyle":"SOLID","path":[[-47.048,-17.716,"L",-15.552,-17.716,-13.583,-15.747,-13.583,-6.772,-28.15,-6.772,-28.15,6.22,-13.583,6.22,-13.583,15.749,-15.552,17.717,-47.048,17.717,-49.016,15.749,-49.016,-15.747,-47.048,-17.716]],"locked":false,"zIndex":6,"isBridgingCopper":false,"networkList":[],"refs":[]}|
+{"type":"POLY","ticket":128,"id":"e12"}||{"groupId":0,"netName":"","layerId":3,"width":6,"path":[-16.78,-26.008,"L",-54.531,-26.008],"locked":false,"zIndex":12,"polyType":"NORMAL"}|
+{"type":"PAD","ticket":130,"id":"e7"}||{"groupId":0,"netName":"","layerId":1,"num":"2","centerX":29.66,"centerY":0,"padAngle":0,"hole":null,"defaultPad":{"padType":"RECT","width":31.751,"height":34.016,"radius":0},"specialPad":[],"padOffsetX":-0.005,"padOffsetY":0,"relativeAngle":90,"plated":true,"padType":"NORMAL","topSolderExpansion":2,"bottomSolderExpansion":2,"topPasteExpansion":-3937.0080000000003,"bottomPasteExpansion":-3937.0080000000003,"locked":false,"zIndex":7,"connectMode":null,"spokeSpace":null,"spokeWidth":null,"spokeAngle":null,"padLen":0}|
+{"type":"PAD","ticket":131,"id":"e8"}||{"groupId":0,"netName":"","layerId":1,"num":"1","centerX":-29.66,"centerY":0,"padAngle":0,"hole":null,"defaultPad":{"padType":"RECT","width":31.751,"height":34.016,"radius":0},"specialPad":[],"padOffsetX":0.005,"padOffsetY":0,"relativeAngle":90,"plated":true,"padType":"NORMAL","topSolderExpansion":2,"bottomSolderExpansion":2,"topPasteExpansion":-3937.0080000000003,"bottomPasteExpansion":-3937.0080000000003,"locked":false,"zIndex":8,"connectMode":null,"spokeSpace":null,"spokeWidth":null,"spokeAngle":null,"padLen":0}|
+{"type":"POLY","ticket":133,"id":"e9"}||{"groupId":0,"netName":"","layerId":3,"width":6,"path":[16.78,-26.008,"L",54.531,-26.008],"locked":false,"zIndex":9,"polyType":"NORMAL"}|
+{"type":"POLY","ticket":134,"id":"e10"}||{"groupId":0,"netName":"","layerId":3,"width":6,"path":[54.531,-26.008,"L",54.531,26.008],"locked":false,"zIndex":10,"polyType":"NORMAL"}|
+{"type":"POLY","ticket":135,"id":"e11"}||{"groupId":0,"netName":"","layerId":3,"width":6,"path":[54.531,26.008,"L",16.78,26.008],"locked":false,"zIndex":11,"polyType":"NORMAL"}|
+{"type":"POLY","ticket":137,"id":"e13"}||{"groupId":0,"netName":"","layerId":3,"width":6,"path":[-54.531,-26.008,"L",-54.531,26.008],"locked":false,"zIndex":13,"polyType":"NORMAL"}|
+{"type":"POLY","ticket":138,"id":"e14"}||{"groupId":0,"netName":"","layerId":3,"width":6,"path":[-54.531,26.008,"L",-16.78,26.008],"locked":false,"zIndex":14,"polyType":"NORMAL"}|
+{"type":"ATTR","ticket":140,"id":"e15"}||{"groupId":0,"parentId":"","layerId":3,"x":null,"y":null,"key":"Footprint","value":"R0603","keyVisible":false,"valueVisible":false,"fontFamily":"default","fontSize":67.5,"strokeWidth":6,"bold":false,"italic":false,"origin":"LEFT_BOTTOM","angle":0,"reverse":false,"expansion":0,"mirror":false,"locked":false,"zIndex":15}|
+{"type":"ATTR","ticket":141,"id":"e16"}||{"groupId":0,"parentId":"","layerId":3,"x":null,"y":null,"key":"Designator","value":"U?","keyVisible":false,"valueVisible":false,"fontFamily":"default","fontSize":67.5,"strokeWidth":6,"bold":false,"italic":false,"origin":"LEFT_BOTTOM","angle":0,"reverse":false,"expansion":0,"mirror":false,"locked":false,"zIndex":16}|
+{"type":"ELE_PLACEHOLDER","ticket":23,"id":"placeholder1"}||{"dataType":"FILL","max":1}|
+{"type":"ELE_PLACEHOLDER","ticket":27,"id":"placeholder2"}||{"dataType":"FILL","max":1}|
+{"type":"ELE_PLACEHOLDER","ticket":30,"id":"placeholder3"}||{"dataType":"POLY","max":4}|
+{"type":"ELE_PLACEHOLDER","ticket":32,"id":"placeholder4"}||{"dataType":"POLY","max":4}|
+{"type":"ELE_PLACEHOLDER","ticket":39,"id":"placeholder5"}||{"dataType":"PAD","max":7}|
+{"type":"ELE_PLACEHOLDER","ticket":42,"id":"placeholder6"}||{"dataType":"ATTR","max":15}

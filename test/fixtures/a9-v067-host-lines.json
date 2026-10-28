@@ -1,0 +1,120 @@
+{
+  "fixtureNotes": {
+    "realHostLines": ["1624f78044d1b706", "8d096c2e6a78fc16", "f8b71575c9f99977"],
+    "syntheticBoundaryLines": ["fixture-layer-status-zero", "fixture-layer-status-unknown"],
+    "realHostLayers": [1, 2],
+    "syntheticBoundaryLayers": [3, 4],
+    "source": "Real LINE fields and layer statuses were copied from ac-20261021-v067-a9-before-via-source.json and ac-20261021-v067-a9-after-skipped-listlayers.json. Synthetic records/layers exist only to test endpoint and layerStatus boundaries."
+  },
+  "documentUuid": "3883ab720d203769",
+  "via": { "net": "+5V", "x": 1100, "y": 400 },
+  "records": [
+    {
+      "type": "DOCHEAD",
+      "ticket": 0,
+      "data": {
+        "docType": "PCB",
+        "uuid": "3883ab720d203769",
+        "client": "host-fixture",
+        "updateTime": 1792571498488,
+        "version": "1792571498488"
+      }
+    },
+    {
+      "type": "LINE",
+      "id": "1624f78044d1b706",
+      "ticket": 154,
+      "data": {
+        "partitionId": "",
+        "groupId": 0,
+        "netName": "+5V",
+        "layerId": 1,
+        "startX": 229.7,
+        "startY": 300,
+        "endX": 229.7,
+        "endY": 400,
+        "width": 10.05,
+        "locked": false,
+        "zIndex": -1
+      }
+    },
+    {
+      "type": "LINE",
+      "id": "8d096c2e6a78fc16",
+      "ticket": 155,
+      "data": {
+        "partitionId": "",
+        "groupId": 0,
+        "netName": "+5V",
+        "layerId": 1,
+        "startX": 229.7,
+        "startY": 400,
+        "endX": 1100,
+        "endY": 400,
+        "width": 10.05,
+        "locked": false,
+        "zIndex": -1
+      }
+    },
+    {
+      "type": "LINE",
+      "id": "f8b71575c9f99977",
+      "ticket": 156,
+      "data": {
+        "partitionId": "",
+        "groupId": 0,
+        "netName": "+5V",
+        "layerId": 2,
+        "startX": 1100,
+        "startY": 400,
+        "endX": 1150,
+        "endY": 400,
+        "width": 10.05,
+        "locked": false,
+        "zIndex": -1
+      }
+    },
+    {
+      "type": "LINE",
+      "id": "fixture-layer-status-zero",
+      "ticket": 157,
+      "data": {
+        "partitionId": "",
+        "groupId": 0,
+        "netName": "+5V",
+        "layerId": 3,
+        "startX": 1100,
+        "startY": 400,
+        "endX": 1200,
+        "endY": 400,
+        "width": 10.05,
+        "locked": false,
+        "zIndex": -1
+      }
+    },
+    {
+      "type": "LINE",
+      "id": "fixture-layer-status-unknown",
+      "ticket": 158,
+      "data": {
+        "partitionId": "",
+        "groupId": 0,
+        "netName": "+5V",
+        "layerId": 4,
+        "startX": 1100,
+        "startY": 400,
+        "endX": 1300,
+        "endY": 400,
+        "width": 10.05,
+        "locked": false,
+        "zIndex": -1
+      }
+    }
+  ],
+  "layers": [
+    { "id": 1, "name": "Top Layer", "type": "SIGNAL", "layerStatus": 1 },
+    { "id": 2, "name": "Bottom Layer", "type": "SIGNAL", "layerStatus": 1 },
+    { "id": 3, "name": "Fixture status zero", "type": "SIGNAL", "layerStatus": 0 },
+    { "id": 4, "name": "Fixture status unknown", "type": "SIGNAL" }
+  ]
+}

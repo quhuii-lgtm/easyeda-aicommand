@@ -1,0 +1,163 @@
+(PCB "PCB1"
+  (parser
+    (host_cad "EasyEDA Pro")
+    (host_version "4.1.78")
+  )
+  (resolution mil 1000)
+  (structure
+    (boundary(path signal 0 0 0 0 1575 1969 1575 1969 0 0 0 )
+    )
+    (via via0
+    )
+    (grid via   0.25)
+    (grid wire   0.25)
+    (grid place   0.25)
+    (rule(clear 6.03))
+    (rule(clear 6.03 (type default_smd)))
+    (rule(clear 6.03 (type smd_smd)))
+    (rule(width 10.05))
+    (layer TopLayer
+      (type signal)
+    )
+    (layer BottomLayer
+      (type signal)
+    )
+  )
+
+  (placement
+    (component u1
+      (place u1 0 0 front 0
+      )
+    )
+  )
+  (library
+    (image u1
+      (pin p33da7c6b5688d29e7 33da7c6b5688d29e7 429.66 400)
+      (pin p33da7c6b5688d29e7 33da7c6b5688d29e8 370.34 400)
+      (pin p33da7c6b5688d29e7 358bd528d0a95db57 679.66 400)
+      (pin p33da7c6b5688d29e7 358bd528d0a95db58 620.34 400)
+      (pin p33da7c6b5688d29e7 abf1cc96022ecf4e7 429.66 650)
+      (pin p33da7c6b5688d29e7 abf1cc96022ecf4e8 370.34 650)
+      (pin p33da7c6b5688d29e7 6c72021830c3f3457 679.66 650)
+      (pin p33da7c6b5688d29e7 6c72021830c3f3458 620.34 650)
+      (pin p33da7c6b5688d29e7 b8522f9f958a6c927 929.66 500)
+      (pin p33da7c6b5688d29e7 b8522f9f958a6c928 870.34 500)
+      (pin paf489c47b0ab1ab af489c47b0ab1ab 300 400)
+    )
+
+    (padstack via0
+      (shape(circle TopLayer 24))
+      (shape(circle BottomLayer 24))
+    )
+
+    (padstack p33da7c6b5688d29e7
+      (shape(polygon TopLayer 0.1 -15.88 -17.01 -15.88 17.01 -15.88 17.01 15.88 17.01 15.88 17.01 15.88 -17.01 15.88 -17.01 -15.88 -17.01))
+    )
+    (padstack paf489c47b0ab1ab
+      (shape(circle TopLayer 24 0 0))
+      (shape(circle BottomLayer 24 0 0))
+    )
+  )
+  (network
+    (net ACE_IN_A
+      (pins u1-33da7c6b5688d29e8 u1-af489c47b0ab1ab)
+    )
+    (net $1N1
+      (pins u1-33da7c6b5688d29e7 u1-358bd528d0a95db58)
+    )
+    (net $1N4
+      (pins u1-abf1cc96022ecf4e7 u1-6c72021830c3f3458)
+    )
+    (net ACE_OUT_A
+      (pins u1-358bd528d0a95db57)
+    )
+    (net ACE_IN_B
+      (pins u1-abf1cc96022ecf4e8)
+    )
+    (net ACE_OUT_B
+      (pins u1-6c72021830c3f3457)
+    )
+    (class  ''
+      (circuit 
+        (use_via via0)
+      )
+      (rule 
+        (width 10)
+        (clearance 4.02)
+      )
+    )
+    (class $1N1 '$1N1'
+      (circuit 
+        (use_via via0)
+      )
+      (rule 
+        (width 10)
+        (clearance 4.02)
+      )
+    )
+    (class ACE_IN_A 'ACE_IN_A'
+      (circuit 
+        (use_via via0)
+      )
+      (rule 
+        (width 10)
+        (clearance 4.02)
+      )
+    )
+    (class ACE_OUT_A 'ACE_OUT_A'
+      (circuit 
+        (use_via via0)
+      )
+      (rule 
+        (width 10)
+        (clearance 4.02)
+      )
+    )
+    (class $1N4 '$1N4'
+      (circuit 
+        (use_via via0)
+      )
+      (rule 
+        (width 10)
+        (clearance 4.02)
+      )
+    )
+    (class ACE_IN_B 'ACE_IN_B'
+      (circuit 
+        (use_via via0)
+      )
+      (rule 
+        (width 10)
+        (clearance 4.02)
+      )
+    )
+    (class ACE_OUT_B 'ACE_OUT_B'
+      (circuit 
+        (use_via via0)
+      )
+      (rule 
+        (width 10)
+        (clearance 4.02)
+      )
+    )
+  )
+
+  (wiring
+    (wire(path TopLayer 12 370.3 400 300 400 )
+      (net ACE_IN_A)
+      (type protect)
+    )
+    (wire(path TopLayer 12 429.7 400 620.3 400 )
+      (net $1N1)
+      (type protect)
+    )
+    (wire(path TopLayer 12 429.7 650 620.3 650 )
+      (net $1N4)
+      (type protect)
+    )
+    (via via0 300 400
+      (net ACE_IN_A)
+      (type protect)
+    )
+  )
+)

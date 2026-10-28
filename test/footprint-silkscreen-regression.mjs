@@ -7,7 +7,7 @@ const engineExports = 'analyzeFootprintSilkscreen, compareFootprintSourceSummari
 const bundled = await build({ stdin: { contents: `import { ${engineExports} } from '../src/engine/footprintSilkscreen.ts'; export { ${engineExports} }`, resolveDir: import.meta.dirname, sourcefile: 'footprint-silkscreen-regression-entry.ts' }, bundle: true, platform: 'node', format: 'esm', write: false, target: 'node24' });
 const { analyzeFootprintSilkscreen, compareFootprintSourceSummaries, findMissingProjectLibraryFootprintUuids, invalidateFootprintSilkscreenSource, projectComponentFootprintSilkUnsupported, readEmbeddedFootprintSources, readProjectLibraryFootprintSource, readProjectLibrarySources, summarizeEmbeddedFootprintSources, summarizeFootprintSourceSet, unavailableFootprintSilkscreen } = await import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString('base64')}`);
 
-const evidenceRoot = resolve(import.meta.dirname, '../../b-development-20261021/evidence');
+const evidenceRoot = resolve(import.meta.dirname, 'fixtures');
 const record = (type, id, ticket, data) => `${JSON.stringify({ type, id, ticket })}||${JSON.stringify(data)}|`;
 const head = uuid => `${JSON.stringify({ type: 'DOCHEAD', ticket: 0 })}||${JSON.stringify({ docType: 'PCB', uuid })}|`;
 const fpHead = uuid => `${JSON.stringify({ type: 'DOCHEAD', ticket: 0 })}||${JSON.stringify({ docType: 'FOOTPRINT', uuid })}|`;
@@ -163,9 +163,9 @@ const mixedPrefixInvalid = run({ fpSources: [{ footprintUuid: 'FP-1', documentSo
 assert.equal(mixedPrefixInvalid.strokes.length, 0, 'an invalid arc rejects the whole path including a valid line prefix');
 
 // Actual imported B2 source and five-pose line/arc-to-manufacturing match evidence.
-const arcPcbEvidence = JSON.parse(readFileSync(resolve(evidenceRoot, 'v094-b2-source.json'), 'utf8')).result.data.source;
-const arcFpEvidence = JSON.parse(readFileSync(resolve(evidenceRoot, 'v094-b2-footprint.json'), 'utf8')).result.data.source;
-const arcVerification = JSON.parse(readFileSync(resolve(evidenceRoot, 'v094-b2-arc-verification.json'), 'utf8'));
+const arcPcbEvidence = readFileSync(resolve(evidenceRoot, 'footprint-v094-board.sourcelog'), 'utf8');
+const arcFpEvidence = readFileSync(resolve(evidenceRoot, 'footprint-v094-library.sourcelog'), 'utf8');
+const arcVerification = JSON.parse(readFileSync(resolve(evidenceRoot, 'footprint-v094-arc-oracle.json'), 'utf8'));
 const arcBoardRecords = parseRecords(arcPcbEvidence);
 const arcGetData = (type, id) => arcBoardRecords.filter(row => row.header.type === type && row.header.id === id).at(-1)?.data;
 const arcComponentIds = [...new Set(arcVerification.observations.map(item => item.componentId))];
@@ -318,9 +318,9 @@ await assert.rejects(() => readProjectLibrarySources({
 }, ['FP-1'], 'host guard'), /shared host budget expired/, 'host.read budget/focus failures propagate instead of becoming SDK unknown');
 
 // Real source and Gerber-path evidence from the accepted B2 fixture (read-only).
-const pcbEvidence = JSON.parse(readFileSync(resolve(evidenceRoot, 'v093-b2-imported-source.json'), 'utf8')).result.data.source;
-const fpEvidence = JSON.parse(readFileSync(resolve(evidenceRoot, 'v093-b2-imported-footprint.json'), 'utf8')).result.data.source;
-const transformEvidence = JSON.parse(readFileSync(resolve(evidenceRoot, 'v093-b2-path-verification.json'), 'utf8'));
+const pcbEvidence = readFileSync(resolve(evidenceRoot, 'footprint-v093-board.sourcelog'), 'utf8');
+const fpEvidence = readFileSync(resolve(evidenceRoot, 'footprint-v093-library.sourcelog'), 'utf8');
+const transformEvidence = JSON.parse(readFileSync(resolve(evidenceRoot, 'footprint-v093-path-oracle.json'), 'utf8'));
 const evidenceRecords = parseRecords(pcbEvidence);
 const getData = (type, id) => evidenceRecords.filter(row => row.header.type === type && row.header.id === id).at(-1)?.data;
 const runtime = [...new Set(transformEvidence.observations.map(({ componentId }) => componentId))].map(id => {

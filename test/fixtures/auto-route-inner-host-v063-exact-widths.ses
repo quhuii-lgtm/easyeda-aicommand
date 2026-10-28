@@ -1,0 +1,103 @@
+(session ac-20261021-a8-native
+  (base_design ac-20261021-a8-native)
+  (placement
+    (resolution mil 1000)
+    (component u1
+      (place u1 0 0 front 0)
+    )
+  )
+  (was_is)
+  (routes
+    (resolution mil 1000)
+    (parser
+      (host_cad "EasyEDA Pro")
+      (host_version 4.1.78)
+    )
+    (library_out
+      (padstack via0
+        (shape
+          (circle TopLayer 24000 0 0)
+        )
+        (shape
+          (circle Inner1 24000 0 0)
+        )
+        (shape
+          (circle Inner2 24000 0 0)
+        )
+        (shape
+          (circle BottomLayer 24000 0 0)
+        )
+      )
+    )
+    (network_out
+      (net +5V
+        (wire
+          (path Inner2 10050
+            962648 292917
+            262648 292917
+          )
+        )
+        (wire
+          (path TopLayer 10050
+            262648 292917
+            255565 300000
+          )
+        )
+        (wire
+          (path TopLayer 10050
+            229660 300000
+            255565 300000
+          )
+        )
+        (wire
+          (path BottomLayer 10050
+            962648 292917
+            955565 300000
+          )
+        )
+        (wire
+          (path BottomLayer 10050
+            929660 300000
+            955565 300000
+          )
+        )
+        (via via0 262648 292917)
+        (via via0 962648 292917)
+      )
+      (net ACE_VIA
+        (wire
+          (path Inner2 7536
+            870340 334572
+            179007 334572
+          )
+        )
+        (wire
+          (path Inner2 7536
+            179007 334572
+            137352 292917
+          )
+        )
+        (wire
+          (path BottomLayer 7536
+            870340 334572
+            870340 300000
+          )
+        )
+        (wire
+          (path TopLayer 7536
+            137352 292917
+            144435 300000
+          )
+        )
+        (wire
+          (path TopLayer 7536
+            170340 300000
+            144435 300000
+          )
+        )
+        (via via0 870340 334572)
+        (via via0 137352 292917)
+      )
+    )
+  )
+)

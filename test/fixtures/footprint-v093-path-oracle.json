@@ -1,0 +1,1287 @@
+{
+  "pathObjects": 40,
+  "centerlineSegments": 60,
+  "maxEndpointErrorMil": 0.00021924437113712578,
+  "observations": [
+    {
+      "componentId": "51611a06d7952274",
+      "localPrimitiveId": "e12",
+      "localLayerId": 3,
+      "gerberLayer": "GTO",
+      "widthMil": 6,
+      "localPoints": [
+        [
+          -16.78,
+          -26.008
+        ],
+        [
+          -54.531,
+          -26.008
+        ]
+      ],
+      "globalPoints": [
+        [
+          183.22,
+          273.992
+        ],
+        [
+          145.469,
+          273.992
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "componentId": "51611a06d7952274",
+      "localPrimitiveId": "e9",
+      "localLayerId": 3,
+      "gerberLayer": "GTO",
+      "widthMil": 6,
+      "localPoints": [
+        [
+          16.78,
+          -26.008
+        ],
+        [
+          40,
+          -26.008
+        ]
+      ],
+      "globalPoints": [
+        [
+          216.78,
+          273.992
+        ],
+        [
+          240,
+          273.992
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "componentId": "51611a06d7952274",
+      "localPrimitiveId": "e10",
+      "localLayerId": 3,
+      "gerberLayer": "GTO",
+      "widthMil": 6,
+      "localPoints": [
+        [
+          54.531,
+          -26.008
+        ],
+        [
+          54.531,
+          26.008
+        ]
+      ],
+      "globalPoints": [
+        [
+          254.531,
+          273.992
+        ],
+        [
+          254.531,
+          326.008
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "componentId": "51611a06d7952274",
+      "localPrimitiveId": "e11",
+      "localLayerId": 3,
+      "gerberLayer": "GTO",
+      "widthMil": 6,
+      "localPoints": [
+        [
+          54.531,
+          26.008
+        ],
+        [
+          16.78,
+          26.008
+        ]
+      ],
+      "globalPoints": [
+        [
+          254.531,
+          326.008
+        ],
+        [
+          216.78,
+          326.008
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "componentId": "51611a06d7952274",
+      "localPrimitiveId": "e13",
+      "localLayerId": 3,
+      "gerberLayer": "GTO",
+      "widthMil": 6,
+      "localPoints": [
+        [
+          -54.531,
+          -26.008
+        ],
+        [
+          -54.531,
+          26.008
+        ]
+      ],
+      "globalPoints": [
+        [
+          145.469,
+          273.992
+        ],
+        [
+          145.469,
+          326.008
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "componentId": "51611a06d7952274",
+      "localPrimitiveId": "e14",
+      "localLayerId": 3,
+      "gerberLayer": "GTO",
+      "widthMil": 6,
+      "localPoints": [
+        [
+          -54.531,
+          26.008
+        ],
+        [
+          -16.78,
+          26.008
+        ]
+      ],
+      "globalPoints": [
+        [
+          145.469,
+          326.008
+        ],
+        [
+          183.22,
+          326.008
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "componentId": "51611a06d7952274",
+      "localPrimitiveId": "e90",
+      "localLayerId": 4,
+      "gerberLayer": "GBO",
+      "widthMil": 3,
+      "localPoints": [
+        [
+          0,
+          70
+        ],
+        [
+          25,
+          70
+        ],
+        [
+          25,
+          85
+        ]
+      ],
+      "globalPoints": [
+        [
+          200,
+          370
+        ],
+        [
+          225,
+          370
+        ],
+        [
+          225,
+          385
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "componentId": "51611a06d7952274",
+      "localPrimitiveId": "e91",
+      "localLayerId": 3,
+      "gerberLayer": "GTO",
+      "widthMil": 4,
+      "localPoints": [
+        [
+          -20,
+          100
+        ],
+        [
+          20,
+          100
+        ],
+        [
+          20,
+          120
+        ],
+        [
+          -20,
+          120
+        ],
+        [
+          -20,
+          100
+        ]
+      ],
+      "globalPoints": [
+        [
+          180,
+          400
+        ],
+        [
+          220,
+          400
+        ],
+        [
+          220,
+          420
+        ],
+        [
+          180,
+          420
+        ],
+        [
+          180,
+          400
+        ]
+      ],
+      "closed": true
+    },
+    {
+      "componentId": "3b6f628633b0709d",
+      "localPrimitiveId": "e12",
+      "localLayerId": 3,
+      "gerberLayer": "GBO",
+      "widthMil": 6,
+      "localPoints": [
+        [
+          -16.78,
+          -26.008
+        ],
+        [
+          -54.531,
+          -26.008
+        ]
+      ],
+      "globalPoints": [
+        [
+          873.992,
+          283.22
+        ],
+        [
+          873.992,
+          245.469
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "componentId": "3b6f628633b0709d",
+      "localPrimitiveId": "e9",
+      "localLayerId": 3,
+      "gerberLayer": "GBO",
+      "widthMil": 6,
+      "localPoints": [
+        [
+          16.78,
+          -26.008
+        ],
+        [
+          40,
+          -26.008
+        ]
+      ],
+      "globalPoints": [
+        [
+          873.992,
+          316.78
+        ],
+        [
+          873.992,
+          340
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "componentId": "3b6f628633b0709d",
+      "localPrimitiveId": "e10",
+      "localLayerId": 3,
+      "gerberLayer": "GBO",
+      "widthMil": 6,
+      "localPoints": [
+        [
+          54.531,
+          -26.008
+        ],
+        [
+          54.531,
+          26.008
+        ]
+      ],
+      "globalPoints": [
+        [
+          873.992,
+          354.531
+        ],
+        [
+          926.008,
+          354.531
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "componentId": "3b6f628633b0709d",
+      "localPrimitiveId": "e11",
+      "localLayerId": 3,
+      "gerberLayer": "GBO",
+      "widthMil": 6,
+      "localPoints": [
+        [
+          54.531,
+          26.008
+        ],
+        [
+          16.78,
+          26.008
+        ]
+      ],
+      "globalPoints": [
+        [
+          926.008,
+          354.531
+        ],
+        [
+          926.008,
+          316.78
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "componentId": "3b6f628633b0709d",
+      "localPrimitiveId": "e13",
+      "localLayerId": 3,
+      "gerberLayer": "GBO",
+      "widthMil": 6,
+      "localPoints": [
+        [
+          -54.531,
+          -26.008
+        ],
+        [
+          -54.531,
+          26.008
+        ]
+      ],
+      "globalPoints": [
+        [
+          873.992,
+          245.469
+        ],
+        [
+          926.008,
+          245.469
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "componentId": "3b6f628633b0709d",
+      "localPrimitiveId": "e14",
+      "localLayerId": 3,
+      "gerberLayer": "GBO",
+      "widthMil": 6,
+      "localPoints": [
+        [
+          -54.531,
+          26.008
+        ],
+        [
+          -16.78,
+          26.008
+        ]
+      ],
+      "globalPoints": [
+        [
+          926.008,
+          245.469
+        ],
+        [
+          926.008,
+          283.22
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "componentId": "3b6f628633b0709d",
+      "localPrimitiveId": "e90",
+      "localLayerId": 4,
+      "gerberLayer": "GTO",
+      "widthMil": 3,
+      "localPoints": [
+        [
+          0,
+          70
+        ],
+        [
+          25,
+          70
+        ],
+        [
+          25,
+          85
+        ]
+      ],
+      "globalPoints": [
+        [
+          970,
+          300
+        ],
+        [
+          970,
+          325
+        ],
+        [
+          985,
+          325
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "componentId": "3b6f628633b0709d",
+      "localPrimitiveId": "e91",
+      "localLayerId": 3,
+      "gerberLayer": "GBO",
+      "widthMil": 4,
+      "localPoints": [
+        [
+          -20,
+          100
+        ],
+        [
+          20,
+          100
+        ],
+        [
+          20,
+          120
+        ],
+        [
+          -20,
+          120
+        ],
+        [
+          -20,
+          100
+        ]
+      ],
+      "globalPoints": [
+        [
+          1000,
+          280
+        ],
+        [
+          1000,
+          320
+        ],
+        [
+          1020,
+          320
+        ],
+        [
+          1020,
+          280
+        ],
+        [
+          1000,
+          280
+        ]
+      ],
+      "closed": true
+    },
+    {
+      "componentId": "b291000000000001",
+      "localPrimitiveId": "e12",
+      "localLayerId": 3,
+      "gerberLayer": "GTO",
+      "widthMil": 6,
+      "localPoints": [
+        [
+          -16.78,
+          -26.008
+        ],
+        [
+          -54.531,
+          -26.008
+        ]
+      ],
+      "globalPoints": [
+        [
+          576.008,
+          283.22
+        ],
+        [
+          576.008,
+          245.469
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "componentId": "b291000000000001",
+      "localPrimitiveId": "e9",
+      "localLayerId": 3,
+      "gerberLayer": "GTO",
+      "widthMil": 6,
+      "localPoints": [
+        [
+          16.78,
+          -26.008
+        ],
+        [
+          40,
+          -26.008
+        ]
+      ],
+      "globalPoints": [
+        [
+          576.008,
+          316.78
+        ],
+        [
+          576.008,
+          340
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "componentId": "b291000000000001",
+      "localPrimitiveId": "e10",
+      "localLayerId": 3,
+      "gerberLayer": "GTO",
+      "widthMil": 6,
+      "localPoints": [
+        [
+          54.531,
+          -26.008
+        ],
+        [
+          54.531,
+          26.008
+        ]
+      ],
+      "globalPoints": [
+        [
+          576.008,
+          354.531
+        ],
+        [
+          523.992,
+          354.531
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "componentId": "b291000000000001",
+      "localPrimitiveId": "e11",
+      "localLayerId": 3,
+      "gerberLayer": "GTO",
+      "widthMil": 6,
+      "localPoints": [
+        [
+          54.531,
+          26.008
+        ],
+        [
+          16.78,
+          26.008
+        ]
+      ],
+      "globalPoints": [
+        [
+          523.992,
+          354.531
+        ],
+        [
+          523.992,
+          316.78
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "componentId": "b291000000000001",
+      "localPrimitiveId": "e13",
+      "localLayerId": 3,
+      "gerberLayer": "GTO",
+      "widthMil": 6,
+      "localPoints": [
+        [
+          -54.531,
+          -26.008
+        ],
+        [
+          -54.531,
+          26.008
+        ]
+      ],
+      "globalPoints": [
+        [
+          576.008,
+          245.469
+        ],
+        [
+          523.992,
+          245.469
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "componentId": "b291000000000001",
+      "localPrimitiveId": "e14",
+      "localLayerId": 3,
+      "gerberLayer": "GTO",
+      "widthMil": 6,
+      "localPoints": [
+        [
+          -54.531,
+          26.008
+        ],
+        [
+          -16.78,
+          26.008
+        ]
+      ],
+      "globalPoints": [
+        [
+          523.992,
+          245.469
+        ],
+        [
+          523.992,
+          283.22
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "componentId": "b291000000000001",
+      "localPrimitiveId": "e90",
+      "localLayerId": 4,
+      "gerberLayer": "GBO",
+      "widthMil": 3,
+      "localPoints": [
+        [
+          0,
+          70
+        ],
+        [
+          25,
+          70
+        ],
+        [
+          25,
+          85
+        ]
+      ],
+      "globalPoints": [
+        [
+          480,
+          300
+        ],
+        [
+          480,
+          325
+        ],
+        [
+          465,
+          325
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "componentId": "b291000000000001",
+      "localPrimitiveId": "e91",
+      "localLayerId": 3,
+      "gerberLayer": "GTO",
+      "widthMil": 4,
+      "localPoints": [
+        [
+          -20,
+          100
+        ],
+        [
+          20,
+          100
+        ],
+        [
+          20,
+          120
+        ],
+        [
+          -20,
+          120
+        ],
+        [
+          -20,
+          100
+        ]
+      ],
+      "globalPoints": [
+        [
+          450,
+          280
+        ],
+        [
+          450,
+          320
+        ],
+        [
+          430,
+          320
+        ],
+        [
+          430,
+          280
+        ],
+        [
+          450,
+          280
+        ]
+      ],
+      "closed": true
+    },
+    {
+      "componentId": "b291000000000004",
+      "localPrimitiveId": "e12",
+      "localLayerId": 3,
+      "gerberLayer": "GBO",
+      "widthMil": 6,
+      "localPoints": [
+        [
+          -16.78,
+          -26.008
+        ],
+        [
+          -54.531,
+          -26.008
+        ]
+      ],
+      "globalPoints": [
+        [
+          283.22,
+          726.008
+        ],
+        [
+          245.469,
+          726.008
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "componentId": "b291000000000004",
+      "localPrimitiveId": "e9",
+      "localLayerId": 3,
+      "gerberLayer": "GBO",
+      "widthMil": 6,
+      "localPoints": [
+        [
+          16.78,
+          -26.008
+        ],
+        [
+          40,
+          -26.008
+        ]
+      ],
+      "globalPoints": [
+        [
+          316.78,
+          726.008
+        ],
+        [
+          340,
+          726.008
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "componentId": "b291000000000004",
+      "localPrimitiveId": "e10",
+      "localLayerId": 3,
+      "gerberLayer": "GBO",
+      "widthMil": 6,
+      "localPoints": [
+        [
+          54.531,
+          -26.008
+        ],
+        [
+          54.531,
+          26.008
+        ]
+      ],
+      "globalPoints": [
+        [
+          354.531,
+          726.008
+        ],
+        [
+          354.531,
+          673.992
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "componentId": "b291000000000004",
+      "localPrimitiveId": "e11",
+      "localLayerId": 3,
+      "gerberLayer": "GBO",
+      "widthMil": 6,
+      "localPoints": [
+        [
+          54.531,
+          26.008
+        ],
+        [
+          16.78,
+          26.008
+        ]
+      ],
+      "globalPoints": [
+        [
+          354.531,
+          673.992
+        ],
+        [
+          316.78,
+          673.992
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "componentId": "b291000000000004",
+      "localPrimitiveId": "e13",
+      "localLayerId": 3,
+      "gerberLayer": "GBO",
+      "widthMil": 6,
+      "localPoints": [
+        [
+          -54.531,
+          -26.008
+        ],
+        [
+          -54.531,
+          26.008
+        ]
+      ],
+      "globalPoints": [
+        [
+          245.469,
+          726.008
+        ],
+        [
+          245.469,
+          673.992
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "componentId": "b291000000000004",
+      "localPrimitiveId": "e14",
+      "localLayerId": 3,
+      "gerberLayer": "GBO",
+      "widthMil": 6,
+      "localPoints": [
+        [
+          -54.531,
+          26.008
+        ],
+        [
+          -16.78,
+          26.008
+        ]
+      ],
+      "globalPoints": [
+        [
+          245.469,
+          673.992
+        ],
+        [
+          283.22,
+          673.992
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "componentId": "b291000000000004",
+      "localPrimitiveId": "e90",
+      "localLayerId": 4,
+      "gerberLayer": "GTO",
+      "widthMil": 3,
+      "localPoints": [
+        [
+          0,
+          70
+        ],
+        [
+          25,
+          70
+        ],
+        [
+          25,
+          85
+        ]
+      ],
+      "globalPoints": [
+        [
+          300,
+          630
+        ],
+        [
+          325,
+          630
+        ],
+        [
+          325,
+          615
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "componentId": "b291000000000004",
+      "localPrimitiveId": "e91",
+      "localLayerId": 3,
+      "gerberLayer": "GBO",
+      "widthMil": 4,
+      "localPoints": [
+        [
+          -20,
+          100
+        ],
+        [
+          20,
+          100
+        ],
+        [
+          20,
+          120
+        ],
+        [
+          -20,
+          120
+        ],
+        [
+          -20,
+          100
+        ]
+      ],
+      "globalPoints": [
+        [
+          280,
+          600
+        ],
+        [
+          320,
+          600
+        ],
+        [
+          320,
+          580
+        ],
+        [
+          280,
+          580
+        ],
+        [
+          280,
+          600
+        ]
+      ],
+      "closed": true
+    },
+    {
+      "componentId": "b291000000000005",
+      "localPrimitiveId": "e12",
+      "localLayerId": 3,
+      "gerberLayer": "GBO",
+      "widthMil": 6,
+      "localPoints": [
+        [
+          -16.78,
+          -26.008
+        ],
+        [
+          -54.531,
+          -26.008
+        ]
+      ],
+      "globalPoints": [
+        [
+          770.9468910192679,
+          710.6724562568186
+        ],
+        [
+          740.7976018794726,
+          687.9533373178057
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "componentId": "b291000000000005",
+      "localPrimitiveId": "e9",
+      "localLayerId": 3,
+      "gerberLayer": "GBO",
+      "widthMil": 6,
+      "localPoints": [
+        [
+          16.78,
+          -26.008
+        ],
+        [
+          40,
+          -26.008
+        ]
+      ],
+      "globalPoints": [
+        [
+          797.7490987364552,
+          730.8693684338014
+        ],
+        [
+          816.2934152797533,
+          744.8435132713919
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "componentId": "b291000000000005",
+      "localPrimitiveId": "e10",
+      "localLayerId": 3,
+      "gerberLayer": "GBO",
+      "widthMil": 6,
+      "localPoints": [
+        [
+          54.531,
+          -26.008
+        ],
+        [
+          54.531,
+          26.008
+        ]
+      ],
+      "globalPoints": [
+        [
+          827.8983878762505,
+          753.5884873728143
+        ],
+        [
+          859.2023981205274,
+          712.0466626821943
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "componentId": "b291000000000005",
+      "localPrimitiveId": "e11",
+      "localLayerId": 3,
+      "gerberLayer": "GBO",
+      "widthMil": 6,
+      "localPoints": [
+        [
+          54.531,
+          26.008
+        ],
+        [
+          16.78,
+          26.008
+        ]
+      ],
+      "globalPoints": [
+        [
+          859.2023981205274,
+          712.0466626821943
+        ],
+        [
+          829.0531089807321,
+          689.3275437431814
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "componentId": "b291000000000005",
+      "localPrimitiveId": "e13",
+      "localLayerId": 3,
+      "gerberLayer": "GBO",
+      "widthMil": 6,
+      "localPoints": [
+        [
+          -54.531,
+          -26.008
+        ],
+        [
+          -54.531,
+          26.008
+        ]
+      ],
+      "globalPoints": [
+        [
+          740.7976018794726,
+          687.9533373178057
+        ],
+        [
+          772.1016121237495,
+          646.4115126271857
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "componentId": "b291000000000005",
+      "localPrimitiveId": "e14",
+      "localLayerId": 3,
+      "gerberLayer": "GBO",
+      "widthMil": 6,
+      "localPoints": [
+        [
+          -54.531,
+          26.008
+        ],
+        [
+          -16.78,
+          26.008
+        ]
+      ],
+      "globalPoints": [
+        [
+          772.1016121237495,
+          646.4115126271857
+        ],
+        [
+          802.2509012635448,
+          669.1306315661986
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "componentId": "b291000000000005",
+      "localPrimitiveId": "e90",
+      "localLayerId": 4,
+      "gerberLayer": "GTO",
+      "widthMil": 3,
+      "localPoints": [
+        [
+          0,
+          70
+        ],
+        [
+          25,
+          70
+        ],
+        [
+          25,
+          85
+        ]
+      ],
+      "globalPoints": [
+        [
+          842.1270516206433,
+          644.0955142966895
+        ],
+        [
+          862.0929393718257,
+          659.1408898754908
+        ],
+        [
+          871.1201647191065,
+          647.1613572247813
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "componentId": "b291000000000005",
+      "localPrimitiveId": "e91",
+      "localLayerId": 3,
+      "gerberLayer": "GBO",
+      "widthMil": 4,
+      "localPoints": [
+        [
+          -20,
+          100
+        ],
+        [
+          20,
+          100
+        ],
+        [
+          20,
+          120
+        ],
+        [
+          -20,
+          120
+        ],
+        [
+          -20,
+          100
+        ]
+      ],
+      "globalPoints": [
+        [
+          844.208792114259,
+          608.1001485322297
+        ],
+        [
+          876.1542125161507,
+          632.1727494583117
+        ],
+        [
+          888.1905129791916,
+          616.2000392573659
+        ],
+        [
+          856.2450925772999,
+          592.1274383312839
+        ],
+        [
+          844.208792114259,
+          608.1001485322297
+        ]
+      ],
+      "closed": true
+    }
+  ]
+}

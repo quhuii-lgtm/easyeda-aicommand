@@ -5,8 +5,8 @@ import { resolve } from 'node:path'
 import { installVirtualClock } from './virtual-clock.mjs'
 
 const root = resolve(import.meta.dirname, '..')
-const fixture = JSON.parse(readFileSync(resolve(root, 'test/fixtures/drawwire-t-host-0.20.53.json'), 'utf8'))
-const fixture054 = JSON.parse(readFileSync(resolve(root, 'test/fixtures/drawwire-t-host-0.20.54.json'), 'utf8'))
+const fixture = JSON.parse(readFileSync(resolve(root, 'test/fixtures/drawwire-t-host-0.20.53-fixture.json'), 'utf8'))
+const fixture054 = JSON.parse(readFileSync(resolve(root, 'test/fixtures/drawwire-t-host-0.20.54-fixture.json'), 'utf8'))
 // The SDK getter resolved null from the default source LINE style in the accepted host path;
 // listWires omits lineType, so this is an explicit derived getter value, not a listWires field.
 for (const item of [fixture, fixture054]) {
@@ -33,8 +33,8 @@ async function loadFrozenDrawWire(file, sourcefile) {
   const mod = await import(`data:text/javascript;base64,${Buffer.from(baselineBuilt.outputFiles[0].text).toString('base64')}`)
   return mod.schematicCommands.find(item => item.name === 'schematic.drawWire').handler
 }
-const baselineDrawWire = await loadFrozenDrawWire('../feedback-fix-20261020/before/schematic-v053-host-recheck.ts', 'schematic-v053-host-recheck.ts')
-const baseline054DrawWire = await loadFrozenDrawWire('../feedback-fix-20261020/before/schematic-v054-host-recheck.ts', 'schematic-v054-host-recheck.ts')
+const baselineDrawWire = await loadFrozenDrawWire('test/fixtures/regression-baselines/schematic-v053-host-recheck.ts', 'schematic-v053-host-recheck.ts')
+const baseline054DrawWire = await loadFrozenDrawWire('test/fixtures/regression-baselines/schematic-v054-host-recheck.ts', 'schematic-v054-host-recheck.ts')
 
 function transformSource(source, mutate) {
   return source.split(/\r?\n/).map(row => {
@@ -131,11 +131,11 @@ async function captureError(fn, label = 'scenario') {
 // Current handler must accept only the host-proven default unnamed one-WIRE T split.
 {
   const original = makeHarness()
-  const baselineError = await captureError(() => runVirtual(() => original.run(fixture.request.params, baselineDrawWire)), 'pre-fix 0.20.53 host sample')
+  const baselineError = await captureError(() => runVirtual(() => original.run(fixture.params, baselineDrawWire)), 'pre-fix 0.20.53 host sample')
   assert.equal(baselineError.cause?.partial, true, 'the frozen pre-fix source reproduces the reported T false partial')
 
   const h = makeHarness()
-  const result = await runVirtual(() => h.run(fixture.request.params))
+  const result = await runVirtual(() => h.run(fixture.params))
   assert.equal(h.createCalls, 1)
   assert.deepEqual(result.primitiveIds, ['5e3cd439d885acd8'])
   assert.deepEqual(result.created, [])
@@ -146,11 +146,11 @@ async function captureError(fn, label = 'scenario') {
 // 0.20.54 host evidence proves the default getter value is null even though listWires omits it.
 {
   const original = makeHarness({ harnessFixture: fixture054 })
-  const baselineError = await captureError(() => runVirtual(() => original.run(fixture054.request.params, baseline054DrawWire)), 'pre-fix 0.20.54 host sample')
+  const baselineError = await captureError(() => runVirtual(() => original.run(fixture054.params, baseline054DrawWire)), 'pre-fix 0.20.54 host sample')
   assert.equal(baselineError.cause?.partial, true, 'the frozen 0.20.54 source reproduces its T false partial')
 
   const h = makeHarness({ harnessFixture: fixture054 })
-  const result = await runVirtual(() => h.run(fixture054.request.params))
+  const result = await runVirtual(() => h.run(fixture054.params))
   const wireId = fixture054.beforeModel[0].primitiveId
   const relevance = sourceRows(fixture054.beforeSource).find(row => row.header.type === 'ATTR' && row.data?.key === 'Relevance' && row.data?.parentId === wireId)
   assert.equal(h.createCalls, 1)
@@ -162,7 +162,7 @@ async function captureError(fn, label = 'scenario') {
 
 for (const lineTypeBehavior of ['zero', 'undefined', 'throw']) {
   const h = makeHarness({ harnessFixture: fixture054, lineTypeBehavior })
-  const error = await captureError(() => runVirtual(() => h.run(fixture054.request.params)), `lineType getter ${lineTypeBehavior}`)
+  const error = await captureError(() => runVirtual(() => h.run(fixture054.params)), `lineType getter ${lineTypeBehavior}`)
   assert.equal(h.createCalls, 1, `${lineTypeBehavior}: exactly one write attempt`)
   assert.equal(error.cause?.partial, true, `${lineTypeBehavior}: no false success`)
 }
@@ -174,7 +174,7 @@ for (const lineTypeBehavior of ['zero', 'undefined', 'throw']) {
   const afterSource = translateTargetSource(fixture.afterSource, dx, dy)
   const beforeModel = structuredClone(fixture.beforeModel).map(wire => ({ ...wire, line: wire.line.map((value, index) => value + (index % 2 === 0 ? dx : dy)) }))
   const afterModel = structuredClone(fixture.afterModel).map(wire => ({ ...wire, line: wire.line.map((value, index) => value + (index % 2 === 0 ? dx : dy)) }))
-  const params = structuredClone(fixture.request.params)
+  const params = structuredClone(fixture.params)
   params.points = params.points.map(point => [point[0] + dx, point[1] + dy])
   const h = makeHarness({ beforeSource: withRemoteWire(beforeSource), afterSource: withRemoteWire(afterSource), beforeModel: [...beforeModel, { primitiveId: 'wire-remote', net: '', line: [600, 500, 700, 500], color: null, lineWidth: null, lineType: 0 }], afterModel: [...afterModel, { primitiveId: 'wire-remote', net: '', line: [600, 500, 700, 500], color: null, lineWidth: null, lineType: 0 }] })
   const result = await runVirtual(() => h.run(params))
@@ -216,13 +216,13 @@ const negativeMutations = [
 ]
 for (const [label, mutateAfter] of negativeMutations) {
   const h = makeHarness({ mutateAfter })
-  const error = await captureError(() => runVirtual(() => h.run(fixture.request.params)), label)
+  const error = await captureError(() => runVirtual(() => h.run(fixture.params)), label)
   assert.equal(h.createCalls, 1, `${label}: no write retry`)
   assert.equal(error.cause?.partial, true, `${label}: explicit partial result`)
 }
 {
   const h = makeHarness({ retainOldNet: true })
-  const error = await captureError(() => runVirtual(() => h.run(fixture.request.params)))
+  const error = await captureError(() => runVirtual(() => h.run(fixture.params)))
   assert.equal(h.createCalls, 1, 'old NET retained: no write retry')
   assert.equal(error.cause?.partial, true)
 }
@@ -233,7 +233,7 @@ for (const [label, changeOldNet] of [
 ]) {
   const beforeSource = transformSource(fixture.beforeSource, row => row.type === 'ATTR' && row.data?.key === 'NET' ? { ...row, data: changeOldNet(row.data) } : row)
   const h = makeHarness({ beforeSource })
-  const error = await captureError(() => runVirtual(() => h.run(fixture.request.params)), label)
+  const error = await captureError(() => runVirtual(() => h.run(fixture.params)), label)
   assert.equal(error.cause?.partial, true, `${label}: must not enter the exception`)
 }
 {
@@ -242,7 +242,7 @@ for (const [label, changeOldNet] of [
   const beforeModel = [...structuredClone(fixture.beforeModel), { primitiveId: 'wire-remote', net: '', line: [600, 500, 700, 500], color: null, lineWidth: null, lineType: 0 }]
   const afterModel = [...structuredClone(fixture.afterModel), { primitiveId: 'wire-remote', net: '', line: [600, 500, 701, 500], color: null, lineWidth: null, lineType: 0 }]
   const h = makeHarness({ beforeSource, afterSource, beforeModel, afterModel })
-  const error = await captureError(() => runVirtual(() => h.run(fixture.request.params)), 'changed distant wire must not be accepted')
+  const error = await captureError(() => runVirtual(() => h.run(fixture.params)), 'changed distant wire must not be accepted')
   assert.equal(error.cause?.partial, true)
 }
 {
@@ -251,18 +251,18 @@ for (const [label, changeOldNet] of [
   const afterSource = `${fixture.afterSource}\n${branchCrossing}`
   const crossing = { primitiveId: 'wire-cross', net: '', line: [130, 180, 180, 180], color: null, lineWidth: null, lineType: 0 }
   const h = makeHarness({ beforeSource, afterSource, beforeModel: [...structuredClone(fixture.beforeModel), crossing], afterModel: [...structuredClone(fixture.afterModel), crossing] })
-  const error = await captureError(() => runVirtual(() => h.run(fixture.request.params)), 'branch contacting another wire must not enter exception')
+  const error = await captureError(() => runVirtual(() => h.run(fixture.params)), 'branch contacting another wire must not enter exception')
   assert.equal(error.cause?.partial, true)
 }
 {
   const h = makeHarness({ mode: 'reject' })
-  const error = await captureError(() => runVirtual(() => h.run(fixture.request.params)))
+  const error = await captureError(() => runVirtual(() => h.run(fixture.params)))
   assert.equal(h.createCalls, 1)
   assert.equal(error.cause?.partial, true)
 }
 {
   const h = makeHarness()
-  const error = await captureError(() => runVirtual(() => h.run({ ...fixture.request.params, net: 'SIG' })), 'named T must not enter exception')
+  const error = await captureError(() => runVirtual(() => h.run({ ...fixture.params, net: 'SIG' })), 'named T must not enter exception')
   assert.equal(h.createCalls, 1)
   assert.equal(error.cause?.partial, true)
 }
@@ -271,7 +271,7 @@ for (const [label, changeOldNet] of [
   const secondLine = `{"type":"LINE","ticket":39,"id":"old-line-second"}||{"fillColor":null,"fillStyle":null,"strokeColor":null,"strokeStyle":null,"strokeWidth":null,"startX":160,"startY":-150,"endX":220,"endY":-150,"lineGroup":"5e3cd439d885acd8"}|`
   const beforeModel = [{ ...fixture.beforeModel[0], line: [100, 150, 160, 150, 160, 150, 220, 150] }]
   const h = makeHarness({ beforeSource: `${beforeSource}\n${secondLine}`, beforeModel })
-  const error = await captureError(() => runVirtual(() => h.run(fixture.request.params)), 'existing multi-LINE WIRE must not enter exception')
+  const error = await captureError(() => runVirtual(() => h.run(fixture.params)), 'existing multi-LINE WIRE must not enter exception')
   assert.equal(h.createCalls, 1)
   assert.equal(error.cause?.partial, true)
 }

@@ -1,0 +1,57 @@
+[
+  {
+    "id": 1,
+    "name": "Top Layer",
+    "type": "SIGNAL",
+    "color": "#ff0000",
+    "transparency": 0,
+    "inactiveColor": "#7f0000",
+    "inactiveTransparency": 50,
+    "layerStatus": 1,
+    "locked": false
+  },
+  {
+    "id": 2,
+    "name": "Bottom Layer",
+    "type": "SIGNAL",
+    "color": "#0000ff",
+    "transparency": 0,
+    "inactiveColor": "#00007f",
+    "inactiveTransparency": 50,
+    "layerStatus": 1,
+    "locked": false
+  },
+  {
+    "id": 15,
+    "name": "Inner1",
+    "type": "SIGNAL",
+    "color": "#999966",
+    "transparency": 0,
+    "inactiveColor": "#4c4c33",
+    "inactiveTransparency": 50,
+    "layerStatus": 1,
+    "locked": false
+  },
+  {
+    "id": 16,
+    "name": "Inner2",
+    "type": "SIGNAL",
+    "color": "#008000",
+    "transparency": 0,
+    "inactiveColor": "#004000",
+    "inactiveTransparency": 50,
+    "layerStatus": 1,
+    "locked": false
+  },
+  {
+    "id": 17,
+    "name": "Inner3",
+    "type": "SIGNAL",
+    "color": "#00ff00",
+    "transparency": 0,
+    "inactiveColor": "#007f00",
+    "inactiveTransparency": 50,
+    "layerStatus": 0,
+    "locked": false
+  }
+]
