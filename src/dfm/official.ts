@@ -2,11 +2,23 @@ import type { CheckResult, SmtStandardConfig, ViolationCoord } from './vendor/ty
 import { SHARED_DFM_STANDARDS } from './vendor/types';
 import { isPackageSmaller, JLC_MATERIAL_STANDARDS, JLC_SUPPORTED_MATERIALS, normalizeEiaPackage, resolveMaxSize, resolveMinTrace, resolveOuterCopper, resolveSlotWithCopper, resolveViaSpec, SMT_STANDARDS } from './vendor/standards';
 import { checkSameNetPadSpacing } from './vendor/pad-spacing';
+import { parseSourceLog } from '../pcb/sourcelog';
+import type { ISourceRecord } from '../pcb/sourcelog';
 
 export type DfmKind = 'pcb' | 'smt' | 'spacing';
 export type { CheckResult } from './vendor/types';
 export interface DfmIssue { code: string; message: string; item?: number }
-export interface ReportedCopperLayer { layerId: number; thicknessMil: number | null; copperOz: number | null }
+export interface ReportedCopperLayer {
+	layerId: number;
+	/** Legacy fields remain null until the current host's LAYER_PHYS unit is verified. */
+	thicknessMil: null;
+	copperOz: null;
+	rawThickness: unknown;
+	sourceType: 'LAYER_PHYS' | null;
+	sourceId: string | null;
+	sourceTicket: number | null;
+	unitStatus: 'unconfirmed';
+}
 export interface ReportedCopperDifference { layerId: number; requestedOz: number; reportedOz: number }
 export interface ReportedCopper { status: 'available' | 'partial' | 'unavailable'; layers: ReportedCopperLayer[]; matchesTarget: boolean | null; differences: ReportedCopperDifference[]; messages: string[] }
 export interface DfmRun { results: CheckResult[]; expectedCount: number; issues: DfmIssue[]; coverage: string[]; upstreamPassed: boolean; complete: boolean; passed: boolean; reportedCopper?: ReportedCopper }
@@ -16,7 +28,7 @@ export { JLC_SUPPORTED_MATERIALS };
 export const DFM_COVERAGE = ['线距只检查正间隙 Line；不含接触、重叠、Arc 和 Polyline。', '长圆及不等边焊环按最大轴近似。', '同网焊盘间距使用胶囊体及内接圆近似。', '部分检查按有效铜图元层数启发式判定；第12/13项按设计铜层数分档。', 'EIA/BGA 按封装名称启发式识别。', '定位 ID 使用两组列表索引辅助匹配。'];
 const CHECK_FAILURE = (number: number, item: string, message: string): CheckResult => ({ number, item, actualValue: message, standardValue: '完整读取后检查', result: 'warning' });
 const READ_METHOD = /^(get|fetch|query|find)/i;
-async function readReportedCopper(sdk: any, outerCopperOz: number, innerCopperOz: number): Promise<ReportedCopper> {
+async function readReportedCopper(sdk: any): Promise<ReportedCopper> {
 	const messages: string[] = [];
 	let rows: any[];
 	try {
@@ -43,45 +55,109 @@ async function readReportedCopper(sdk: any, outerCopperOz: number, innerCopperOz
 		if (typeof source !== 'string' || source.length === 0) throw new Error('PCB 源为空');
 	}
 	catch (error) {
-		return { status: 'unavailable', layers: [...requiredIds].map(layerId => ({ layerId, thicknessMil: null, copperOz: null })), matchesTarget: null, differences: [], messages: [...messages, '可选 LAYER_PHYS 对照读取失败：' + String(error)] };
+		return { status: 'unavailable', layers: [...requiredIds].map(layerId => ({ layerId, thicknessMil: null, copperOz: null, rawThickness: null, sourceType: null, sourceId: null, sourceTicket: null, unitStatus: 'unconfirmed' })), matchesTarget: null, differences: [], messages: [...messages, '可选 LAYER_PHYS 对照读取失败：' + String(error)] };
 	}
-	const phys = new Map<number, number>();
-	for (const line of source.split(/\r?\n/)) {
-		if (!line.includes('LAYER_PHYS')) continue;
-		const separator = line.indexOf('||');
-		if (separator < 0) { messages.push('发现无法解析的 LAYER_PHYS 记录'); continue; }
-		try {
-			const outer = JSON.parse(line.slice(0, separator));
-			let innerRaw = line.slice(separator + 2);
-			if (innerRaw.endsWith('|')) innerRaw = innerRaw.slice(0, -1);
-			const inner = JSON.parse(innerRaw);
-			const parsedId = typeof outer.id === 'string' ? JSON.parse(outer.id) : outer.id;
-			const layerId = Number(Array.isArray(parsedId) ? parsedId[1] : parsedId);
-			if (Number.isInteger(layerId) && (layerId === 1 || layerId === 2 || (layerId >= 15 && layerId <= 44))) phys.set(layerId, Number(inner?.thickness));
+	let sourceRecords: ISourceRecord[];
+	try {
+		const document = parseSourceLog(source);
+		if (document.docType !== 'PCB')
+			return { status: 'unavailable', layers: [...requiredIds].map(layerId => ({ layerId, thicknessMil: null, copperOz: null, rawThickness: null, sourceType: null, sourceId: null, sourceTicket: null, unitStatus: 'unconfirmed' })), matchesTarget: null, differences: [], messages: [...messages, `源码类型为 ${document.docType}，不是 PCB`] };
+		sourceRecords = document.records.filter(record => record.header.type === 'LAYER_PHYS');
+	}
+	catch (error) {
+		return { status: 'unavailable', layers: [...requiredIds].map(layerId => ({ layerId, thicknessMil: null, copperOz: null, rawThickness: null, sourceType: null, sourceId: null, sourceTicket: null, unitStatus: 'unconfirmed' })), matchesTarget: null, differences: [], messages: [...messages, 'LAYER_PHYS 源码日志无法解析：' + String(error)] };
+	}
+	const latestPhys = new Map<number, ISourceRecord>();
+	let malformedRecordCount = 0;
+	const identityEncoding = new Map<number, string>();
+	const conflictedLayerIds = new Set<number>();
+	const canonicalize = (value: unknown): string => {
+		if (Array.isArray(value)) return `[${value.map(canonicalize).join(',')}]`;
+		if (value && typeof value === 'object') {
+			const object = value as Record<string, unknown>;
+			return `{${Object.keys(object).sort().map(key => `${JSON.stringify(key)}:${canonicalize(object[key])}`).join(',')}}`;
 		}
-		catch { messages.push('发现无法解析的 LAYER_PHYS 记录'); }
-	}
-	const layers: ReportedCopperLayer[] = [];
-	const differences: ReportedCopperDifference[] = [];
-	let validCount = 0;
-	let allValid = true;
-	for (const layerId of [...requiredIds].sort((a, b) => a === 1 ? -1 : b === 1 ? 1 : a === 2 ? 1 : b === 2 ? -1 : a - b)) {
-		const thickness = phys.get(layerId);
-		const validThickness = thickness !== undefined && Number.isFinite(thickness) && thickness > 0 && Math.round((thickness / 1.378) * 2) / 2 > 0;
-		const copperOz = validThickness ? Math.round((thickness! / 1.378) * 2) / 2 : null;
-		layers.push({ layerId, thicknessMil: validThickness ? thickness! : null, copperOz });
-		if (!validThickness) {
-			allValid = false;
-			messages.push(`设计铜层 ${layerId} 缺少有效 LAYER_PHYS 铜厚`);
+		return JSON.stringify(value) ?? String(value);
+	};
+	for (const record of sourceRecords) {
+		let parsedId: unknown;
+		try { parsedId = typeof record.header.id === 'string' ? JSON.parse(record.header.id) : record.header.id; }
+		catch { malformedRecordCount++; messages.push(`LAYER_PHYS ${String(record.header.id)} 的层ID无法解析`); continue; }
+		if (!Array.isArray(parsedId) || parsedId.length !== 2 || parsedId[0] !== 'LAYER_PHYS') {
+			malformedRecordCount++;
+			messages.push(`LAYER_PHYS ${String(record.header.id)} 的层ID结构无法确认`);
 			continue;
 		}
-		validCount++;
-		const requestedOz = layerId === 1 || layerId === 2 ? outerCopperOz : innerCopperOz;
-		if (copperOz !== requestedOz) differences.push({ layerId, requestedOz, reportedOz: copperOz! });
+		const layerId = parsedId[1];
+		if (typeof layerId !== 'number' || !Number.isFinite(layerId) || !Number.isInteger(layerId)) {
+			malformedRecordCount++;
+			messages.push(`LAYER_PHYS ${String(record.header.id)} 的层ID无效`);
+			continue;
+		}
+		if (!(layerId === 1 || layerId === 2 || (layerId >= 15 && layerId <= 44))) continue;
+		const ticket = record.header.ticket;
+		if (typeof ticket !== 'number' || !Number.isFinite(ticket)) {
+			malformedRecordCount++;
+			conflictedLayerIds.add(layerId);
+			messages.push(`设计铜层 ${layerId} 的 LAYER_PHYS ticket 无效`);
+			continue;
+		}
+		const encodedId = String(record.header.id);
+		const priorEncoding = identityEncoding.get(layerId);
+		if (priorEncoding !== undefined && priorEncoding !== encodedId) {
+			conflictedLayerIds.add(layerId);
+			messages.push(`设计铜层 ${layerId} 存在不同编码的 LAYER_PHYS 身份`);
+		}
+		else identityEncoding.set(layerId, encodedId);
+		const current = latestPhys.get(layerId);
+		if (!current || ticket > Number(current.header.ticket)) latestPhys.set(layerId, record);
+		else if (ticket === current.header.ticket && canonicalize(record.data) !== canonicalize(current.data)) {
+			conflictedLayerIds.add(layerId);
+			messages.push(`设计铜层 ${layerId} 存在相同 ticket 但数据不同的 LAYER_PHYS 记录`);
+		}
 	}
-	const matchesTarget = allValid && !identityUnknown ? differences.length === 0 : null;
-	const status = identityUnknown ? 'partial' : allValid ? 'available' : validCount > 0 ? 'partial' : 'unavailable';
-	return { status, layers, matchesTarget, differences, messages };
+	const phys = new Map<number, ISourceRecord>();
+	for (const [layerId, record] of latestPhys) {
+		if (record.data === '') {
+			messages.push(`设计铜层 ${layerId} 的最高 ticket LAYER_PHYS 记录为删除标记`);
+			continue;
+		}
+		phys.set(layerId, record);
+	}
+	const layers: ReportedCopperLayer[] = [];
+	let rawValueCount = 0;
+	let allValuesValid = true;
+	for (const layerId of [...requiredIds].sort((a, b) => a === 1 ? -1 : b === 1 ? 1 : a === 2 ? 1 : b === 2 ? -1 : a - b)) {
+		const record = phys.get(layerId);
+		if (!record) {
+			allValuesValid = false;
+			layers.push({ layerId, thicknessMil: null, copperOz: null, rawThickness: null, sourceType: null, sourceId: null, sourceTicket: null, unitStatus: 'unconfirmed' });
+			messages.push(`设计铜层 ${layerId} 缺少有效 LAYER_PHYS 记录`);
+			continue;
+		}
+		const data = record.data && typeof record.data === 'object' && !Array.isArray(record.data) ? record.data as Record<string, unknown> : {};
+		const rawThickness = Object.hasOwn(data, 'thickness') ? data.thickness : null;
+		const validRawThickness = typeof rawThickness === 'number' && Number.isFinite(rawThickness) && rawThickness > 0;
+		if (validRawThickness) rawValueCount++;
+		else {
+			allValuesValid = false;
+			messages.push(`设计铜层 ${layerId} 的 LAYER_PHYS thickness 缺失或不是有限正数；原始值已保留`);
+		}
+		layers.push({
+			layerId,
+			thicknessMil: null,
+			copperOz: null,
+			rawThickness,
+			sourceType: 'LAYER_PHYS',
+			sourceId: String(record.header.id),
+			sourceTicket: typeof record.header.ticket === 'number' && Number.isFinite(record.header.ticket) ? record.header.ticket : null,
+			unitStatus: 'unconfirmed',
+		});
+		if (conflictedLayerIds.has(layerId)) allValuesValid = false;
+	}
+	messages.push('当前 EDA 版本的 LAYER_PHYS thickness 单位未经验证；仅报告原始值，不换算为 mil/oz，也不与下单铜厚目标比较。');
+	const status = !identityUnknown && allValuesValid && layers.length === requiredIds.size && malformedRecordCount === 0 && conflictedLayerIds.size === 0 ? 'available' : rawValueCount > 0 || phys.size > 0 || malformedRecordCount > 0 || conflictedLayerIds.size > 0 ? 'partial' : 'unavailable';
+	return { status, layers, matchesTarget: null, differences: [], messages };
 }
 function makeSdkFacade(sdk: any, issues: DfmIssue[]): any {
  const cache = new WeakMap<object, any>();
@@ -127,7 +203,7 @@ export async function runOfficialDfm(kind: DfmKind, params: DfmParams = {}, sdk:
  const uniqueIssues = Array.from(new Map(issues.map(issue => [JSON.stringify(issue), issue])).values());
  const complete = results.length === expectedCount && uniqueIssues.length === 0;
  const upstreamPassed = results.length === expectedCount && results.every(r => r.result === 'success');
- const reportedCopper = kind === 'pcb' ? await readReportedCopper(sdk, params.outerCopperOz!, params.innerCopperOz!) : undefined;
+	const reportedCopper = kind === 'pcb' ? await readReportedCopper(sdk) : undefined;
  return {results, expectedCount, issues: uniqueIssues, coverage: DFM_COVERAGE.slice(), upstreamPassed, complete, passed: complete && upstreamPassed, ...(reportedCopper ? { reportedCopper } : {})};
 }
 function createChecks(sdk: any, params: DfmParams, issues: DfmIssue[]) {

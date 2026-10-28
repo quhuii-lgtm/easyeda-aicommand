@@ -42,7 +42,7 @@ async function waitForHealth(port, timeoutMs = 5000) {
 	throw new Error('isolated proxy did not become healthy')
 }
 
-async function checkPendingPartialProtection() {
+async function checkPartialDoesNotPersist() {
 	const port = await reservePort()
 	const proxy = spawn(process.execPath, [path.join(ROOT, 'bridge', 'command-proxy.mjs')], {
 		env: { ...process.env, PORT: String(port), PROXY_IDLE_MS: '0', PROXY_CMD_TIMEOUT_MS: '3000' },
@@ -71,6 +71,9 @@ async function checkPendingPartialProtection() {
 					result: { ok: false, cmd: message.cmd, error: { message: 'mock partial', cause: { partial: true, source: 'test' } } },
 				}))
 			}
+			else {
+				ws.send(JSON.stringify({ type: 'result', id: message.id, result: { ok: true, cmd: message.cmd } }))
+			}
 		})
 		const post = async cmd => {
 			const response = await fetch(`http://127.0.0.1:${port}/command`, {
@@ -82,7 +85,7 @@ async function checkPendingPartialProtection() {
 		}
 		const first = await post('editor.openDocument')
 		const second = await post('editor.closeDocument')
-		check('R1 pending partial prevents the next write from reaching the extension', first?.ok === false && second?.ok === false && /写保护生效/.test(second?.error?.message ?? '') && JSON.stringify(received) === JSON.stringify(['editor.openDocument']), JSON.stringify({ first: first?.error?.message, second: second?.error?.message, received }))
+		check('R1 partial remains an error and does not block the next independent write', first?.ok === false && first?.error?.cause?.partial === true && second?.ok === true && JSON.stringify(received) === JSON.stringify(['editor.openDocument', 'editor.closeDocument']), JSON.stringify({ first: first?.error?.message, second: second?.error?.message, received }))
 	}
 	finally {
 		try { ws?.close() }
@@ -306,7 +309,7 @@ async function checkBackupIdentityThrottle() {
 async function main() {
 	await checkMacroPartialPropagation()
 	await checkBackupIdentityThrottle()
-	await checkPendingPartialProtection()
+	await checkPartialDoesNotPersist()
 	await checkConcurrentWriteQueue()
 	const failed = checks.filter(item => !item.passed)
 	console.log(`\nRegression: ${checks.length - failed.length}/${checks.length} passed${failed.length ? `; failed: ${failed.map(item => item.name).join(', ')}` : ''}`)

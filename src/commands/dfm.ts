@@ -184,7 +184,7 @@ export const dfmCommands: ICommandDef[] = [
 		{ name: 'thickness', type: 'number', required: true, description: '板厚，单位 mm，必须为有限正数' },
 		{ name: 'outerCopperOz', type: 'number', required: true, description: '下单外层铜厚，当前提供 1 或 2 oz；无默认值' },
 		{ name: 'innerCopperOz', type: 'number', required: true, description: '下单内层铜厚，本次提供 1 oz；无默认值' },
-	], '执行基于嘉立创下单检查器 v1.0.4 的 PCB DFM 检查；结果 complete 与 passed 分开，覆盖边界见 coverage。'),
+	], '执行基于嘉立创下单检查器 v1.0.4 的 PCB DFM 检查；结果 complete 与 passed 分开，覆盖边界见 coverage。reportedCopper 保留图纸原始厚度记录；当前源码厚度单位未确认，不换算为 mil/oz，也不据此判断下单铜重一致。输入铜重仍用于本次制造能力检查。'),
 	def('pcb.runSmtDfm', 'smt', [
 		{ name: 'standard', type: 'string', required: true, description: 'SMT标准：economy（经济型）或 standard（标准型）' },
 		{ name: 'thickness', type: 'number', required: true, description: 'PCB板厚，单位 mm，必须为有限正数' },

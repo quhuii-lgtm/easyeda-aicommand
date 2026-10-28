@@ -44,7 +44,7 @@ export interface HostRouteSnapshot {
 	lines: HostRouteLine[]
 	vias: HostRouteVia[]
 	arcs: HostRouteArc[]
-	layers: Array<{ id: number, name: string, type: string }>
+	layers: Array<{ id: number, name: string, type: string, layerStatus?: unknown }>
 	source: string
 	sourceRecords: HostSourceRecord[]
 }
@@ -118,7 +118,7 @@ export async function readRouteSnapshot(
 		const id = finite(layer?.id, 'layer.id', '图层')
 		if (typeof layer?.name !== 'string' || !layer.name.trim() || typeof layer?.type !== 'string' || !layer.type.trim())
 			throw new Error(`PCB 图层 ${id} 读回缺少有效 name/type`)
-		return { id, name: layer.name, type: layer.type }
+		return { id, name: layer.name, type: layer.type, ...(Object.prototype.hasOwnProperty.call(layer, 'layerStatus') ? { layerStatus: layer.layerStatus } : {}) }
 	})
 	const layerById = new Map(layers.map(layer => [layer.id, layer]))
 

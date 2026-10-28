@@ -7,7 +7,7 @@ const plugins = [{
 	name: 'mock-dfm-dependencies',
 	setup(build) {
 		build.onResolve({ filter: /^\.\.\/engine\/registry$/ }, () => ({ path: 'registry', namespace: 'mock' }));
-		build.onResolve({ filter: /^\.\.\/dfm\/official$/ }, () => ({ path: 'official', namespace: 'mock' }));
+		build.onResolve({ filter: /^(?:\.\.\/dfm\/official|\.\/official)$/ }, () => ({ path: 'official', namespace: 'mock' }));
 		build.onResolve({ filter: /^\.\.\/pcb\/sourcelog$/ }, () => ({ path: 'sourcelog', namespace: 'mock' }));
 		build.onLoad({ filter: /.*/, namespace: 'mock' }, args => {
 			if (args.path === 'registry') return { contents: `
@@ -230,7 +230,7 @@ await test('iframe report failure clears a previously rendered report and uses t
 	const savedReports = [];
 	const window = { eda: { jlcOrderDfm: {
 		getContext: async () => ({ documentUuid: 'pcb-A', sessionToken: 'session-1', initialKind: 'pcb', materials: ['FR4'], upstream: completeReport(2).data.upstream }),
-		runCheck: async (_kind, inputs) => { runInputs.push({ ...inputs }); if (++runs === 1) return completeReport(2); if (runs === 2) return completeReport(1); throw new Error('mock read failure'); },
+		runCheck: async (_kind, inputs) => { runInputs.push({ ...inputs }); if (++runs === 1) return completeReport(2); if (runs === 2) { const report = completeReport(1); report.data.reportedCopper = { status: 'available', layers: [{ layerId: 1, rawThickness: 1.379, unitStatus: 'unconfirmed', thicknessMil: null, copperOz: null }], matchesTarget: null, differences: [], messages: ['原始厚度单位未确认'] }; return report; } throw new Error('mock read failure'); },
 		saveReport: async (extension, content) => { savedReports.push({ extension, content }); return { saved: true, fileName: `report.${extension}` }; },
 	} } };
 	vm.runInNewContext(script, { window, document, Date, console, Blob });
@@ -272,7 +272,13 @@ await test('iframe report failure clears a previously rendered report and uses t
 	jsonEqual(runInputs[1], { material: 'FR4', thickness: 1.6, outerCopperOz: 1, innerCopperOz: 1 });
 	assert.ok(allText(document.getElementById('report')).includes('下单外层铜厚目标：1 oz'));
 	assert.ok(allText(document.getElementById('report')).includes('0.10 mm 线宽/线距目标'));
-	assert.ok(allText(document.getElementById('report')).includes('图层 1 与目标差异：要求 1 oz，图纸记录 0.5 oz'));
+	assert.ok(allText(document.getElementById('report')).includes('原始厚度 1.379（单位未确认）'));
+	assert.ok(allText(document.getElementById('report')).includes('图纸铜厚与下单目标一致：无法对照'));
+	assert.ok(!allText(document.getElementById('report')).includes('1.379 mil'));
+	document.getElementById('export-txt').click();
+	for (let i = 0; i < 20; i++) await Promise.resolve();
+	assert.match(savedReports[2].content, /原始厚度 1\.379（单位未确认）/);
+	assert.doesNotMatch(savedReports[2].content, /1\.379 mil/);
 	document.getElementById('run').click();
 	for (let i = 0; i < 20; i++) await Promise.resolve();
 	assert.equal(document.getElementById('report').children.length, 0);

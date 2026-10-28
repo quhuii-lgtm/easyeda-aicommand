@@ -16,6 +16,7 @@
  * - 官方返回 undefined / false 时如实报错，不假装成功
  */
 import type { ICommandDef } from '../engine/types'
+import { parseSourceLog } from '../pcb/sourcelog'
 
 /** libraryUuid 缺省取个人库 */
 async function resolveLibraryUuid(params: Record<string, any>): Promise<string> {
@@ -25,6 +26,117 @@ async function resolveLibraryUuid(params: Record<string, any>): Promise<string> 
 	if (!uuid)
 		throw new Error('未传 libraryUuid，且获取个人库 UUID 失败（官方返回空）')
 	return uuid
+}
+
+function footprintSourceUuid(source: string, footprintUuid: string): string {
+	const firstLine = source.split(/\r?\n/).find(line => line.trim())
+	if (!firstLine)
+		throw new Error('封装源码不可读取：源码为空')
+	let first: unknown
+	try { first = JSON.parse(firstLine.includes('||') ? firstLine.slice(0, firstLine.indexOf('||')) : firstLine) }
+	catch (error) { throw new Error('封装源码身份不可读取：首行不是有效 JSON', { cause: error }) }
+	let uuid: unknown
+	if (first && typeof first === 'object' && !Array.isArray(first) && (first as any).type === 'DOCHEAD') {
+		const parsed = parseSourceLog(source)
+		if (parsed.docType !== 'FOOTPRINT')
+			throw new Error(`封装源码类型不匹配：预期 FOOTPRINT，实际 ${parsed.docType}`)
+		const heads = parsed.records.filter(record => record.header.type === 'DOCHEAD')
+		const identities = heads.map(record => {
+			const data = record.data as any
+			if (!data || typeof data !== 'object' || Array.isArray(data) || data.docType !== 'FOOTPRINT' || typeof data.uuid !== 'string' || !data.uuid.trim())
+				throw new Error('封装源码 DOCHEAD 缺少有效 FOOTPRINT UUID')
+			return data.uuid
+		})
+		if (!identities.length || identities.some(value => value !== identities[0]))
+			throw new Error('封装源码 DOCHEAD UUID 身份冲突')
+		uuid = identities[0]
+	}
+	else {
+		let rows: unknown[]
+		try { rows = source.split(/\r?\n/).filter(line => line.trim()).map(line => JSON.parse(line)) }
+		catch (error) { throw new Error('封装源码身份不可读取：EFOO 行格式无效', { cause: error }) }
+		const docType = rows.find((row: any) => Array.isArray(row) && row[0] === 'DOCTYPE') as any
+		const heads = rows.filter((row: any) => Array.isArray(row) && (row[0] === 'HEAD' || row[0] === 'DOCHEAD')) as any[]
+		if (docType?.[1] !== 'FOOTPRINT' || heads.length !== 1 || typeof heads[0]?.[1]?.uuid !== 'string' || !heads[0][1].uuid.trim())
+			throw new Error('封装源码缺少唯一且有效的 FOOTPRINT HEAD.uuid')
+		uuid = heads[0][1].uuid
+	}
+	if (uuid !== footprintUuid)
+		throw new Error(`封装源码 UUID 与请求不一致（请求 ${footprintUuid}，源码 ${String(uuid)}）`)
+	return uuid
+}
+
+async function getFootprintSource(footprintUuid: string, params: Record<string, any>) {
+	const explicit = params.libraryUuid !== undefined && params.libraryUuid !== null
+	if (explicit && typeof params.libraryUuid !== 'string')
+		throw new Error('libraryUuid 显式传入时必须是字符串')
+	const requestedLibraryUuid = explicit ? String(params.libraryUuid).trim() : ''
+	if (explicit && !requestedLibraryUuid)
+		throw new Error('libraryUuid 显式传入时必须是非空字符串')
+	const query = {
+		strategy: explicit ? 'explicit-library-only' : 'project-then-personal',
+		projectLibrary: explicit ? 'not-queried' : 'not-queried',
+		personalLibrary: explicit ? 'not-queried' : 'not-queried',
+		attempts: [] as Array<{ libraryUuid: string, status: 'found' | 'empty' | 'sdk-error' | 'identity-error' }>,
+	}
+	const failure = (message: string, cause?: unknown) => new Error(message, {
+		cause: { footprintSourceQuery: { ...query, attempts: query.attempts.map(attempt => ({ ...attempt })) }, ...(cause === undefined ? {} : { sdkError: cause }) },
+	})
+	const queryLibrary = async (libraryUuid: string) => {
+		let source: unknown
+		try { source = await eda.lib_Footprint.getDocumentSource(footprintUuid, libraryUuid) }
+		catch (error) {
+			query.attempts.push({ libraryUuid, status: 'sdk-error' })
+			throw failure(`读取封装源码时 SDK 异常（footprintUuid=${footprintUuid}, libraryUuid=${libraryUuid}）`, error)
+		}
+		if (source === undefined || source === null || typeof source === 'string' && !source.trim()) {
+			query.attempts.push({ libraryUuid, status: 'empty' })
+			return undefined
+		}
+		if (typeof source !== 'string' || !source.trim())
+			throw failure(`封装源码返回类型无效（footprintUuid=${footprintUuid}, libraryUuid=${libraryUuid}）`)
+		try { footprintSourceUuid(source, footprintUuid) }
+		catch (error) {
+			query.attempts.push({ libraryUuid, status: 'identity-error' })
+			throw failure(`封装源码身份核验失败（footprintUuid=${footprintUuid}, libraryUuid=${libraryUuid}）：${(error as Error).message}`, error)
+		}
+		query.attempts.push({ libraryUuid, status: 'found' })
+		return { libraryUuid, source }
+	}
+	const querySnapshot = () => ({ ...query, attempts: query.attempts.map(attempt => ({ ...attempt })) })
+	const noLibraryResult = () => failure(`在可查询的库中未找到封装源码（footprintUuid=${footprintUuid}）`)
+	if (explicit) {
+		const result = await queryLibrary(requestedLibraryUuid)
+		if (!result) throw noLibraryResult()
+		return { ...result, query: querySnapshot() }
+	}
+	let projectLibraryUuid: string | undefined
+	try {
+		projectLibraryUuid = await eda.lib_LibrariesList.getProjectLibraryUuid()
+		query.projectLibrary = projectLibraryUuid ? 'available' : 'unavailable'
+	}
+	catch (error) {
+		query.projectLibrary = 'sdk-error'
+		throw failure('获取当前工程库 UUID 时 SDK 异常', error)
+	}
+	if (projectLibraryUuid) {
+		const projectResult = await queryLibrary(projectLibraryUuid)
+		if (projectResult) return { ...projectResult, query: querySnapshot() }
+	}
+	let personalLibraryUuid: string | undefined
+	try {
+		personalLibraryUuid = await eda.lib_LibrariesList.getPersonalLibraryUuid()
+		query.personalLibrary = personalLibraryUuid ? 'available' : 'unavailable'
+	}
+	catch (error) {
+		query.personalLibrary = 'sdk-error'
+		throw failure('获取个人库 UUID 时 SDK 异常', error)
+	}
+	if (!personalLibraryUuid || personalLibraryUuid === projectLibraryUuid)
+		throw noLibraryResult()
+	const personalResult = await queryLibrary(personalLibraryUuid)
+	if (!personalResult) throw noLibraryResult()
+	return { ...personalResult, query: querySnapshot() }
 }
 
 function searchPageNumber(value: unknown, fallback: number, field: 'itemsOfPage' | 'page'): number {
@@ -505,19 +617,16 @@ export const libCommands: Array<ICommandDef> = [
 		summary: '直接读取库封装文档源码，不打开编辑器或修改库',
 		params: [
 			{ name: 'footprintUuid', type: 'string', required: true, description: '封装 UUID' },
-			{ name: 'libraryUuid', type: 'string', required: false, description: '库 UUID，默认个人库' },
+			{ name: 'libraryUuid', type: 'string', required: false, description: '库 UUID；省略时按当前工程库、个人库顺序查询' },
 		],
-		returns: '{ footprintUuid, libraryUuid, source }；保留宿主返回的原始源码格式',
+		returns: '{ footprintUuid, libraryUuid, source, query }；libraryUuid 是实际命中的库，query 记录查询顺序和结果；返回前核对源码 UUID',
 		example: { cmd: 'lib.footprintGetSource', params: { footprintUuid: 'xxx' } },
 		handler: async (params) => {
 			if (!params.footprintUuid)
 				throw new Error('缺少参数 footprintUuid');
 			const footprintUuid = String(params.footprintUuid);
-			const libraryUuid = await resolveLibraryUuid(params);
-			const source = await eda.lib_Footprint.getDocumentSource(footprintUuid, libraryUuid);
-			if (typeof source !== 'string' || !source.trim())
-				throw new Error('封装源码不可读取（官方返回空）');
-			return { footprintUuid, libraryUuid, source };
+			const result = await getFootprintSource(footprintUuid, params)
+			return { footprintUuid, ...result };
 		},
 	},
 	{
@@ -816,14 +925,14 @@ export const libCommands: Array<ICommandDef> = [
 	},
 	{
 		name: 'lib.deviceGetByLcscIds',
-		summary: '用立创 C 编号获取器件（支持单个或数组批量；私有化部署环境不可用）',
+		summary: '用立创 C 编号获取器件（支持单个或数组批量；可能没有关联封装，不能据此认定可转 PCB；私有化部署环境不可用）',
 		params: [
 			{ name: 'lcscIds', type: 'string | array', required: true, description: '立创 C 编号，如 "C1523" 或 ["C1523","C17168"]' },
 			{ name: 'libraryUuid', type: 'string', required: false, description: '库 UUID，默认个人库' },
 			{ name: 'allowMultiMatch', type: 'boolean', required: false, description: '同一库内同 C 编号匹配多个时是否全部返回，默认 false' },
-			{ name: 'diagnostic', type: 'boolean', required: false, description: '设为 true 时附带 SDK 方法、实参快照和调用时间；默认 false' },
+			{ name: 'diagnostic', type: 'boolean', required: false, description: '设为 true 时附带 SDK 方法、实参快照、调用时间；能从返回字段确认时还会标记 missingFootprint；默认 false' },
 		],
-		returns: '默认返回器件属性（或数组）；diagnostic:true 且成功时返回 { result, diagnostic: { sdkMethod, sdkArgs, startedAt, finishedAt } }',
+		returns: '默认原样返回器件属性（或数组）；不自动换库。关联封装缺失时器件不能据此认定可转 PCB。diagnostic:true 且成功时返回 { result, diagnostic: { sdkMethod, sdkArgs, startedAt, finishedAt, missingFootprint? } }；仅当所有结果项都能从返回字段确认封装存在或缺失时才提供 missingFootprint',
 		example: { cmd: 'lib.deviceGetByLcscIds', params: { lcscIds: ['C1523', 'C17168'] } },
 		handler: async (params) => {
 			if (!params.lcscIds)
@@ -834,7 +943,7 @@ export const libCommands: Array<ICommandDef> = [
 			const allowMultiMatch = Boolean(params.allowMultiMatch ?? false)
 			const libraryUuid = await resolveLibraryUuid(params)
 			let result: any
-			let diagnostic: { sdkMethod: string, sdkArgs: { lcscIds: unknown, libraryUuid: string, allowMultiMatch: boolean }, startedAt: string, finishedAt: string } | undefined
+			let diagnostic: { sdkMethod: string, sdkArgs: { lcscIds: unknown, libraryUuid: string, allowMultiMatch: boolean }, startedAt: string, finishedAt: string, missingFootprint?: boolean } | undefined
 			if (params.diagnostic === true) {
 				const sdkArgs = {
 					lcscIds: Array.isArray(lcscIds) ? [...lcscIds] : lcscIds,
@@ -851,6 +960,17 @@ export const libCommands: Array<ICommandDef> = [
 			}
 			if (result === undefined || (Array.isArray(result) && result.length === 0))
 				throw new Error('未匹配到器件（官方返回空）')
+			if (diagnostic) {
+				const items = Array.isArray(result) ? result : [result]
+				const footprintStates = items.map((item: any) => {
+					if (!item || typeof item !== 'object') return undefined
+					const footprintUuid = item.footprint?.uuid ?? item.footprintUuid
+					if (typeof footprintUuid !== 'string') return undefined
+					return footprintUuid.trim().length > 0
+				})
+				if (footprintStates.length > 0 && footprintStates.every((state: boolean | undefined) => state !== undefined))
+					diagnostic.missingFootprint = footprintStates.every((hasFootprint: boolean) => !hasFootprint)
+			}
 			return diagnostic ? { result, diagnostic } : result
 		},
 	},

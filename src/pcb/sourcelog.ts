@@ -55,7 +55,9 @@ export function parseSourceLine(line: string, lineNumber = 1): ISourceRecord | n
 	let dataText = line.slice(separator + 2)
 	if (dataText.endsWith('|'))
 		dataText = dataText.slice(0, -1)
-	const data = JSON.parse(dataText) as unknown
+	else if (!dataText)
+		throw new Error(`源码第 ${lineNumber} 行缺少末尾 | 分隔符`)
+	const data = dataText === '' ? '' : JSON.parse(dataText) as unknown
 	return { header, data: data as any, raw: line, line: lineNumber }
 }
 
@@ -440,13 +442,13 @@ export function extractFootprintGeometry(documentSource: string): IBBox | null {
 	return bbox
 }
 
-/** 封装局部 BBox 按器件 x/y/angle/是否底层镜像变换到板级坐标 */
+/** 将封装源码提取的局部输入 AABB 四角按姿态变换，返回其板级外接框；不代表完整实体范围或精确墨迹 */
 export function transformFootprintBBox(geometry: IBBox, x: number, y: number, angle: number, mirror: boolean): IBBox {
 	const radians = angle * Math.PI / 180
 	const corners = [[geometry.minX, geometry.minY], [geometry.minX, geometry.maxY], [geometry.maxX, geometry.minY], [geometry.maxX, geometry.maxY]]
 	const transformed = corners.map(([px, py]) => {
-		const mx = mirror ? -px : px
-		return [x + mx * Math.cos(radians) - py * Math.sin(radians), y + mx * Math.sin(radians) + py * Math.cos(radians)]
+		const my = mirror ? -py : py
+		return [x + px * Math.cos(radians) - my * Math.sin(radians), y + px * Math.sin(radians) + my * Math.cos(radians)]
 	})
 	return {
 		minX: Math.min(...transformed.map(point => point[0])),

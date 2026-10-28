@@ -14,17 +14,24 @@ import { createBridgeOwnerCoordinator } from './bridge/owner';
  */
 import { getBridgeLifecycleStatus, reconnectBridgeClient, startBridgeClient, stopBridgeClient } from './bridge/client';
 import { autoCopperCommands } from './commands/autoCopper';
+import { componentAttributeCommands } from './commands/componentAttributes';
 import { dfmCommands } from './commands/dfm';
+import { diffPairCommands } from './commands/diffPair';
+import { lengthTuneCommands } from './commands/tuneLength';
 import { editorCommands } from './commands/editor';
 import { fanoutCommands } from './commands/fanout';
 import { knowledgeCommands } from './commands/knowledge';
 import { libCommands } from './commands/lib';
+import { manufacturingProfileCommands } from './commands/manufacturingProfile';
+import { padBranchCommands } from './commands/padBranches';
 import { netSilkscreenCommands } from './commands/netSilkscreen';
 import { padExpansionCommands } from './commands/padExpand';
+import { padHoleCommands } from './commands/padHole';
 import { pcbCommands } from './commands/pcb';
 import { pcbGroupingCommands } from './commands/pcbGrouping';
 import { libraryCommands, projectCommands } from './commands/project';
 import { schematicCommands } from './commands/schematic';
+import { silkscreenCheckCommands } from './commands/silkscreenCheck';
 import { systemCommands } from './commands/system';
 import { installDfmMenuApi, padSpacingMenu, pcbDfmMenu, smtDfmMenu } from './dfm/menu';
 import { executeCommand, getCommandDocs, listCommandNames, registerCommand } from './engine/registry';
@@ -40,6 +47,13 @@ function registerAllCommands(): void {
 		...editorCommands,
 		...schematicCommands,
 		...pcbCommands,
+		...diffPairCommands,
+		...padBranchCommands,
+		...lengthTuneCommands,
+		...componentAttributeCommands,
+		...silkscreenCheckCommands,
+		...manufacturingProfileCommands,
+		...padHoleCommands,
 		...fanoutCommands,
 		...autoCopperCommands,
 		...padExpansionCommands,

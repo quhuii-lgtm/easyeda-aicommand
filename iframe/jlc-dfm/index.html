@@ -136,7 +136,7 @@
 				`下单内层铜厚选项：${data.inputs.innerCopperOz} oz`,
 				`图纸铜厚记录状态：${copper.status}`,
 				`图纸铜厚与下单目标一致：${copper.matchesTarget === null ? '无法对照' : copper.matchesTarget ? '是' : '否'}`,
-				...(copper.layers || []).map(layer => `图层 ${layer.layerId}：${layer.thicknessMil == null ? '无铜厚记录' : `${layer.thicknessMil} mil`} / ${layer.copperOz == null ? '无法换算 oz' : `${layer.copperOz} oz`}`),
+				...(copper.layers || []).map(layer => `图层 ${layer.layerId}：${layer.unitStatus === 'unconfirmed' ? (layer.rawThickness == null ? '无有效原始厚度记录' : `原始厚度 ${layer.rawThickness}（单位未确认）`) : (layer.thicknessMil == null ? '无铜厚记录' : `${layer.thicknessMil} mil`)} / ${layer.copperOz == null ? '无法换算 oz' : `${layer.copperOz} oz`}`),
 				...(copper.differences || []).map(diff => `图层 ${diff.layerId} 与目标差异：要求 ${diff.requestedOz} oz，图纸记录 ${diff.reportedOz == null ? '缺失' : `${diff.reportedOz} oz`}`),
 				...(copper.messages || []).map(message => `铜厚对照信息：${message}`),
 			];
@@ -221,7 +221,7 @@
 		if (!lastReport) return;
 		const data = lastReport.data;
 		const copper = data.checkType === 'pcb' ? data.reportedCopper : undefined;
-		const copperLines = copper ? ['', '下单铜厚与图纸记录对照：', `下单外层铜厚目标：${data.inputs.outerCopperOz} oz`, `下单内层铜厚选项：${data.inputs.innerCopperOz} oz`, `图纸铜厚记录状态：${copper.status}`, `图纸铜厚与下单目标一致：${copper.matchesTarget === null ? '无法对照' : copper.matchesTarget ? '是' : '否'}`, ...(copper.layers || []).map(layer => `图层 ${layer.layerId}：${layer.thicknessMil == null ? '无铜厚记录' : `${layer.thicknessMil} mil`} / ${layer.copperOz == null ? '无法换算 oz' : `${layer.copperOz} oz`}`), ...(copper.differences || []).map(diff => `图层 ${diff.layerId} 与目标差异：要求 ${diff.requestedOz} oz，图纸记录 ${diff.reportedOz == null ? '缺失' : `${diff.reportedOz} oz`}`), ...(copper.messages || []).map(message => `铜厚对照信息：${message}`)] : [];
+		const copperLines = copper ? ['', '下单铜厚与图纸记录对照：', `下单外层铜厚目标：${data.inputs.outerCopperOz} oz`, `下单内层铜厚选项：${data.inputs.innerCopperOz} oz`, `图纸铜厚记录状态：${copper.status}`, `图纸铜厚与下单目标一致：${copper.matchesTarget === null ? '无法对照' : copper.matchesTarget ? '是' : '否'}`, ...(copper.layers || []).map(layer => `图层 ${layer.layerId}：${layer.unitStatus === 'unconfirmed' ? (layer.rawThickness == null ? '无有效原始厚度记录' : `原始厚度 ${layer.rawThickness}（单位未确认）`) : (layer.thicknessMil == null ? '无铜厚记录' : `${layer.thicknessMil} mil`)} / ${layer.copperOz == null ? '无法换算 oz' : `${layer.copperOz} oz`}`), ...(copper.differences || []).map(diff => `图层 ${diff.layerId} 与目标差异：要求 ${diff.requestedOz} oz，图纸记录 ${diff.reportedOz == null ? '缺失' : `${diff.reportedOz} oz`}`), ...(copper.messages || []).map(message => `铜厚对照信息：${message}`)] : [];
 		const lines = [`来源：${data.upstream.repository} ${data.upstream.version} ${data.upstream.commit} ${data.upstream.license}`, `文档：${data.documentUuid}`, `检查：${data.checkType}`, `输入：${JSON.stringify(data.inputs)}`, `时间：${new Date(data.timestamp).toISOString()}`, `预期项目数：${data.expectedCount}`, `完整：${data.complete}`, `逐项检查通过：${data.upstreamPassed}`, `综合通过：${data.passed}`, ...copperLines, '', '问题：', ...(data.issues || []).map(issue => `${issue.code}: ${issue.message}`), '', '覆盖边界：', ...(data.coverage || []), '', '逐项结果：'];
 		for (const item of data.results || []) {
 			lines.push(`${item.number}. ${item.item} | ${item.result} | 实际=${item.actualValue} | 标准=${item.standardValue}`);

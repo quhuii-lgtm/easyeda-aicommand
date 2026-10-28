@@ -41,7 +41,7 @@ function cleanup(): void {
 function fingerprintOf(params: any): string {
 	const norm = (v: any): any => {
 		if (Array.isArray(v))
-			return v.map(norm).sort()
+			return v.map(norm)
 		if (v && typeof v === 'object') {
 			const o: Record<string, any> = {}
 			for (const k of Object.keys(v).sort())

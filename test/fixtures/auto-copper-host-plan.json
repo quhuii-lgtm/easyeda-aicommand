@@ -1,0 +1,2122 @@
+{
+  "documentUuid": "b7a9e9722b133fd3",
+  "operation": "autoCopper",
+  "units": "mil",
+  "inputs": {
+    "targetIds": [
+      "33da7c6b5688d29e"
+    ],
+    "layer": "top",
+    "expansion": 5,
+    "generationType": "fill",
+    "enableChamfer": false,
+    "chamferType": "straight",
+    "chamferWidth": 5
+  },
+  "baseline": {
+    "source": "{\"type\":\"CANVAS\",\"ticket\":1,\"id\":\"CANVAS\"}||{\"originX\":0,\"originY\":0,\"unit\":\"mil\",\"gridXSize\":5,\"gridYSize\":5,\"snapXSize\":5,\"snapYSize\":5,\"altSnapXSize\":1,\"altSnapYSize\":1,\"gridType\":\"OUTLETS\",\"multiGridType\":\"NONE\",\"multiGridRatio\":5,\"highlightValue\":0.5,\"layerBrightness\":\"NORMAL\"}|\n{\"type\":\"LAYER\",\"ticket\":2,\"id\":\"[\\\"LAYER\\\",1]\"}||{\"layerId\":1,\"layerType\":\"TOP\",\"layerName\":\"Top Layer\",\"use\":true,\"show\":true,\"locked\":false,\"activeColor\":\"#ff0000\",\"activateTransparency\":1,\"inactiveColor\":\"#7f0000\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":3,\"id\":\"[\\\"LAYER\\\",2]\"}||{\"layerId\":2,\"layerType\":\"BOTTOM\",\"layerName\":\"Bottom Layer\",\"use\":true,\"show\":true,\"locked\":false,\"activeColor\":\"#0000ff\",\"activateTransparency\":1,\"inactiveColor\":\"#00007f\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":4,\"id\":\"[\\\"LAYER\\\",3]\"}||{\"layerId\":3,\"layerType\":\"TOP_SILK\",\"layerName\":\"Top Silkscreen Layer\",\"use\":true,\"show\":true,\"locked\":false,\"activeColor\":\"#ffcc00\",\"activateTransparency\":1,\"inactiveColor\":\"#7f6600\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":5,\"id\":\"[\\\"LAYER\\\",4]\"}||{\"layerId\":4,\"layerType\":\"BOT_SILK\",\"layerName\":\"Bottom Silkscreen Layer\",\"use\":true,\"show\":true,\"locked\":false,\"activeColor\":\"#66cc33\",\"activateTransparency\":1,\"inactiveColor\":\"#336619\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":6,\"id\":\"[\\\"LAYER\\\",5]\"}||{\"layerId\":5,\"layerType\":\"TOP_SOLDER_MASK\",\"layerName\":\"Top Solder Mask Layer\",\"use\":true,\"show\":true,\"locked\":false,\"activeColor\":\"#800080\",\"activateTransparency\":0.7,\"inactiveColor\":\"#400040\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":7,\"id\":\"[\\\"LAYER\\\",6]\"}||{\"layerId\":6,\"layerType\":\"BOT_SOLDER_MASK\",\"layerName\":\"Bottom Solder Mask Layer\",\"use\":true,\"show\":true,\"locked\":false,\"activeColor\":\"#aa00ff\",\"activateTransparency\":0.7,\"inactiveColor\":\"#55007f\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":8,\"id\":\"[\\\"LAYER\\\",7]\"}||{\"layerId\":7,\"layerType\":\"TOP_PASTE_MASK\",\"layerName\":\"Top Paste Mask Layer\",\"use\":true,\"show\":true,\"locked\":false,\"activeColor\":\"#808080\",\"activateTransparency\":1,\"inactiveColor\":\"#404040\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":9,\"id\":\"[\\\"LAYER\\\",8]\"}||{\"layerId\":8,\"layerType\":\"BOT_PASTE_MASK\",\"layerName\":\"Bottom Paste Mask Layer\",\"use\":true,\"show\":true,\"locked\":false,\"activeColor\":\"#800000\",\"activateTransparency\":1,\"inactiveColor\":\"#400000\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":10,\"id\":\"[\\\"LAYER\\\",9]\"}||{\"layerId\":9,\"layerType\":\"TOP_ASSEMBLY\",\"layerName\":\"Top Assembly Layer\",\"use\":true,\"show\":true,\"locked\":false,\"activeColor\":\"#33cc99\",\"activateTransparency\":1,\"inactiveColor\":\"#19664c\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":11,\"id\":\"[\\\"LAYER\\\",10]\"}||{\"layerId\":10,\"layerType\":\"BOT_ASSEMBLY\",\"layerName\":\"Bottom Assembly Layer\",\"use\":true,\"show\":true,\"locked\":false,\"activeColor\":\"#5555ff\",\"activateTransparency\":1,\"inactiveColor\":\"#2a2a7f\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":12,\"id\":\"[\\\"LAYER\\\",11]\"}||{\"layerId\":11,\"layerType\":\"OUTLINE\",\"layerName\":\"Board Outline Layer\",\"use\":true,\"show\":true,\"locked\":false,\"activeColor\":\"#ff00ff\",\"activateTransparency\":1,\"inactiveColor\":\"#7f007f\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":13,\"id\":\"[\\\"LAYER\\\",12]\"}||{\"layerId\":12,\"layerType\":\"MULTI\",\"layerName\":\"Multi-Layer\",\"use\":true,\"show\":true,\"locked\":false,\"activeColor\":\"#c0c0c0\",\"activateTransparency\":1,\"inactiveColor\":\"#606060\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":14,\"id\":\"[\\\"LAYER\\\",13]\"}||{\"layerId\":13,\"layerType\":\"DOCUMENT\",\"layerName\":\"Document Layer\",\"use\":true,\"show\":true,\"locked\":false,\"activeColor\":\"#ffffff\",\"activateTransparency\":1,\"inactiveColor\":\"#7f7f7f\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":15,\"id\":\"[\\\"LAYER\\\",14]\"}||{\"layerId\":14,\"layerType\":\"MECHANICAL\",\"layerName\":\"Mechanical Layer\",\"use\":true,\"show\":true,\"locked\":false,\"activeColor\":\"#f022f0\",\"activateTransparency\":1,\"inactiveColor\":\"#781178\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":16,\"id\":\"[\\\"LAYER\\\",15]\"}||{\"layerId\":15,\"layerType\":\"SIGNAL\",\"layerName\":\"Inner1\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#999966\",\"activateTransparency\":1,\"inactiveColor\":\"#4c4c33\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":17,\"id\":\"[\\\"LAYER\\\",16]\"}||{\"layerId\":16,\"layerType\":\"SIGNAL\",\"layerName\":\"Inner2\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#008000\",\"activateTransparency\":1,\"inactiveColor\":\"#004000\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":18,\"id\":\"[\\\"LAYER\\\",17]\"}||{\"layerId\":17,\"layerType\":\"SIGNAL\",\"layerName\":\"Inner3\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#00ff00\",\"activateTransparency\":1,\"inactiveColor\":\"#007f00\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":19,\"id\":\"[\\\"LAYER\\\",18]\"}||{\"layerId\":18,\"layerType\":\"SIGNAL\",\"layerName\":\"Inner4\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#bc8e00\",\"activateTransparency\":1,\"inactiveColor\":\"#5e4700\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":20,\"id\":\"[\\\"LAYER\\\",19]\"}||{\"layerId\":19,\"layerType\":\"SIGNAL\",\"layerName\":\"Inner5\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#70dbfa\",\"activateTransparency\":1,\"inactiveColor\":\"#39503f\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":21,\"id\":\"[\\\"LAYER\\\",20]\"}||{\"layerId\":20,\"layerType\":\"SIGNAL\",\"layerName\":\"Inner6\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#00cc66\",\"activateTransparency\":1,\"inactiveColor\":\"#006633\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":22,\"id\":\"[\\\"LAYER\\\",21]\"}||{\"layerId\":21,\"layerType\":\"SIGNAL\",\"layerName\":\"Inner7\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#9966ff\",\"activateTransparency\":1,\"inactiveColor\":\"#4c337f\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":23,\"id\":\"[\\\"LAYER\\\",22]\"}||{\"layerId\":22,\"layerType\":\"SIGNAL\",\"layerName\":\"Inner8\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#800080\",\"activateTransparency\":1,\"inactiveColor\":\"#400040\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":24,\"id\":\"[\\\"LAYER\\\",23]\"}||{\"layerId\":23,\"layerType\":\"SIGNAL\",\"layerName\":\"Inner9\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#008080\",\"activateTransparency\":1,\"inactiveColor\":\"#004040\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":25,\"id\":\"[\\\"LAYER\\\",24]\"}||{\"layerId\":24,\"layerType\":\"SIGNAL\",\"layerName\":\"Inner10\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#15935f\",\"activateTransparency\":1,\"inactiveColor\":\"#0a492f\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":26,\"id\":\"[\\\"LAYER\\\",25]\"}||{\"layerId\":25,\"layerType\":\"SIGNAL\",\"layerName\":\"Inner11\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#000080\",\"activateTransparency\":1,\"inactiveColor\":\"#000040\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":27,\"id\":\"[\\\"LAYER\\\",26]\"}||{\"layerId\":26,\"layerType\":\"SIGNAL\",\"layerName\":\"Inner12\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#00b400\",\"activateTransparency\":1,\"inactiveColor\":\"#005a00\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":28,\"id\":\"[\\\"LAYER\\\",27]\"}||{\"layerId\":27,\"layerType\":\"SIGNAL\",\"layerName\":\"Inner13\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#2e4756\",\"activateTransparency\":1,\"inactiveColor\":\"#17232b\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":29,\"id\":\"[\\\"LAYER\\\",28]\"}||{\"layerId\":28,\"layerType\":\"SIGNAL\",\"layerName\":\"Inner14\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#99842f\",\"activateTransparency\":1,\"inactiveColor\":\"#4c4217\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":30,\"id\":\"[\\\"LAYER\\\",29]\"}||{\"layerId\":29,\"layerType\":\"SIGNAL\",\"layerName\":\"Inner15\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#ffffaa\",\"activateTransparency\":1,\"inactiveColor\":\"#7f7f55\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":31,\"id\":\"[\\\"LAYER\\\",30]\"}||{\"layerId\":30,\"layerType\":\"SIGNAL\",\"layerName\":\"Inner16\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#99842f\",\"activateTransparency\":1,\"inactiveColor\":\"#4c4217\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":32,\"id\":\"[\\\"LAYER\\\",31]\"}||{\"layerId\":31,\"layerType\":\"SIGNAL\",\"layerName\":\"Inner17\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#2e4756\",\"activateTransparency\":1,\"inactiveColor\":\"#17232b\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":33,\"id\":\"[\\\"LAYER\\\",32]\"}||{\"layerId\":32,\"layerType\":\"SIGNAL\",\"layerName\":\"Inner18\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#3535ff\",\"activateTransparency\":1,\"inactiveColor\":\"#1a1a7f\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":34,\"id\":\"[\\\"LAYER\\\",33]\"}||{\"layerId\":33,\"layerType\":\"SIGNAL\",\"layerName\":\"Inner19\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#8000bc\",\"activateTransparency\":1,\"inactiveColor\":\"#40005e\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":35,\"id\":\"[\\\"LAYER\\\",34]\"}||{\"layerId\":34,\"layerType\":\"SIGNAL\",\"layerName\":\"Inner20\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#43ae5f\",\"activateTransparency\":1,\"inactiveColor\":\"#21572f\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":36,\"id\":\"[\\\"LAYER\\\",35]\"}||{\"layerId\":35,\"layerType\":\"SIGNAL\",\"layerName\":\"Inner21\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#c3ecce\",\"activateTransparency\":1,\"inactiveColor\":\"#617667\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":37,\"id\":\"[\\\"LAYER\\\",36]\"}||{\"layerId\":36,\"layerType\":\"SIGNAL\",\"layerName\":\"Inner22\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#728978\",\"activateTransparency\":1,\"inactiveColor\":\"#39443c\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":38,\"id\":\"[\\\"LAYER\\\",37]\"}||{\"layerId\":37,\"layerType\":\"SIGNAL\",\"layerName\":\"Inner23\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#39503f\",\"activateTransparency\":1,\"inactiveColor\":\"#1c281f\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":39,\"id\":\"[\\\"LAYER\\\",38]\"}||{\"layerId\":38,\"layerType\":\"SIGNAL\",\"layerName\":\"Inner24\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#0c715d\",\"activateTransparency\":1,\"inactiveColor\":\"#06382e\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":40,\"id\":\"[\\\"LAYER\\\",39]\"}||{\"layerId\":39,\"layerType\":\"SIGNAL\",\"layerName\":\"Inner25\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#5a8a80\",\"activateTransparency\":1,\"inactiveColor\":\"#2d4540\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":41,\"id\":\"[\\\"LAYER\\\",40]\"}||{\"layerId\":40,\"layerType\":\"SIGNAL\",\"layerName\":\"Inner26\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#2b937e\",\"activateTransparency\":1,\"inactiveColor\":\"#15493f\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":42,\"id\":\"[\\\"LAYER\\\",41]\"}||{\"layerId\":41,\"layerType\":\"SIGNAL\",\"layerName\":\"Inner27\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#23999d\",\"activateTransparency\":1,\"inactiveColor\":\"#114c4e\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":43,\"id\":\"[\\\"LAYER\\\",42]\"}||{\"layerId\":42,\"layerType\":\"SIGNAL\",\"layerName\":\"Inner28\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#45b4e3\",\"activateTransparency\":1,\"inactiveColor\":\"#225a71\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":44,\"id\":\"[\\\"LAYER\\\",43]\"}||{\"layerId\":43,\"layerType\":\"SIGNAL\",\"layerName\":\"Inner29\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#215da1\",\"activateTransparency\":1,\"inactiveColor\":\"#102e50\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":45,\"id\":\"[\\\"LAYER\\\",44]\"}||{\"layerId\":44,\"layerType\":\"SIGNAL\",\"layerName\":\"Inner30\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#4564d7\",\"activateTransparency\":1,\"inactiveColor\":\"#22326b\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":46,\"id\":\"[\\\"LAYER\\\",45]\"}||{\"layerId\":45,\"layerType\":\"SIGNAL\",\"layerName\":\"Inner31\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#6969e9\",\"activateTransparency\":1,\"inactiveColor\":\"#343474\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":47,\"id\":\"[\\\"LAYER\\\",46]\"}||{\"layerId\":46,\"layerType\":\"SIGNAL\",\"layerName\":\"Inner32\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#9069e9\",\"activateTransparency\":1,\"inactiveColor\":\"#483474\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":48,\"id\":\"[\\\"LAYER\\\",47]\"}||{\"layerId\":47,\"layerType\":\"HOLE\",\"layerName\":\"Hole Layer\",\"use\":true,\"show\":true,\"locked\":false,\"activeColor\":\"#222222\",\"activateTransparency\":1,\"inactiveColor\":\"#111111\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":49,\"id\":\"[\\\"LAYER\\\",48]\"}||{\"layerId\":48,\"layerType\":\"COMPONENT_SHAPE\",\"layerName\":\"Component Shape Layer\",\"use\":true,\"show\":true,\"locked\":false,\"activeColor\":\"#00cccc\",\"activateTransparency\":1,\"inactiveColor\":\"#006666\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":50,\"id\":\"[\\\"LAYER\\\",49]\"}||{\"layerId\":49,\"layerType\":\"COMPONENT_MARKING\",\"layerName\":\"Component Marking Layer\",\"use\":true,\"show\":true,\"locked\":false,\"activeColor\":\"#66ffcc\",\"activateTransparency\":1,\"inactiveColor\":\"#337f66\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":51,\"id\":\"[\\\"LAYER\\\",50]\"}||{\"layerId\":50,\"layerType\":\"PIN_SOLDERING\",\"layerName\":\"Pin Soldering Layer\",\"use\":true,\"show\":true,\"locked\":false,\"activeColor\":\"#cc9999\",\"activateTransparency\":1,\"inactiveColor\":\"#664c4c\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":52,\"id\":\"[\\\"LAYER\\\",51]\"}||{\"layerId\":51,\"layerType\":\"PIN_FLOATING\",\"layerName\":\"Pin Floating Layer\",\"use\":true,\"show\":true,\"locked\":false,\"activeColor\":\"#ff99ff\",\"activateTransparency\":1,\"inactiveColor\":\"#7f4c7f\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":53,\"id\":\"[\\\"LAYER\\\",52]\"}||{\"layerId\":52,\"layerType\":\"COMPONENT_MODEL\",\"layerName\":\"Component Model Layer\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#ffffff\",\"activateTransparency\":1,\"inactiveColor\":\"#7f7f7f\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":54,\"id\":\"[\\\"LAYER\\\",53]\"}||{\"layerId\":53,\"layerType\":\"3D_SHELL_OUTLINE\",\"layerName\":\"3D Shell Outline Layer\",\"use\":true,\"show\":true,\"locked\":false,\"activeColor\":\"#66ff99\",\"activateTransparency\":1,\"inactiveColor\":\"#337f4c\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":55,\"id\":\"[\\\"LAYER\\\",54]\"}||{\"layerId\":54,\"layerType\":\"3D_SHELL_TOP\",\"layerName\":\"3D Top Layer\",\"use\":true,\"show\":true,\"locked\":false,\"activeColor\":\"#ffccff\",\"activateTransparency\":1,\"inactiveColor\":\"#7f667f\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":56,\"id\":\"[\\\"LAYER\\\",55]\"}||{\"layerId\":55,\"layerType\":\"3D_SHELL_BOTTOM\",\"layerName\":\"3D Bottom Layer\",\"use\":true,\"show\":true,\"locked\":false,\"activeColor\":\"#0066cc\",\"activateTransparency\":1,\"inactiveColor\":\"#003366\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":57,\"id\":\"[\\\"LAYER\\\",56]\"}||{\"layerId\":56,\"layerType\":\"DRILL_DRAWING\",\"layerName\":\"Drill Drawing Layer\",\"use\":true,\"show\":true,\"locked\":false,\"activeColor\":\"#008080\",\"activateTransparency\":1,\"inactiveColor\":\"#004040\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":58,\"id\":\"[\\\"LAYER\\\",57]\"}||{\"layerId\":57,\"layerType\":\"OTHER\",\"layerName\":\"Ratline Layer\",\"use\":true,\"show\":true,\"locked\":true,\"activeColor\":\"#6464ff\",\"activateTransparency\":1,\"inactiveColor\":\"#32327f\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":59,\"id\":\"[\\\"LAYER\\\",58]\"}||{\"layerId\":58,\"layerType\":\"TOP_STIFFENER\",\"layerName\":\"Top Stiffener Layer\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#eee666\",\"activateTransparency\":1,\"inactiveColor\":\"#777333\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":60,\"id\":\"[\\\"LAYER\\\",59]\"}||{\"layerId\":59,\"layerType\":\"BOTTOM_STIFFENER\",\"layerName\":\"Bottom Stiffener Layer\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#ccff00\",\"activateTransparency\":1,\"inactiveColor\":\"#667f00\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER\",\"ticket\":61,\"id\":\"[\\\"LAYER\\\",361]\"}||{\"layerId\":361,\"layerType\":\"SUBSTRATE\",\"layerName\":\"Dielectric1\",\"use\":false,\"show\":false,\"locked\":false,\"activeColor\":\"#000000\",\"activateTransparency\":1,\"inactiveColor\":\"#000000\",\"inactiveTransparency\":0.5}|\n{\"type\":\"LAYER_PHYS\",\"ticket\":62,\"id\":\"[\\\"LAYER_PHYS\\\",3]\"}||{\"material\":null,\"thickness\":0,\"permittivity\":0,\"lossTangent\":0,\"isKeepIsland\":true,\"zIndex\":1}|\n{\"type\":\"LAYER_PHYS\",\"ticket\":63,\"id\":\"[\\\"LAYER_PHYS\\\",7]\"}||{\"material\":null,\"thickness\":0,\"permittivity\":0,\"lossTangent\":0,\"isKeepIsland\":true,\"zIndex\":2}|\n{\"type\":\"LAYER_PHYS\",\"ticket\":64,\"id\":\"[\\\"LAYER_PHYS\\\",5]\"}||{\"material\":\"\",\"thickness\":0.394,\"permittivity\":3.3,\"lossTangent\":0.02,\"isKeepIsland\":true,\"zIndex\":3}|\n{\"type\":\"LAYER_PHYS\",\"ticket\":65,\"id\":\"[\\\"LAYER_PHYS\\\",1]\"}||{\"material\":null,\"thickness\":1.379,\"permittivity\":0,\"lossTangent\":0,\"isKeepIsland\":true,\"zIndex\":1000}|\n{\"type\":\"LAYER_PHYS\",\"ticket\":66,\"id\":\"[\\\"LAYER_PHYS\\\",361]\"}||{\"material\":\"FR4\",\"thickness\":59.449,\"permittivity\":4.5,\"lossTangent\":0,\"isKeepIsland\":true,\"zIndex\":1001}|\n{\"type\":\"LAYER_PHYS\",\"ticket\":67,\"id\":\"[\\\"LAYER_PHYS\\\",2]\"}||{\"material\":null,\"thickness\":1.378,\"permittivity\":0,\"lossTangent\":0,\"isKeepIsland\":true,\"zIndex\":9000}|\n{\"type\":\"LAYER_PHYS\",\"ticket\":68,\"id\":\"[\\\"LAYER_PHYS\\\",6]\"}||{\"material\":\"\",\"thickness\":0.394,\"permittivity\":3.3,\"lossTangent\":0.02,\"isKeepIsland\":true,\"zIndex\":10000}|\n{\"type\":\"LAYER_PHYS\",\"ticket\":69,\"id\":\"[\\\"LAYER_PHYS\\\",8]\"}||{\"material\":null,\"thickness\":0,\"permittivity\":0,\"lossTangent\":0,\"isKeepIsland\":true,\"zIndex\":10001}|\n{\"type\":\"LAYER_PHYS\",\"ticket\":70,\"id\":\"[\\\"LAYER_PHYS\\\",4]\"}||{\"material\":null,\"thickness\":0,\"permittivity\":0,\"lossTangent\":0,\"isKeepIsland\":true,\"zIndex\":10002}|\n{\"type\":\"ACTIVE_LAYER\",\"ticket\":71,\"id\":\"ACTIVE_LAYER\"}||{\"layerId\":1}|\n{\"type\":\"NET\",\"ticket\":72,\"id\":\"[\\\"NET\\\",\\\"\\\"]\"}||{\"netType\":null,\"specialColor\":null,\"retLine\":true,\"differentialName\":null,\"isPositiveNet\":false,\"equalLengthGroupName\":null}|\n{\"type\":\"NET\",\"ticket\":73,\"id\":\"[\\\"NET\\\",\\\"$1N1\\\"]\"}||{\"netType\":null,\"specialColor\":null,\"retLine\":true,\"differentialName\":null,\"isPositiveNet\":false,\"equalLengthGroupName\":null}|\n{\"type\":\"NET\",\"ticket\":74,\"id\":\"[\\\"NET\\\",\\\"ACE_IN_A\\\"]\"}||{\"netType\":null,\"specialColor\":null,\"retLine\":true,\"differentialName\":null,\"isPositiveNet\":false,\"equalLengthGroupName\":null}|\n{\"type\":\"NET\",\"ticket\":75,\"id\":\"[\\\"NET\\\",\\\"ACE_OUT_A\\\"]\"}||{\"netType\":null,\"specialColor\":null,\"retLine\":true,\"differentialName\":null,\"isPositiveNet\":false,\"equalLengthGroupName\":null}|\n{\"type\":\"NET\",\"ticket\":76,\"id\":\"[\\\"NET\\\",\\\"$1N4\\\"]\"}||{\"netType\":null,\"specialColor\":null,\"retLine\":true,\"differentialName\":null,\"isPositiveNet\":false,\"equalLengthGroupName\":null}|\n{\"type\":\"NET\",\"ticket\":77,\"id\":\"[\\\"NET\\\",\\\"ACE_IN_B\\\"]\"}||{\"netType\":null,\"specialColor\":null,\"retLine\":true,\"differentialName\":null,\"isPositiveNet\":false,\"equalLengthGroupName\":null}|\n{\"type\":\"NET\",\"ticket\":78,\"id\":\"[\\\"NET\\\",\\\"ACE_OUT_B\\\"]\"}||{\"netType\":null,\"specialColor\":null,\"retLine\":true,\"differentialName\":null,\"isPositiveNet\":false,\"equalLengthGroupName\":null}|\n{\"type\":\"RULE_TEMPLATE\",\"ticket\":79,\"id\":\"RULE_TEMPLATE\"}||{\"name\":\"JLCPCB Capability(Two Layers Board)\"}|\n{\"type\":\"RULE\",\"ticket\":80,\"id\":\"[\\\"RULE\\\",\\\"SAFE\\\",\\\"copperThickness1oz\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"isForAll\":\"ALL\",\"safeSpacing\":[{\"layerId\":1,\"isOpen\":true,\"content\":[[4.0157],[5.9843,5.9843],[5.9843,5.9843,5.9843],[5.9843,5.9843,5.9843,5.9843],[5.9843,5.9843,5.9843,5.9843,5.9843],[5.9843,5.9843,5.9843,5.9843,5.9843,5.9843],[5.9843,5.9843,5.9843,5.9843,5.9843,5.9843,5.9843],[10,10,10,10,10,10,10,10],[11.811,6,6,6,6,6,6,10,6],[6,6,6,6,6,6,6,10,11.811,6],[6,6,6,6,6,6,6,10,6,6,6],[11.8,11.8,11.8,11.8,11.8,11.8,11.8,10,11.8,11.8,11.8],[6.929,6.929,6.929,6.929,6.929,6.929,6.929,10,6.929,6.929,6.929,6.929]],\"columnNames\":[]}]}}|\n{\"type\":\"RULE\",\"ticket\":81,\"id\":\"[\\\"RULE\\\",\\\"SAFE\\\",\\\"copperThickness2oz\\\"]\"}||{\"ruleState\":\"NORMAL\",\"ruleContext\":{\"unit\":\"mm\",\"isForAll\":\"ALL\",\"safeSpacing\":[{\"layerId\":1,\"isOpen\":true,\"content\":[[7.9921],[5.9843,5.9843],[5.9843,5.9843,5.9843],[5.9843,5.9843,5.9843,5.9843],[5.9843,5.9843,5.9843,5.9843,5.9843],[5.9843,5.9843,5.9843,5.9843,5.9843,5.9843],[5.9843,5.9843,5.9843,5.9843,5.9843,5.9843,5.9843],[10,10,10,10,10,10,10,10],[11.811,5.9843,5.9843,5.9843,5.9843,5.9843,5.9843,10,5.9843],[5.9843,5.9843,5.9843,5.9843,5.9843,5.9843,5.9843,10,5.9843,5.9843],[5.9843,5.9843,5.9843,5.9843,5.9843,5.9843,5.9843,10,5.9843,5.9843,5.9843],[11.811,11.811,11.811,11.811,11.811,11.811,11.811,10,11.811,11.811,11.811],[6.929,6.929,6.929,6.929,6.929,6.929,6.929,10,6.929,6.929,6.929,6.929]],\"columnNames\":[]}]}}|\n{\"type\":\"RULE\",\"ticket\":82,\"id\":\"[\\\"RULE\\\",\\\"OTHER\\\",\\\"otherClearance\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"deviceClearance\":0,\"thru2SmdClearance\":0,\"holeClearance\":11.811}}|\n{\"type\":\"RULE\",\"ticket\":83,\"id\":\"[\\\"RULE\\\",\\\"CREEPAGE\\\",\\\"creepage\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"creepageDistance\":0,\"ignoreLayer\":true}}|\n{\"type\":\"RULE\",\"ticket\":84,\"id\":\"[\\\"RULE\\\",\\\"TRACK\\\",\\\"copperThickness1oz\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"track\":{\"isOpen\":true,\"content\":[{\"layerId\":1,\"stroMin\":5,\"stroDef\":10,\"stroMax\":100}]}}}|\n{\"type\":\"RULE\",\"ticket\":85,\"id\":\"[\\\"RULE\\\",\\\"TRACK\\\",\\\"copperThickness2oz\\\"]\"}||{\"ruleState\":\"NORMAL\",\"ruleContext\":{\"unit\":\"mm\",\"track\":{\"isOpen\":true,\"content\":[{\"layerId\":1,\"stroMin\":7.9921,\"stroDef\":10,\"stroMax\":100}]}}}|\n{\"type\":\"RULE\",\"ticket\":86,\"id\":\"[\\\"RULE\\\",\\\"NET_LENGTH\\\",\\\"netLength\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"netLenMin\":0,\"netLenMax\":0}}|\n{\"type\":\"RULE\",\"ticket\":87,\"id\":\"[\\\"RULE\\\",\\\"NET_LENGTH_TOLERANCE\\\",\\\"netLengthTolerance\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"netLengthTolerance\":1000}}|\n{\"type\":\"RULE\",\"ticket\":88,\"id\":\"[\\\"RULE\\\",\\\"DIFFER_ENTAIL\\\",\\\"differentialPair\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"stroWidth\":{\"isOpen\":true,\"content\":[{\"layerId\":1,\"stroMin\":5,\"stroMax\":100,\"stroDef\":10}]},\"spacing\":{\"isOpen\":true,\"content\":[{\"layerId\":1,\"spacMin\":6,\"spacDef\":6}]},\"differPairLenTolerMax\":10,\"toleranceUnit\":\"mm\"}}|\n{\"type\":\"RULE\",\"ticket\":89,\"id\":\"[\\\"RULE\\\",\\\"BLIND\\\",\\\"blindVia\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"blinds\":{\"content\":[]}}}|\n{\"type\":\"RULE\",\"ticket\":90,\"id\":\"[\\\"RULE\\\",\\\"RADIUS\\\",\\\"viaSize\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"minRadius\":9.8425,\"defRadius\":12.0079,\"maxRadius\":196.8504,\"minInner\":5.9055,\"defInner\":6.0039,\"maxInner\":124.0157}}|\n{\"type\":\"RULE\",\"ticket\":91,\"id\":\"[\\\"RULE\\\",\\\"PLANE\\\",\\\"innerPlane\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"mulPad\":{\"isOpen\":true,\"content\":[{\"layerId\":1,\"connType\":\"DIVERGENCE\",\"spoSpac\":10,\"spoWidth\":10,\"spoAng\":90}]}}}|\n{\"type\":\"RULE\",\"ticket\":92,\"id\":\"[\\\"RULE\\\",\\\"COPPER\\\",\\\"copperRegion\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"sglPad\":{\"isOpen\":true,\"content\":[{\"layerId\":1,\"connType\":\"DIVERGENCE\",\"spoSpac\":10,\"spoWidth\":10,\"spoAng\":90}]},\"mulPad\":{\"isOpen\":true,\"content\":[{\"layerId\":1,\"connType\":\"DIVERGENCE\",\"spoSpac\":10,\"spoWidth\":10,\"spoAng\":90}]},\"track\":{\"isOpen\":true,\"content\":[{\"layerId\":1,\"connType\":\"DIRECT\"}]}}}|\n{\"type\":\"RULE\",\"ticket\":93,\"id\":\"[\\\"RULE\\\",\\\"PASTE\\\",\\\"pasteMaskExpansion\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"padTopExpan\":0,\"padBotExpan\":0,\"testPointTopExpan\":-1000,\"testPointBotExpan\":-1000}}|\n{\"type\":\"RULE\",\"ticket\":94,\"id\":\"[\\\"RULE\\\",\\\"SOLDER\\\",\\\"solderMaskExpansion\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"padTopExpan\":2,\"padBotExpan\":2,\"viaTopExpan\":-1000,\"viaBotExpan\":-1000,\"testPointTopExpan\":2,\"testPointBotExpan\":2}}|\n{\"type\":\"RULE\",\"ticket\":95,\"id\":\"[\\\"RULE\\\",\\\"AUTO_ROUTER\\\",\\\"Common\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"routingCorner\":\"L45\",\"isKeep\":1,\"viaQuantity\":\"LESS\",\"routingEffectPriority\":\"COMPLETION_FIRST\",\"layers\":[1,2,12],\"ignoreNets\":[]}}|\n{\"type\":\"RULE_SELECTOR\",\"ticket\":96,\"id\":\"[\\\"RULE_SELECTOR\\\",[\\\"NET\\\",\\\"\\\"]]\"}||{\"ruleOrder\":4,\"ruleKeyValue\":{\"NET_LENGTH_TOLERANCE\":[\"default\",null]},\"copperValue\":{},\"innerPlaneValue\":{},\"parent\":null}|\n{\"type\":\"RULE_SELECTOR\",\"ticket\":97,\"id\":\"[\\\"RULE_SELECTOR\\\",[\\\"NET\\\",\\\"$1N1\\\"]]\"}||{\"ruleOrder\":4,\"ruleKeyValue\":{},\"copperValue\":{},\"innerPlaneValue\":{},\"parent\":null}|\n{\"type\":\"RULE_SELECTOR\",\"ticket\":98,\"id\":\"[\\\"RULE_SELECTOR\\\",[\\\"NET\\\",\\\"ACE_IN_A\\\"]]\"}||{\"ruleOrder\":4,\"ruleKeyValue\":{},\"copperValue\":{},\"innerPlaneValue\":{},\"parent\":null}|\n{\"type\":\"RULE_SELECTOR\",\"ticket\":99,\"id\":\"[\\\"RULE_SELECTOR\\\",[\\\"NET\\\",\\\"ACE_OUT_A\\\"]]\"}||{\"ruleOrder\":4,\"ruleKeyValue\":{},\"copperValue\":{},\"innerPlaneValue\":{},\"parent\":null}|\n{\"type\":\"RULE_SELECTOR\",\"ticket\":100,\"id\":\"[\\\"RULE_SELECTOR\\\",[\\\"NET\\\",\\\"$1N4\\\"]]\"}||{\"ruleOrder\":4,\"ruleKeyValue\":{},\"copperValue\":{},\"innerPlaneValue\":{},\"parent\":null}|\n{\"type\":\"RULE_SELECTOR\",\"ticket\":101,\"id\":\"[\\\"RULE_SELECTOR\\\",[\\\"NET\\\",\\\"ACE_IN_B\\\"]]\"}||{\"ruleOrder\":4,\"ruleKeyValue\":{},\"copperValue\":{},\"innerPlaneValue\":{},\"parent\":null}|\n{\"type\":\"RULE_SELECTOR\",\"ticket\":102,\"id\":\"[\\\"RULE_SELECTOR\\\",[\\\"NET\\\",\\\"ACE_OUT_B\\\"]]\"}||{\"ruleOrder\":4,\"ruleKeyValue\":{},\"copperValue\":{},\"innerPlaneValue\":{},\"parent\":null}|\n{\"type\":\"PRIMITIVE\",\"ticket\":103,\"id\":\"[\\\"PRIMITIVE\\\",\\\"ALL\\\"]\"}||{\"display\":true,\"pick\":false}|\n{\"type\":\"PRIMITIVE\",\"ticket\":104,\"id\":\"[\\\"PRIMITIVE\\\",\\\"COMPONENT\\\"]\"}||{\"display\":true,\"pick\":true}|\n{\"type\":\"PRIMITIVE\",\"ticket\":105,\"id\":\"[\\\"PRIMITIVE\\\",\\\"PROPERTY\\\"]\"}||{\"display\":true,\"pick\":true}|\n{\"type\":\"PRIMITIVE\",\"ticket\":106,\"id\":\"[\\\"PRIMITIVE\\\",\\\"COMPONENTSILK\\\"]\"}||{\"display\":true,\"pick\":true}|\n{\"type\":\"PRIMITIVE\",\"ticket\":107,\"id\":\"[\\\"PRIMITIVE\\\",\\\"TRACK\\\"]\"}||{\"display\":true,\"pick\":true,\"transparency\":0}|\n{\"type\":\"PRIMITIVE\",\"ticket\":108,\"id\":\"[\\\"PRIMITIVE\\\",\\\"VIA\\\"]\"}||{\"display\":true,\"pick\":true,\"transparency\":0}|\n{\"type\":\"PRIMITIVE\",\"ticket\":109,\"id\":\"[\\\"PRIMITIVE\\\",\\\"TESTPOINT\\\"]\"}||{\"display\":true,\"pick\":true}|\n{\"type\":\"PRIMITIVE\",\"ticket\":110,\"id\":\"[\\\"PRIMITIVE\\\",\\\"PAD\\\"]\"}||{\"display\":true,\"pick\":true,\"transparency\":0}|\n{\"type\":\"PRIMITIVE\",\"ticket\":111,\"id\":\"[\\\"PRIMITIVE\\\",\\\"PADSPAIR\\\"]\"}||{\"display\":true,\"pick\":false}|\n{\"type\":\"PRIMITIVE\",\"ticket\":112,\"id\":\"[\\\"PRIMITIVE\\\",\\\"NETWORK\\\"]\"}||{\"display\":true,\"pick\":false}|\n{\"type\":\"PRIMITIVE\",\"ticket\":113,\"id\":\"[\\\"PRIMITIVE\\\",\\\"SUTUREHOLE\\\"]\"}||{\"display\":true,\"pick\":true}|\n{\"type\":\"PRIMITIVE\",\"ticket\":114,\"id\":\"[\\\"PRIMITIVE\\\",\\\"TEARDROP\\\"]\"}||{\"display\":true,\"pick\":true}|\n{\"type\":\"PRIMITIVE\",\"ticket\":115,\"id\":\"[\\\"PRIMITIVE\\\",\\\"RATLINE\\\"]\"}||{\"display\":false,\"pick\":false}|\n{\"type\":\"PRIMITIVE\",\"ticket\":116,\"id\":\"[\\\"PRIMITIVE\\\",\\\"GROUP\\\"]\"}||{\"display\":true,\"pick\":false}|\n{\"type\":\"PRIMITIVE\",\"ticket\":117,\"id\":\"[\\\"PRIMITIVE\\\",\\\"TEXT\\\"]\"}||{\"display\":true,\"pick\":true}|\n{\"type\":\"PRIMITIVE\",\"ticket\":118,\"id\":\"[\\\"PRIMITIVE\\\",\\\"IMAGE\\\"]\"}||{\"display\":true,\"pick\":true}|\n{\"type\":\"PRIMITIVE\",\"ticket\":119,\"id\":\"[\\\"PRIMITIVE\\\",\\\"PICTURE\\\"]\"}||{\"display\":true,\"pick\":true,\"transparency\":0.5}|\n{\"type\":\"PRIMITIVE\",\"ticket\":120,\"id\":\"[\\\"PRIMITIVE\\\",\\\"DIMENSION\\\"]\"}||{\"display\":true,\"pick\":true}|\n{\"type\":\"PRIMITIVE\",\"ticket\":121,\"id\":\"[\\\"PRIMITIVE\\\",\\\"BOARDOUTLINE\\\"]\"}||{\"display\":true,\"pick\":true}|\n{\"type\":\"PRIMITIVE\",\"ticket\":122,\"id\":\"[\\\"PRIMITIVE\\\",\\\"SLOTREGION\\\"]\"}||{\"display\":true,\"pick\":true}|\n{\"type\":\"PRIMITIVE\",\"ticket\":123,\"id\":\"[\\\"PRIMITIVE\\\",\\\"FILLREGIEN\\\"]\"}||{\"display\":true,\"pick\":true,\"transparency\":0.3}|\n{\"type\":\"PRIMITIVE\",\"ticket\":124,\"id\":\"[\\\"PRIMITIVE\\\",\\\"COPPEROUTLINE\\\"]\"}||{\"display\":true,\"pick\":true,\"transparency\":0.3}|\n{\"type\":\"PRIMITIVE\",\"ticket\":125,\"id\":\"[\\\"PRIMITIVE\\\",\\\"COPPERFILLED\\\"]\"}||{\"display\":false,\"pick\":false}|\n{\"type\":\"PRIMITIVE\",\"ticket\":126,\"id\":\"[\\\"PRIMITIVE\\\",\\\"PLANE\\\"]\"}||{\"display\":true,\"pick\":true,\"transparency\":0.35}|\n{\"type\":\"PRIMITIVE\",\"ticket\":127,\"id\":\"[\\\"PRIMITIVE\\\",\\\"PROHIBITEDREGION\\\"]\"}||{\"display\":true,\"pick\":true,\"transparency\":0}|\n{\"type\":\"PRIMITIVE\",\"ticket\":128,\"id\":\"[\\\"PRIMITIVE\\\",\\\"CONSTRAINT\\\"]\"}||{\"display\":true,\"pick\":true,\"transparency\":0.5}|\n{\"type\":\"PRIMITIVE\",\"ticket\":129,\"id\":\"[\\\"PRIMITIVE\\\",\\\"PARTITION\\\"]\"}||{\"display\":false,\"pick\":false,\"transparency\":1}|\n{\"type\":\"PRIMITIVE\",\"ticket\":130,\"id\":\"[\\\"PRIMITIVE\\\",\\\"LINE\\\"]\"}||{\"display\":true,\"pick\":true}|\n{\"type\":\"PRIMITIVE\",\"ticket\":131,\"id\":\"[\\\"PRIMITIVE\\\",\\\"LOCKED\\\"]\"}||{\"display\":true,\"pick\":true}|\n{\"type\":\"PRIMITIVE\",\"ticket\":132,\"id\":\"[\\\"PRIMITIVE\\\",\\\"UNLOCKED\\\"]\"}||{\"display\":true,\"pick\":true}|\n{\"type\":\"PRIMITIVE\",\"ticket\":133,\"id\":\"[\\\"PRIMITIVE\\\",\\\"SHELL\\\"]\"}||{\"display\":true,\"pick\":true}|\n{\"type\":\"PRIMITIVE\",\"ticket\":134,\"id\":\"[\\\"PRIMITIVE\\\",\\\"D3BODY\\\"]\"}||{\"display\":true,\"pick\":true}|\n{\"type\":\"PRIMITIVE\",\"ticket\":135,\"id\":\"[\\\"PRIMITIVE\\\",\\\"BOSS\\\"]\"}||{\"display\":true,\"pick\":true}|\n{\"type\":\"PRIMITIVE\",\"ticket\":136,\"id\":\"[\\\"PRIMITIVE\\\",\\\"CREASE\\\"]\"}||{\"display\":true,\"pick\":true}|\n{\"type\":\"PRIMITIVE\",\"ticket\":137,\"id\":\"[\\\"PRIMITIVE\\\",\\\"TOPSHELLCUT\\\"]\"}||{\"display\":true,\"pick\":true}|\n{\"type\":\"PRIMITIVE\",\"ticket\":138,\"id\":\"[\\\"PRIMITIVE\\\",\\\"SIDESHELLCUT\\\"]\"}||{\"display\":true,\"pick\":true}|\n{\"type\":\"PRIMITIVE\",\"ticket\":139,\"id\":\"[\\\"PRIMITIVE\\\",\\\"TOPBOTTOMENTITY\\\"]\"}||{\"display\":true,\"pick\":true}|\n{\"type\":\"PRIMITIVE\",\"ticket\":140,\"id\":\"[\\\"PRIMITIVE\\\",\\\"SIDEENTITY\\\"]\"}||{\"display\":true,\"pick\":true}|\n{\"type\":\"PRIMITIVE\",\"ticket\":141,\"id\":\"[\\\"PRIMITIVE\\\",\\\"FPC_STIFFENER\\\"]\"}||{\"display\":true,\"pick\":true}|\n{\"type\":\"PRIMITIVE\",\"ticket\":142,\"id\":\"[\\\"PRIMITIVE\\\",\\\"0-ALL\\\",0]\"}||{\"display\":true}|\n{\"type\":\"PRIMITIVE\",\"ticket\":143,\"id\":\"[\\\"PRIMITIVE\\\",\\\"0-DRC\\\",0]\"}||{\"color\":\"#ffcc00\"}|\n{\"type\":\"PRIMITIVE\",\"ticket\":144,\"id\":\"[\\\"PRIMITIVE\\\",\\\"0-PROHIBITEDREGION\\\",0]\"}||{\"color\":\"#9966ff\"}|\n{\"type\":\"PRIMITIVE\",\"ticket\":145,\"id\":\"[\\\"PRIMITIVE\\\",\\\"0-BOARDSHAPE\\\",0]\"}||{\"color\":\"#6d6a69\"}|\n{\"type\":\"PRIMITIVE\",\"ticket\":146,\"id\":\"[\\\"PRIMITIVE\\\",\\\"0-PARTITION\\\",0]\"}||{\"color\":\"#c0c0c0\"}|\n{\"type\":\"PRIMITIVE\",\"ticket\":147,\"id\":\"[\\\"PRIMITIVE\\\",\\\"CURSOR\\\"]\"}||{\"color\":\"#00ffff\"}|\n{\"type\":\"PRIMITIVE\",\"ticket\":148,\"id\":\"[\\\"PRIMITIVE\\\",\\\"BACKGROUND\\\"]\"}||{\"color\":\"#000000\"}|\n{\"type\":\"PRIMITIVE\",\"ticket\":149,\"id\":\"[\\\"PRIMITIVE\\\",\\\"GRID\\\"]\"}||{\"color\":\"#ffffff\"}|\n{\"type\":\"PRIMITIVE\",\"ticket\":150,\"id\":\"[\\\"PRIMITIVE\\\",\\\"BOLDGRID\\\"]\"}||{\"color\":\"#ffffff\"}|\n{\"type\":\"PRIMITIVE\",\"ticket\":151,\"id\":\"[\\\"PRIMITIVE\\\",\\\"COORDINATEAXIS\\\"]\"}||{\"color\":\"#ffffff\"}|\n{\"type\":\"PRIMITIVE\",\"ticket\":152,\"id\":\"[\\\"PRIMITIVE\\\",\\\"SELECTBOX\\\"]\"}||{\"color\":\"#00ffff\"}|\n{\"type\":\"SILK_OPTS\",\"ticket\":153,\"id\":\"[\\\"SILK_OPTS\\\",3]\"}||{\"defaultColor\":\"#000000\",\"baseColor\":\"#FFFFFF\"}|\n{\"type\":\"SILK_OPTS\",\"ticket\":154,\"id\":\"[\\\"SILK_OPTS\\\",4]\"}||{\"defaultColor\":\"#000000\",\"baseColor\":\"#FFFFFF\"}|\n{\"type\":\"D3_ATTRIBUTE\",\"ticket\":155,\"id\":\"D3_ATTRIBUTE\"}||{\"materials\":\"substrate_yellow\",\"silkTechnology\":\"standardSilk\",\"backgroundColor\":\"#000000\",\"boardColor\":\"blue\",\"sprayColor\":\"gold\",\"layerExpose\":0,\"substrateHeight\":0}|\n{\"type\":\"PREFERENCE\",\"ticket\":156,\"id\":\"PREFERENCE\"}||{\"startTrackWidthFollowLast\":false,\"lastTrackWidth\":10,\"startViaSizeFollowLast\":false,\"lastViaInnerDiameter\":12.0078,\"lastViaDiameter\":24.0158,\"snap\":true,\"routingMode\":\"SURROUND\",\"routingCorner\":\"L45\",\"removeLoop\":true,\"rotatingObject\":false,\"trackFollow\":false,\"stretchTrackMinCorner\":1,\"realTimeUpdateUnusedLayers\":false,\"unusedPadRange\":\"VIA\",\"pushVia\":\"OPTIMIZA_OPEN\",\"pathOptimization4BePushed\":\"SINGLE\",\"currentPathOptimization4BePushed\":\"OPTIMIZA_WEAK\",\"removeCircuitsContainingVias\":true,\"removeAntenna\":true}|\n{\"type\":\"PANELIZE\",\"ticket\":157,\"id\":\"PANELIZE\"}||{\"on\":false,\"row\":1,\"column\":1,\"rowSpacing\":0,\"columnSpacing\":0,\"onlyOutline\":true,\"horizontalStamp\":{\"on\":false,\"stampHoleGroupQuantity\":1,\"stampHoleDiameter\":21.6535,\"stampHoleQuantityPerGroup\":8,\"stampHoleSpacing\":33.4646,\"center_percent\":null},\"verticalStamp\":{\"on\":false,\"stampHoleGroupQuantity\":1,\"stampHoleDiameter\":21.6535,\"stampHoleQuantityPerGroup\":8,\"stampHoleSpacing\":33.4646,\"center_percent\":null},\"horizontalSize\":{\"direction\":0,\"on\":false,\"sideHeight\":236.2205,\"positionHoleDiameter\":78.7402,\"markDiameter\":39.3701,\"markExpansion\":19.685,\"borderRadius\":39.3701},\"verticalSize\":{\"direction\":1,\"on\":true,\"sideHeight\":236.2205,\"positionHoleDiameter\":78.7402,\"markDiameter\":39.3701,\"markExpansion\":19.685,\"borderRadius\":39.3701},\"mirrorBoard\":false,\"mirrorEvenRow\":false,\"mirrorEvenCol\":false,\"evenRowRotation\":0,\"evenColRotation\":0,\"showVCutIndicator\":true,\"vCutLayer\":13,\"markPosition\":null,\"positionHolePosition\":null,\"panelizeVersion\":\"1.1\"}|\n{\"type\":\"VIA\",\"ticket\":158,\"id\":\"af489c4e7b0ab1ab\"}||{\"partitionId\":\"\",\"groupId\":0,\"netName\":\"ACE_IN_A\",\"ruleName\":\"\",\"centerX\":300,\"centerY\":400,\"holeDiameter\":12,\"viaDiameter\":24,\"viaType\":\"NORMAL\",\"topSolderExpansion\":null,\"bottomSolderExpansion\":null,\"locked\":false,\"unusedInnerLayers\":[],\"propagationDelay\":0}|\n{\"type\":\"LINE\",\"ticket\":159,\"id\":\"8defad51d5f23ffb\"}||{\"partitionId\":\"\",\"groupId\":0,\"netName\":\"ACE_IN_A\",\"layerId\":1,\"startX\":370.3,\"startY\":400,\"endX\":300,\"endY\":400,\"width\":12,\"locked\":false,\"zIndex\":-1}|\n{\"type\":\"LINE\",\"ticket\":160,\"id\":\"35c7b88c489eb5c3\"}||{\"partitionId\":\"\",\"groupId\":0,\"netName\":\"$1N1\",\"layerId\":1,\"startX\":429.7,\"startY\":400,\"endX\":620.3,\"endY\":400,\"width\":12,\"locked\":false,\"zIndex\":-1}|\n{\"type\":\"LINE\",\"ticket\":161,\"id\":\"ac5863d8e4aff54b\"}||{\"partitionId\":\"\",\"groupId\":0,\"netName\":\"$1N4\",\"layerId\":1,\"startX\":429.7,\"startY\":650,\"endX\":620.3,\"endY\":650,\"width\":12,\"locked\":false,\"zIndex\":-1}|\n{\"type\":\"POLY\",\"ticket\":162,\"id\":\"8b85022ac9adcacb\"}||{\"partitionId\":\"\",\"groupId\":0,\"netName\":\"\",\"layerId\":11,\"width\":6,\"path\":[\"R\",0,1575,1969,1575,0,0],\"locked\":false,\"zIndex\":-1,\"polyType\":\"NORMAL\"}|\n{\"type\":\"POUR\",\"ticket\":163,\"id\":\"a27cfea85d690c73\"}||{\"partitionId\":\"\",\"groupId\":0,\"netName\":\"ACE_IN_A\",\"layerId\":2,\"width\":0.2,\"name\":\"POUR1\",\"order\":0,\"path\":[[\"R\",250,450,200,100,0,0]],\"pourType\":{\"pourType\":\"SOLID\",\"fineness\":8},\"keepIsland\":false,\"locked\":false,\"zIndex\":-1}|\n{\"type\":\"POUR\",\"ticket\":164,\"id\":\"86b3052d2e8b7b70\"}||{\"partitionId\":\"\",\"groupId\":0,\"netName\":\"ACE_IN_A\",\"layerId\":1,\"width\":0.2,\"name\":\"POUR2\",\"order\":0,\"path\":[[\"R\",700,900,300,200,0,0]],\"pourType\":{\"pourType\":\"SOLID\",\"fineness\":8},\"keepIsland\":true,\"locked\":false,\"zIndex\":-1}|\n{\"type\":\"COMPONENT\",\"ticket\":165,\"id\":\"33da7c6b5688d29e\"}||{\"partitionId\":\"\",\"groupId\":0,\"layerId\":1,\"x\":400,\"y\":400,\"angle\":0,\"attrs\":{\"Unique ID\":\"gge1\",\"Reuse Block\":\"\",\"Group ID\":\"\",\"Channel ID\":\"$1I2\",\"DeviceName\":\"{\\\"name\\\":\\\"0603WAF1002T5E\\\",\\\"source\\\":\\\"\\\",\\\"uuid\\\":\\\"251fc92e0ef60e7b\\\"}\"},\"locked\":false,\"zIndex\":-1,\"pinSwap\":false,\"pinSwapInfo\":{\"33da7c6b5688d29ee7\":{\"pinClass\":\"\",\"differentialPairClass\":\"\"},\"33da7c6b5688d29ee8\":{\"pinClass\":\"\",\"differentialPairClass\":\"\"}},\"footprintPrimitives\":true}|\n{\"type\":\"ATTR\",\"ticket\":166,\"id\":\"33da7c6b5688d29ee15\"}||{\"partitionId\":\"\",\"groupID\":0,\"parentId\":\"33da7c6b5688d29e\",\"layerId\":3,\"x\":null,\"y\":null,\"key\":\"Footprint\",\"value\":\"aee291d1043c0a99\",\"keyVisible\":false,\"valueVisible\":false,\"fontFamily\":\"default\",\"fontSize\":45,\"strokeWidth\":6,\"bold\":0,\"italic\":0,\"origin\":\"LEFT_BOTTOM\",\"angle\":0,\"reverse\":false,\"expansion\":0,\"mirror\":false,\"locked\":false,\"zIndex\":15,\"specialColor\":null}|\n{\"type\":\"ATTR\",\"ticket\":167,\"id\":\"33da7c6b5688d29ee16\"}||{\"partitionId\":\"\",\"groupID\":0,\"parentId\":\"33da7c6b5688d29e\",\"layerId\":3,\"x\":342.469,\"y\":434.008,\"key\":\"Designator\",\"value\":\"R1\",\"keyVisible\":false,\"valueVisible\":true,\"fontFamily\":\"default\",\"fontSize\":45,\"strokeWidth\":6,\"bold\":0,\"italic\":0,\"origin\":\"LEFT_BOTTOM\",\"angle\":0,\"reverse\":false,\"expansion\":0,\"mirror\":false,\"locked\":false,\"zIndex\":16,\"specialColor\":null}|\n{\"type\":\"ATTR\",\"ticket\":168,\"id\":\"33da7c6b5688d29ee0\"}||{\"partitionId\":\"\",\"groupID\":0,\"parentId\":\"33da7c6b5688d29e\",\"layerId\":3,\"x\":null,\"y\":null,\"key\":\"Device\",\"value\":\"251fc92e0ef60e7b\",\"keyVisible\":false,\"valueVisible\":false,\"fontFamily\":\"default\",\"fontSize\":45,\"strokeWidth\":6,\"bold\":0,\"italic\":0,\"origin\":\"LEFT_BOTTOM\",\"angle\":0,\"reverse\":false,\"expansion\":0,\"mirror\":false,\"locked\":false,\"zIndex\":-1,\"specialColor\":null}|\n{\"type\":\"PAD_NET\",\"ticket\":169,\"id\":\"[\\\"PAD_NET\\\",\\\"33da7c6b5688d29e\\\",\\\"2\\\",\\\"e7\\\"]\"}||{\"partitionId\":\"\",\"padNet\":\"$1N1\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"ticket\":170,\"id\":\"[\\\"PAD_NET\\\",\\\"33da7c6b5688d29e\\\",\\\"1\\\",\\\"e8\\\"]\"}||{\"partitionId\":\"\",\"padNet\":\"ACE_IN_A\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"COMPONENT\",\"ticket\":171,\"id\":\"358bd528d0a95db5\"}||{\"partitionId\":\"\",\"groupId\":0,\"layerId\":1,\"x\":650,\"y\":400,\"angle\":0,\"attrs\":{\"Unique ID\":\"gge2\",\"Reuse Block\":\"\",\"Group ID\":\"\",\"Channel ID\":\"$1I3\",\"DeviceName\":\"{\\\"name\\\":\\\"0603WAF1002T5E\\\",\\\"source\\\":\\\"\\\",\\\"uuid\\\":\\\"eb1343a5e5fcb9c2\\\"}\"},\"locked\":false,\"zIndex\":-1,\"pinSwap\":false,\"pinSwapInfo\":{\"358bd528d0a95db5e7\":{\"pinClass\":\"\",\"differentialPairClass\":\"\"},\"358bd528d0a95db5e8\":{\"pinClass\":\"\",\"differentialPairClass\":\"\"}},\"footprintPrimitives\":true}|\n{\"type\":\"ATTR\",\"ticket\":172,\"id\":\"358bd528d0a95db5e15\"}||{\"partitionId\":\"\",\"groupID\":0,\"parentId\":\"358bd528d0a95db5\",\"layerId\":3,\"x\":null,\"y\":null,\"key\":\"Footprint\",\"value\":\"7477f84ff0a0819a\",\"keyVisible\":false,\"valueVisible\":false,\"fontFamily\":\"default\",\"fontSize\":45,\"strokeWidth\":6,\"bold\":0,\"italic\":0,\"origin\":\"LEFT_BOTTOM\",\"angle\":0,\"reverse\":false,\"expansion\":0,\"mirror\":false,\"locked\":false,\"zIndex\":15,\"specialColor\":null}|\n{\"type\":\"ATTR\",\"ticket\":173,\"id\":\"358bd528d0a95db5e16\"}||{\"partitionId\":\"\",\"groupID\":0,\"parentId\":\"358bd528d0a95db5\",\"layerId\":3,\"x\":592.469,\"y\":434.008,\"key\":\"Designator\",\"value\":\"R2\",\"keyVisible\":false,\"valueVisible\":true,\"fontFamily\":\"default\",\"fontSize\":45,\"strokeWidth\":6,\"bold\":0,\"italic\":0,\"origin\":\"LEFT_BOTTOM\",\"angle\":0,\"reverse\":false,\"expansion\":0,\"mirror\":false,\"locked\":false,\"zIndex\":16,\"specialColor\":null}|\n{\"type\":\"ATTR\",\"ticket\":174,\"id\":\"358bd528d0a95db5e0\"}||{\"partitionId\":\"\",\"groupID\":0,\"parentId\":\"358bd528d0a95db5\",\"layerId\":3,\"x\":null,\"y\":null,\"key\":\"Device\",\"value\":\"eb1343a5e5fcb9c2\",\"keyVisible\":false,\"valueVisible\":false,\"fontFamily\":\"default\",\"fontSize\":45,\"strokeWidth\":6,\"bold\":0,\"italic\":0,\"origin\":\"LEFT_BOTTOM\",\"angle\":0,\"reverse\":false,\"expansion\":0,\"mirror\":false,\"locked\":false,\"zIndex\":-1,\"specialColor\":null}|\n{\"type\":\"PAD_NET\",\"ticket\":175,\"id\":\"[\\\"PAD_NET\\\",\\\"358bd528d0a95db5\\\",\\\"2\\\",\\\"e7\\\"]\"}||{\"partitionId\":\"\",\"padNet\":\"ACE_OUT_A\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"ticket\":176,\"id\":\"[\\\"PAD_NET\\\",\\\"358bd528d0a95db5\\\",\\\"1\\\",\\\"e8\\\"]\"}||{\"partitionId\":\"\",\"padNet\":\"$1N1\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"COMPONENT\",\"ticket\":177,\"id\":\"abf1cec96022ecf4\"}||{\"partitionId\":\"\",\"groupId\":0,\"layerId\":1,\"x\":400,\"y\":650,\"angle\":0,\"attrs\":{\"Unique ID\":\"gge3\",\"Reuse Block\":\"\",\"Group ID\":\"\",\"Channel ID\":\"$1I4\",\"DeviceName\":\"{\\\"name\\\":\\\"0603WAF1002T5E\\\",\\\"source\\\":\\\"\\\",\\\"uuid\\\":\\\"251fc92e0ef60e7b\\\"}\"},\"locked\":false,\"zIndex\":-1,\"pinSwap\":false,\"pinSwapInfo\":{\"abf1cec96022ecf4e7\":{\"pinClass\":\"\",\"differentialPairClass\":\"\"},\"abf1cec96022ecf4e8\":{\"pinClass\":\"\",\"differentialPairClass\":\"\"}},\"footprintPrimitives\":true}|\n{\"type\":\"ATTR\",\"ticket\":178,\"id\":\"abf1cec96022ecf4e15\"}||{\"partitionId\":\"\",\"groupID\":0,\"parentId\":\"abf1cec96022ecf4\",\"layerId\":3,\"x\":null,\"y\":null,\"key\":\"Footprint\",\"value\":\"aee291d1043c0a99\",\"keyVisible\":false,\"valueVisible\":false,\"fontFamily\":\"default\",\"fontSize\":45,\"strokeWidth\":6,\"bold\":0,\"italic\":0,\"origin\":\"LEFT_BOTTOM\",\"angle\":0,\"reverse\":false,\"expansion\":0,\"mirror\":false,\"locked\":false,\"zIndex\":15,\"specialColor\":null}|\n{\"type\":\"ATTR\",\"ticket\":179,\"id\":\"abf1cec96022ecf4e16\"}||{\"partitionId\":\"\",\"groupID\":0,\"parentId\":\"abf1cec96022ecf4\",\"layerId\":3,\"x\":342.469,\"y\":684.008,\"key\":\"Designator\",\"value\":\"R3\",\"keyVisible\":false,\"valueVisible\":true,\"fontFamily\":\"default\",\"fontSize\":45,\"strokeWidth\":6,\"bold\":0,\"italic\":0,\"origin\":\"LEFT_BOTTOM\",\"angle\":0,\"reverse\":false,\"expansion\":0,\"mirror\":false,\"locked\":false,\"zIndex\":16,\"specialColor\":null}|\n{\"type\":\"ATTR\",\"ticket\":180,\"id\":\"abf1cec96022ecf4e0\"}||{\"partitionId\":\"\",\"groupID\":0,\"parentId\":\"abf1cec96022ecf4\",\"layerId\":3,\"x\":null,\"y\":null,\"key\":\"Device\",\"value\":\"251fc92e0ef60e7b\",\"keyVisible\":false,\"valueVisible\":false,\"fontFamily\":\"default\",\"fontSize\":45,\"strokeWidth\":6,\"bold\":0,\"italic\":0,\"origin\":\"LEFT_BOTTOM\",\"angle\":0,\"reverse\":false,\"expansion\":0,\"mirror\":false,\"locked\":false,\"zIndex\":-1,\"specialColor\":null}|\n{\"type\":\"PAD_NET\",\"ticket\":181,\"id\":\"[\\\"PAD_NET\\\",\\\"abf1cec96022ecf4\\\",\\\"2\\\",\\\"e7\\\"]\"}||{\"partitionId\":\"\",\"padNet\":\"$1N4\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"ticket\":182,\"id\":\"[\\\"PAD_NET\\\",\\\"abf1cec96022ecf4\\\",\\\"1\\\",\\\"e8\\\"]\"}||{\"partitionId\":\"\",\"padNet\":\"ACE_IN_B\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"COMPONENT\",\"ticket\":183,\"id\":\"6c72021830c3f345\"}||{\"partitionId\":\"\",\"groupId\":0,\"layerId\":1,\"x\":650,\"y\":650,\"angle\":0,\"attrs\":{\"Unique ID\":\"gge4\",\"Reuse Block\":\"\",\"Group ID\":\"\",\"Channel ID\":\"$1I5\",\"DeviceName\":\"{\\\"name\\\":\\\"0603WAF1002T5E\\\",\\\"source\\\":\\\"\\\",\\\"uuid\\\":\\\"251fc92e0ef60e7b\\\"}\"},\"locked\":false,\"zIndex\":-1,\"pinSwap\":false,\"pinSwapInfo\":{\"6c72021830c3f345e7\":{\"pinClass\":\"\",\"differentialPairClass\":\"\"},\"6c72021830c3f345e8\":{\"pinClass\":\"\",\"differentialPairClass\":\"\"}},\"footprintPrimitives\":true}|\n{\"type\":\"ATTR\",\"ticket\":184,\"id\":\"6c72021830c3f345e15\"}||{\"partitionId\":\"\",\"groupID\":0,\"parentId\":\"6c72021830c3f345\",\"layerId\":3,\"x\":null,\"y\":null,\"key\":\"Footprint\",\"value\":\"aee291d1043c0a99\",\"keyVisible\":false,\"valueVisible\":false,\"fontFamily\":\"default\",\"fontSize\":45,\"strokeWidth\":6,\"bold\":0,\"italic\":0,\"origin\":\"LEFT_BOTTOM\",\"angle\":0,\"reverse\":false,\"expansion\":0,\"mirror\":false,\"locked\":false,\"zIndex\":15,\"specialColor\":null}|\n{\"type\":\"ATTR\",\"ticket\":185,\"id\":\"6c72021830c3f345e16\"}||{\"partitionId\":\"\",\"groupID\":0,\"parentId\":\"6c72021830c3f345\",\"layerId\":3,\"x\":592.469,\"y\":684.008,\"key\":\"Designator\",\"value\":\"R4\",\"keyVisible\":false,\"valueVisible\":true,\"fontFamily\":\"default\",\"fontSize\":45,\"strokeWidth\":6,\"bold\":0,\"italic\":0,\"origin\":\"LEFT_BOTTOM\",\"angle\":0,\"reverse\":false,\"expansion\":0,\"mirror\":false,\"locked\":false,\"zIndex\":16,\"specialColor\":null}|\n{\"type\":\"ATTR\",\"ticket\":186,\"id\":\"6c72021830c3f345e0\"}||{\"partitionId\":\"\",\"groupID\":0,\"parentId\":\"6c72021830c3f345\",\"layerId\":3,\"x\":null,\"y\":null,\"key\":\"Device\",\"value\":\"251fc92e0ef60e7b\",\"keyVisible\":false,\"valueVisible\":false,\"fontFamily\":\"default\",\"fontSize\":45,\"strokeWidth\":6,\"bold\":0,\"italic\":0,\"origin\":\"LEFT_BOTTOM\",\"angle\":0,\"reverse\":false,\"expansion\":0,\"mirror\":false,\"locked\":false,\"zIndex\":-1,\"specialColor\":null}|\n{\"type\":\"PAD_NET\",\"ticket\":187,\"id\":\"[\\\"PAD_NET\\\",\\\"6c72021830c3f345\\\",\\\"2\\\",\\\"e7\\\"]\"}||{\"partitionId\":\"\",\"padNet\":\"ACE_OUT_B\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"ticket\":188,\"id\":\"[\\\"PAD_NET\\\",\\\"6c72021830c3f345\\\",\\\"1\\\",\\\"e8\\\"]\"}||{\"partitionId\":\"\",\"padNet\":\"$1N4\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"COMPONENT\",\"ticket\":189,\"id\":\"b8522f9f958a6c92\"}||{\"partitionId\":\"\",\"groupId\":0,\"layerId\":1,\"x\":900,\"y\":500,\"angle\":0,\"attrs\":{\"Unique ID\":\"gge5\",\"Reuse Block\":\"\",\"Group ID\":\"\",\"Channel ID\":\"$1I6\",\"DeviceName\":\"{\\\"name\\\":\\\"0603WAF1002T5E\\\",\\\"source\\\":\\\"\\\",\\\"uuid\\\":\\\"251fc92e0ef60e7b\\\"}\"},\"locked\":false,\"zIndex\":-1,\"pinSwap\":false,\"pinSwapInfo\":{\"b8522f9f958a6c92e7\":{\"pinClass\":\"\",\"differentialPairClass\":\"\"},\"b8522f9f958a6c92e8\":{\"pinClass\":\"\",\"differentialPairClass\":\"\"}},\"footprintPrimitives\":true}|\n{\"type\":\"ATTR\",\"ticket\":190,\"id\":\"b8522f9f958a6c92e15\"}||{\"partitionId\":\"\",\"groupID\":0,\"parentId\":\"b8522f9f958a6c92\",\"layerId\":3,\"x\":null,\"y\":null,\"key\":\"Footprint\",\"value\":\"aee291d1043c0a99\",\"keyVisible\":false,\"valueVisible\":false,\"fontFamily\":\"default\",\"fontSize\":45,\"strokeWidth\":6,\"bold\":0,\"italic\":0,\"origin\":\"LEFT_BOTTOM\",\"angle\":0,\"reverse\":false,\"expansion\":0,\"mirror\":false,\"locked\":false,\"zIndex\":15,\"specialColor\":null}|\n{\"type\":\"ATTR\",\"ticket\":191,\"id\":\"b8522f9f958a6c92e16\"}||{\"partitionId\":\"\",\"groupID\":0,\"parentId\":\"b8522f9f958a6c92\",\"layerId\":3,\"x\":842.469,\"y\":534.008,\"key\":\"Designator\",\"value\":\"R5\",\"keyVisible\":false,\"valueVisible\":true,\"fontFamily\":\"default\",\"fontSize\":45,\"strokeWidth\":6,\"bold\":0,\"italic\":0,\"origin\":\"LEFT_BOTTOM\",\"angle\":0,\"reverse\":false,\"expansion\":0,\"mirror\":false,\"locked\":false,\"zIndex\":16,\"specialColor\":null}|\n{\"type\":\"ATTR\",\"ticket\":192,\"id\":\"b8522f9f958a6c92e0\"}||{\"partitionId\":\"\",\"groupID\":0,\"parentId\":\"b8522f9f958a6c92\",\"layerId\":3,\"x\":null,\"y\":null,\"key\":\"Device\",\"value\":\"251fc92e0ef60e7b\",\"keyVisible\":false,\"valueVisible\":false,\"fontFamily\":\"default\",\"fontSize\":45,\"strokeWidth\":6,\"bold\":0,\"italic\":0,\"origin\":\"LEFT_BOTTOM\",\"angle\":0,\"reverse\":false,\"expansion\":0,\"mirror\":false,\"locked\":false,\"zIndex\":-1,\"specialColor\":null}|\n{\"type\":\"PAD_NET\",\"ticket\":193,\"id\":\"[\\\"PAD_NET\\\",\\\"b8522f9f958a6c92\\\",\\\"2\\\",\\\"e7\\\"]\"}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"ticket\":194,\"id\":\"[\\\"PAD_NET\\\",\\\"b8522f9f958a6c92\\\",\\\"1\\\",\\\"e8\\\"]\"}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"POURED\",\"ticket\":195,\"id\":\"[\\\"POURED\\\",\\\"a27cfea85d690c73\\\"]\"}||{\"pourFill\":[{\"strokeWidth\":0,\"fill\":true,\"path\":[[44.6,35.4,\"L\",25.399999999999995,35.4,25.4,44.6,44.60000000000001,44.6,44.6,35.4]],\"id\":\"7b70a0bfb3c84fa9\"}]}",
+    "rules": {
+      "config": {
+        "Copper Analysis": {
+          "Acute Angle": [],
+          "Bare Track Ends": [],
+          "Hole Falls on Pad": [],
+          "Minimum Copper Width": [],
+          "Pad Hole Ring": [],
+          "Short Circuit Prompt": [],
+          "Track Neckdown": []
+        },
+        "Drill Hole Analysis": {
+          "Hole Size": [],
+          "NPTH to Copper": [],
+          "No Connected Vias": []
+        },
+        "Expansion": {
+          "Paste Mask Expansion": {
+            "pasteMaskExpansion": {
+              "editName": "pasteMaskExpansion",
+              "form": {
+                "padBottomlayerExpansion": 0,
+                "padToplayerExpansion": 0,
+                "testPointBottomlayerExpansion": -25.4,
+                "testPointToplayerExpansion": -25.4
+              },
+              "isSetDefault": true,
+              "unit": "mm"
+            }
+          },
+          "Solder Mask Expansion": {
+            "solderMaskExpansion": {
+              "editName": "solderMaskExpansion",
+              "form": {
+                "padBottomlayerExpansion": 0.0508,
+                "padToplayerExpansion": 0.0508,
+                "testPointBottomlayerExpansion": 0.0508,
+                "testPointToplayerExpansion": 0.0508,
+                "viaBottomlayerExpansion": -25.4,
+                "viaToplayerExpansion": -25.4
+              },
+              "isSetDefault": true,
+              "unit": "mm"
+            }
+          }
+        },
+        "Physics": {
+          "Blind/Buried Via": {
+            "blindVia": {
+              "editName": "blindVia",
+              "isSetDefault": true,
+              "table": []
+            }
+          },
+          "Differential Pair": {
+            "differentialPair": {
+              "editName": "differentialPair",
+              "form": {
+                "diffPairSpacingTables": {
+                  "data": {
+                    "1": {
+                      "defaultValue": 0.15239999999999998,
+                      "maxValue": null,
+                      "minValue": 0.15239999999999998
+                    }
+                  },
+                  "status": 1
+                },
+                "differentailPairLenTolerMax": 0.254,
+                "strokeWidthTables": {
+                  "data": {
+                    "1": {
+                      "defaultValue": 0.254,
+                      "maxValue": 2.54,
+                      "minValue": 0.127
+                    }
+                  },
+                  "status": 1
+                },
+                "toleranceUnit": "mm"
+              },
+              "isSetDefault": true,
+              "unit": "mm"
+            }
+          },
+          "Height": {
+            "height": {
+              "editName": "height",
+              "form": {
+                "maxHeight": 0
+              },
+              "isSetDefault": true,
+              "unit": "mm"
+            }
+          },
+          "Net Length Range": {
+            "netLength": {
+              "editName": "netLength",
+              "form": {
+                "netLengthMax": 0,
+                "netLengthMin": 0
+              },
+              "isSetDefault": true,
+              "unit": "mm"
+            }
+          },
+          "Net Length Tolerance": {
+            "netLengthTolerance": {
+              "editName": "netLengthTolerance",
+              "form": {
+                "netLengthTolerance": 25.4
+              },
+              "isSetDefault": true,
+              "unit": "mm"
+            }
+          },
+          "Track": {
+            "copperThickness1oz": {
+              "editName": "copperThickness1oz",
+              "form": {
+                "data": {
+                  "1": {
+                    "defaultValue": 0.254,
+                    "maxValue": 2.54,
+                    "minValue": 0.127
+                  }
+                },
+                "status": 1
+              },
+              "isSetDefault": true,
+              "unit": "mm"
+            },
+            "copperThickness2oz": {
+              "editName": "copperThickness2oz",
+              "form": {
+                "data": {
+                  "1": {
+                    "defaultValue": 0.254,
+                    "maxValue": 2.54,
+                    "minValue": 0.20299933999999997
+                  }
+                },
+                "status": 1
+              },
+              "isSetDefault": false,
+              "unit": "mm"
+            }
+          },
+          "Via Size": {
+            "viaSize": {
+              "editName": "viaSize",
+              "form": {
+                "viaInnerdiameterDefault": 0.30499812,
+                "viaInnerdiameterMax": 6.2999975599999996,
+                "viaInnerdiameterMin": 0.29999939999999997,
+                "viaOuterdiameterDefault": 0.61000132,
+                "viaOuterdiameterMax": 10.00000032,
+                "viaOuterdiameterMin": 0.49999899999999997
+              },
+              "isSetDefault": true,
+              "unit": "mm"
+            }
+          }
+        },
+        "Plane": {
+          "Copper Zone": {
+            "copperRegion": {
+              "editName": "copperRegion",
+              "form": {
+                "multiLayerPadModel": {
+                  "data": {
+                    "1": {
+                      "connectMode": 0,
+                      "lineAngle": 90,
+                      "lineClearance": 0.254,
+                      "lineWidth": 0.254
+                    }
+                  },
+                  "status": 1
+                },
+                "singleLayerPadModel": {
+                  "data": {
+                    "1": {
+                      "connectMode": 0,
+                      "lineAngle": 90,
+                      "lineClearance": 0.254,
+                      "lineWidth": 0.254
+                    }
+                  },
+                  "status": 1
+                },
+                "trackConnectModel": {
+                  "data": {
+                    "1": {
+                      "trackConnectMode": 0
+                    }
+                  },
+                  "status": 1
+                }
+              },
+              "isSetDefault": true,
+              "unit": "mm"
+            }
+          },
+          "Plane Zone": {
+            "innerPlane": {
+              "editName": "innerPlane",
+              "form": {
+                "data": {
+                  "1": {
+                    "connectMode": 0,
+                    "lineAngle": 90,
+                    "lineClearance": 0.254,
+                    "lineWidth": 0.254
+                  }
+                },
+                "status": 1
+              },
+              "isSetDefault": true,
+              "unit": "mm"
+            }
+          }
+        },
+        "Silkscreen Analysis": {
+          "Silkscreen Line Width": [],
+          "Silkscreen to Hole": [],
+          "Silkscreen to Pad": []
+        },
+        "Solder Mask Analysis": {
+          "Pad Negative Opening": [],
+          "SMask Opening Copper": [],
+          "Solder Mask Bridge": []
+        },
+        "Spacing": {
+          "Creepage Distance": {
+            "creepage": {
+              "editName": "creepage",
+              "form": {
+                "creepageDistance": 0,
+                "ignoreLayer": true
+              },
+              "isSetDefault": true,
+              "unit": "mm"
+            }
+          },
+          "Other Spacing": {
+            "otherClearance": {
+              "editName": "otherClearance",
+              "form": {
+                "device2device": 0,
+                "hole2Hole": 0.29999939999999997,
+                "thru2Smd": 0
+              },
+              "isSetDefault": true,
+              "unit": "mm"
+            }
+          },
+          "Safe Spacing": {
+            "copperThickness1oz": {
+              "column": [
+                "Track",
+                "SMD Pad",
+                "TH Pad",
+                "SMD Test Point",
+                "TH Test Point",
+                "Via",
+                "Fill Region/Teardrop",
+                "Copper/Plane Zone",
+                "Slot Region",
+                "Line",
+                "Text/Image",
+                "Board Outline"
+              ],
+              "editName": "copperThickness1oz",
+              "isSetDefault": true,
+              "row": [
+                "Track",
+                "SMD Pad",
+                "TH Pad",
+                "SMD Test Point",
+                "TH Test Point",
+                "Via",
+                "Fill Region/Teardrop",
+                "Copper/Plane Zone",
+                "Slot Region",
+                "Line",
+                "Text/Image",
+                "Board Outline",
+                "Hole"
+              ],
+              "status": 0,
+              "tables": {
+                "1": {
+                  "content": [
+                    [
+                      0.10199878
+                    ],
+                    [
+                      0.15200122,
+                      0.15200122
+                    ],
+                    [
+                      0.15200122,
+                      0.15200122,
+                      0.15200122
+                    ],
+                    [
+                      0.15200122,
+                      0.15200122,
+                      0.15200122,
+                      0.15200122
+                    ],
+                    [
+                      0.15200122,
+                      0.15200122,
+                      0.15200122,
+                      0.15200122,
+                      0.15200122
+                    ],
+                    [
+                      0.15200122,
+                      0.15200122,
+                      0.15200122,
+                      0.15200122,
+                      0.15200122,
+                      0.15200122
+                    ],
+                    [
+                      0.15200122,
+                      0.15200122,
+                      0.15200122,
+                      0.15200122,
+                      0.15200122,
+                      0.15200122,
+                      0.15200122
+                    ],
+                    [
+                      0.254,
+                      0.254,
+                      0.254,
+                      0.254,
+                      0.254,
+                      0.254,
+                      0.254,
+                      0.254
+                    ],
+                    [
+                      0.29999939999999997,
+                      0.15239999999999998,
+                      0.15239999999999998,
+                      0.15239999999999998,
+                      0.15239999999999998,
+                      0.15239999999999998,
+                      0.15239999999999998,
+                      0.254,
+                      0.15239999999999998
+                    ],
+                    [
+                      0.15239999999999998,
+                      0.15239999999999998,
+                      0.15239999999999998,
+                      0.15239999999999998,
+                      0.15239999999999998,
+                      0.15239999999999998,
+                      0.15239999999999998,
+                      0.254,
+                      0.29999939999999997,
+                      0.15239999999999998
+                    ],
+                    [
+                      0.15239999999999998,
+                      0.15239999999999998,
+                      0.15239999999999998,
+                      0.15239999999999998,
+                      0.15239999999999998,
+                      0.15239999999999998,
+                      0.15239999999999998,
+                      0.254,
+                      0.15239999999999998,
+                      0.15239999999999998,
+                      0.15239999999999998
+                    ],
+                    [
+                      0.29972,
+                      0.29972,
+                      0.29972,
+                      0.29972,
+                      0.29972,
+                      0.29972,
+                      0.29972,
+                      0.254,
+                      0.29972,
+                      0.29972,
+                      0.29972
+                    ],
+                    [
+                      0.1759966,
+                      0.1759966,
+                      0.1759966,
+                      0.1759966,
+                      0.1759966,
+                      0.1759966,
+                      0.1759966,
+                      0.254,
+                      0.1759966,
+                      0.1759966,
+                      0.1759966,
+                      0.1759966
+                    ]
+                  ],
+                  "status": 1
+                }
+              },
+              "unit": "mm"
+            },
+            "copperThickness2oz": {
+              "column": [
+                "Track",
+                "SMD Pad",
+                "TH Pad",
+                "SMD Test Point",
+                "TH Test Point",
+                "Via",
+                "Fill Region/Teardrop",
+                "Copper/Plane Zone",
+                "Slot Region",
+                "Line",
+                "Text/Image",
+                "Board Outline"
+              ],
+              "editName": "copperThickness2oz",
+              "isSetDefault": false,
+              "row": [
+                "Track",
+                "SMD Pad",
+                "TH Pad",
+                "SMD Test Point",
+                "TH Test Point",
+                "Via",
+                "Fill Region/Teardrop",
+                "Copper/Plane Zone",
+                "Slot Region",
+                "Line",
+                "Text/Image",
+                "Board Outline",
+                "Hole"
+              ],
+              "status": 0,
+              "tables": {
+                "1": {
+                  "content": [
+                    [
+                      0.20299933999999997
+                    ],
+                    [
+                      0.15200122,
+                      0.15200122
+                    ],
+                    [
+                      0.15200122,
+                      0.15200122,
+                      0.15200122
+                    ],
+                    [
+                      0.15200122,
+                      0.15200122,
+                      0.15200122,
+                      0.15200122
+                    ],
+                    [
+                      0.15200122,
+                      0.15200122,
+                      0.15200122,
+                      0.15200122,
+                      0.15200122
+                    ],
+                    [
+                      0.15200122,
+                      0.15200122,
+                      0.15200122,
+                      0.15200122,
+                      0.15200122,
+                      0.15200122
+                    ],
+                    [
+                      0.15200122,
+                      0.15200122,
+                      0.15200122,
+                      0.15200122,
+                      0.15200122,
+                      0.15200122,
+                      0.15200122
+                    ],
+                    [
+                      0.254,
+                      0.254,
+                      0.254,
+                      0.254,
+                      0.254,
+                      0.254,
+                      0.254,
+                      0.254
+                    ],
+                    [
+                      0.29999939999999997,
+                      0.15200122,
+                      0.15200122,
+                      0.15200122,
+                      0.15200122,
+                      0.15200122,
+                      0.15200122,
+                      0.254,
+                      0.15200122
+                    ],
+                    [
+                      0.15200122,
+                      0.15200122,
+                      0.15200122,
+                      0.15200122,
+                      0.15200122,
+                      0.15200122,
+                      0.15200122,
+                      0.254,
+                      0.15200122,
+                      0.15200122
+                    ],
+                    [
+                      0.15200122,
+                      0.15200122,
+                      0.15200122,
+                      0.15200122,
+                      0.15200122,
+                      0.15200122,
+                      0.15200122,
+                      0.254,
+                      0.15200122,
+                      0.15200122,
+                      0.15200122
+                    ],
+                    [
+                      0.29999939999999997,
+                      0.29999939999999997,
+                      0.29999939999999997,
+                      0.29999939999999997,
+                      0.29999939999999997,
+                      0.29999939999999997,
+                      0.29999939999999997,
+                      0.254,
+                      0.29999939999999997,
+                      0.29999939999999997,
+                      0.29999939999999997
+                    ],
+                    [
+                      0.1759966,
+                      0.1759966,
+                      0.1759966,
+                      0.1759966,
+                      0.1759966,
+                      0.1759966,
+                      0.1759966,
+                      0.254,
+                      0.1759966,
+                      0.1759966,
+                      0.1759966,
+                      0.1759966
+                    ]
+                  ],
+                  "status": 1
+                }
+              },
+              "unit": "mm"
+            }
+          }
+        }
+      },
+      "name": "JLCPCB Capability(Two Layers Board)"
+    }
+  },
+  "targets": [
+    {
+      "id": "33da7c6b5688d29ee7",
+      "requestedBy": "33da7c6b5688d29e",
+      "type": "ComponentPad",
+      "x": 429.7,
+      "y": 400,
+      "net": "$1N1",
+      "netSource": "component.getAllPins().getState_Net",
+      "layerId": 1,
+      "viaType": null,
+      "shapeKind": "rect",
+      "shapeWidth": 31.8,
+      "shapeHeight": 34,
+      "rotation": 0
+    },
+    {
+      "id": "33da7c6b5688d29ee8",
+      "requestedBy": "33da7c6b5688d29e",
+      "type": "ComponentPad",
+      "x": 370.3,
+      "y": 400,
+      "net": "ACE_IN_A",
+      "netSource": "component.getAllPins().getState_Net",
+      "layerId": 1,
+      "viaType": null,
+      "shapeKind": "rect",
+      "shapeWidth": 31.8,
+      "shapeHeight": 34,
+      "rotation": 0
+    }
+  ],
+  "excludedTargets": [],
+  "groups": [
+    {
+      "key": "$1N1:1",
+      "net": "$1N1",
+      "layer": "top",
+      "layerId": 1,
+      "targets": [
+        "33da7c6b5688d29ee7"
+      ],
+      "plannedPrimitiveIndexes": [
+        0
+      ],
+      "genericCopperClearanceRule": {
+        "value": 5.9843,
+        "source": "getCurrentRuleConfiguration.safeSpacingMatrix",
+        "path": "config.Spacing.Safe Spacing.copperThickness1oz.tables.1.content[6][1] (Fill Region/Teardrop <-> SMD Pad)",
+        "keyScore": 1000,
+        "roleScore": 1000,
+        "specificity": 1
+      },
+      "resolved": {
+        "targetMarginAdjustment": {
+          "targets": [
+            {
+              "primitiveId": "33da7c6b5688d29ee7",
+              "type": "ComponentPad",
+              "x": 429.7,
+              "y": 400,
+              "width": 31.8,
+              "height": 34,
+              "shapeKind": "rect",
+              "boundaryShapeKind": "rect",
+              "shapeWidth": 31.8,
+              "shapeHeight": 34,
+              "roundRadius": 0,
+              "sideCount": 0,
+              "localPolygonPoints": [],
+              "rotation": 0,
+              "net": "$1N1",
+              "resolvedLayer": "top",
+              "resolvedLayerId": 1,
+              "sourceLayerId": 1,
+              "viaType": null,
+              "requestedBy": "33da7c6b5688d29e",
+              "netSource": "component.getAllPins().getState_Net",
+              "boundaryMargin": 0,
+              "autoReducedExpansion": true,
+              "expansionBlockers": [
+                {
+                  "primitiveId": "86b3052d2e8b7b70",
+                  "type": "Pour",
+                  "net": "ACE_IN_A",
+                  "layer": null,
+                  "clearanceMil": 5.9843,
+                  "clearanceRuleSource": "getCurrentRuleConfiguration.safeSpacingMatrix",
+                  "clearanceRulePath": "config.Spacing.Safe Spacing.copperThickness1oz.tables.1.content[6][6] (Fill Region/Teardrop <-> Fill Region/Teardrop)",
+                  "trigger": "firstTrigger"
+                }
+              ]
+            }
+          ],
+          "reducedCount": 1
+        },
+        "boundaryReducedExpansionCount": 0,
+        "boundarySelection": {
+          "avoidedCount": 0,
+          "unresolvedCount": 1,
+          "twoTargetEdgeBoundary": false,
+          "multiPadHybridBoundary": false,
+          "multiPadBridgedBoundary": false,
+          "boundaryReducedExpansionCount": 0,
+          "genericFallbackDetourRejected": false,
+          "boundaryAvoidanceMode": "detour",
+          "successfullyAvoidedObstacleKeys": [],
+          "clipFallbackObstacleKeys": []
+        },
+        "clearance": {
+          "clippedTraceCount": 0,
+          "clippedCopperAreaCount": 1,
+          "clippedCopperNodeCount": 0,
+          "usedClipping": true,
+          "reason": "",
+          "debug": {
+            "desiredArea": 1081.2,
+            "desiredPointCount": 4,
+            "traceCount": 1,
+            "copperAreaCount": 1,
+            "copperNodeCount": 0,
+            "fullTargetContourCount": 1,
+            "coverageValidationContourCount": 1,
+            "activeTraceCount": 0,
+            "activeCopperAreaCount": 1,
+            "activeCopperNodeCount": 0,
+            "traceClearances": [],
+            "traceClearanceSources": [],
+            "traceClearanceRules": [],
+            "copperAreaClearances": [
+              5.984
+            ],
+            "copperAreaClearanceSources": [
+              "getCurrentRuleConfiguration.safeSpacingMatrix"
+            ],
+            "copperAreaClearanceRules": [
+              "5.984mil @ getCurrentRuleConfiguration.safeSpacingMatrix:config.Spacing.Safe Spacing.copperThickness1oz.tables.1.content[6][6] (Fill Region/Teardrop <-> Fill Region/Teardrop)"
+            ],
+            "copperNodeClearances": [],
+            "copperNodeClearanceSources": [],
+            "copperNodeClearanceRules": [],
+            "skippedNonClipObstacleCount": 0,
+            "mode": "polygon-clipping-difference",
+            "forbiddenSourceCount": 1,
+            "forbiddenGeometryCount": 1,
+            "protectedGeometryCount": 1,
+            "outputPolygonCount": 1,
+            "outputRingCount": 1,
+            "outputAreas": [
+              1081.2
+            ],
+            "coveredTargetCount": 1,
+            "targetContourCount": 1,
+            "edgeSelectionApplied": false,
+            "neckRepairApplied": false,
+            "neckRepairPassCount": 0,
+            "neckRepairPatchCount": 0,
+            "neckRepairReason": "trace neck repair skipped without active traces",
+            "neckNarrowCountBefore": 0,
+            "neckMinWidthBefore": 31.8,
+            "neckNarrowCountAfter": 0,
+            "neckMinWidthAfter": 31.8
+          },
+          "polygonSources": [
+            [
+              413.8,
+              383,
+              "L",
+              445.6,
+              383,
+              445.6,
+              417,
+              413.8,
+              417,
+              413.8,
+              383
+            ]
+          ]
+        },
+        "skippedObstacleCount": 0,
+        "obstacles": {
+          "boundary": [
+            {
+              "id": "33da7c6b5688d29ee8",
+              "type": "Pad",
+              "net": "ACE_IN_A",
+              "clearanceMil": 5.9843,
+              "clearanceRuleSource": "getCurrentRuleConfiguration.safeSpacingMatrix",
+              "clearanceRulePath": "config.Spacing.Safe Spacing.copperThickness1oz.tables.1.content[6][1] (Fill Region/Teardrop <-> SMD Pad)"
+            }
+          ],
+          "avoidance": [
+            {
+              "id": "33da7c6b5688d29ee8",
+              "type": "Pad",
+              "net": "ACE_IN_A",
+              "clearanceMil": 5.9843,
+              "clearanceRuleSource": "getCurrentRuleConfiguration.safeSpacingMatrix",
+              "clearanceRulePath": "config.Spacing.Safe Spacing.copperThickness1oz.tables.1.content[6][1] (Fill Region/Teardrop <-> SMD Pad)"
+            }
+          ],
+          "trace": [
+            {
+              "id": "8defad51d5f23ffb",
+              "type": "Line",
+              "net": "ACE_IN_A",
+              "clearanceMil": 5.9843,
+              "clearanceRuleSource": "getCurrentRuleConfiguration.safeSpacingMatrix",
+              "clearanceRulePath": "config.Spacing.Safe Spacing.copperThickness1oz.tables.1.content[6][0] (Fill Region/Teardrop <-> Track)"
+            }
+          ],
+          "copperArea": [
+            {
+              "id": "86b3052d2e8b7b70",
+              "type": "Pour",
+              "net": "ACE_IN_A",
+              "clearanceMil": 5.9843,
+              "clearanceRuleSource": "getCurrentRuleConfiguration.safeSpacingMatrix",
+              "clearanceRulePath": "config.Spacing.Safe Spacing.copperThickness1oz.tables.1.content[6][6] (Fill Region/Teardrop <-> Fill Region/Teardrop)"
+            }
+          ]
+        }
+      },
+      "diagnostics": [
+        {
+          "level": "diagnostic",
+          "args": [
+            "Resolved PCB DRC clearance rules:",
+            {
+              "contextLabel": "boundary",
+              "obstacleCount": 1,
+              "clearances": [
+                5.984
+              ],
+              "sources": [
+                "getCurrentRuleConfiguration.safeSpacingMatrix"
+              ],
+              "rules": [
+                "5.984mil @ getCurrentRuleConfiguration.safeSpacingMatrix:config.Spacing.Safe Spacing.copperThickness1oz.tables.1.content[6][1] (Fill Region/Teardrop <-> SMD Pad)"
+              ],
+              "currentRuleConfigurationName": "JLCPCB Capability(Two Layers Board)"
+            }
+          ]
+        },
+        {
+          "level": "diagnostic",
+          "args": [
+            "Resolved PCB DRC clearance rules:",
+            {
+              "contextLabel": "avoidance",
+              "obstacleCount": 1,
+              "clearances": [
+                5.984
+              ],
+              "sources": [
+                "getCurrentRuleConfiguration.safeSpacingMatrix"
+              ],
+              "rules": [
+                "5.984mil @ getCurrentRuleConfiguration.safeSpacingMatrix:config.Spacing.Safe Spacing.copperThickness1oz.tables.1.content[6][1] (Fill Region/Teardrop <-> SMD Pad)"
+              ],
+              "currentRuleConfigurationName": "JLCPCB Capability(Two Layers Board)"
+            }
+          ]
+        },
+        {
+          "level": "diagnostic",
+          "args": [
+            "Pad edge shield obstacles collected",
+            {
+              "targetCount": 1,
+              "shieldTargetCount": 1,
+              "shieldTargets": [
+                {
+                  "id": "33da7c6b5688d29ee8",
+                  "type": "Pad",
+                  "net": "ACE_IN_A"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "level": "diagnostic",
+          "args": [
+            "Resolved PCB DRC clearance rules:",
+            {
+              "contextLabel": "trace clipping",
+              "obstacleCount": 1,
+              "clearances": [
+                5.984
+              ],
+              "sources": [
+                "getCurrentRuleConfiguration.safeSpacingMatrix"
+              ],
+              "rules": [
+                "5.984mil @ getCurrentRuleConfiguration.safeSpacingMatrix:config.Spacing.Safe Spacing.copperThickness1oz.tables.1.content[6][0] (Fill Region/Teardrop <-> Track)"
+              ],
+              "currentRuleConfigurationName": "JLCPCB Capability(Two Layers Board)"
+            }
+          ]
+        },
+        {
+          "level": "diagnostic",
+          "args": [
+            "Resolved PCB DRC clearance rules:",
+            {
+              "contextLabel": "copper area clipping",
+              "obstacleCount": 1,
+              "clearances": [
+                5.984
+              ],
+              "sources": [
+                "getCurrentRuleConfiguration.safeSpacingMatrix"
+              ],
+              "rules": [
+                "5.984mil @ getCurrentRuleConfiguration.safeSpacingMatrix:config.Spacing.Safe Spacing.copperThickness1oz.tables.1.content[6][6] (Fill Region/Teardrop <-> Fill Region/Teardrop)"
+              ],
+              "currentRuleConfigurationName": "JLCPCB Capability(Two Layers Board)"
+            }
+          ]
+        },
+        {
+          "level": "diagnostic",
+          "args": [
+            "Reduced target expansion due to DRC spacing:",
+            {
+              "reducedCount": 1,
+              "desiredMargin": 5
+            }
+          ]
+        },
+        {
+          "level": "warning",
+          "args": [
+            "Pour boundary diagnostic",
+            {
+              "targetCount": 1,
+              "targets": [
+                {
+                  "key": "id:33da7c6b5688d29ee7:pad",
+                  "primitiveId": "33da7c6b5688d29ee7",
+                  "type": "ComponentPad",
+                  "net": "$1N1",
+                  "x": 429.7,
+                  "y": 400,
+                  "width": 31.8,
+                  "height": 34,
+                  "shapeWidth": 31.8,
+                  "shapeHeight": 34,
+                  "rotation": 0
+                }
+              ],
+              "polygon": {
+                "edgeSelectionApplied": false,
+                "boundaryPoints": {
+                  "raw": 4,
+                  "base": 4,
+                  "final": 4,
+                  "covered": 4
+                },
+                "detour": {
+                  "obstacleCount": 1,
+                  "isMultiPadScenario": false,
+                  "mode": "detour",
+                  "avoidedCount": 0,
+                  "unresolvedCount": 1,
+                  "clipFallbackCount": 0,
+                  "usedDirectShortBridgeFallback": false,
+                  "genericFallbackDetourRejected": false,
+                  "detourInvalidReasons": []
+                }
+              },
+              "notes": [
+                {
+                  "message": "Multi-pad edge filter gate",
+                  "details": {
+                    "targetCount": 1,
+                    "sourceTargetCount": 1,
+                    "obstacleCount": 2,
+                    "isTwoRectTargetSet": false,
+                    "shouldTryEdgeFilteredBoundary": false,
+                    "targets": [
+                      {
+                        "key": "id:33da7c6b5688d29ee7:pad",
+                        "primitiveId": "33da7c6b5688d29ee7",
+                        "type": "ComponentPad",
+                        "net": "$1N1",
+                        "x": 429.7,
+                        "y": 400,
+                        "width": 31.8,
+                        "height": 34,
+                        "shapeWidth": 31.8,
+                        "shapeHeight": 34,
+                        "rotation": 0
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "ACE_IN_A:1",
+      "net": "ACE_IN_A",
+      "layer": "top",
+      "layerId": 1,
+      "targets": [
+        "33da7c6b5688d29ee8"
+      ],
+      "plannedPrimitiveIndexes": [
+        1
+      ],
+      "genericCopperClearanceRule": {
+        "value": 5.9843,
+        "source": "getCurrentRuleConfiguration.safeSpacingMatrix",
+        "path": "config.Spacing.Safe Spacing.copperThickness1oz.tables.1.content[6][1] (Fill Region/Teardrop <-> SMD Pad)",
+        "keyScore": 1000,
+        "roleScore": 1000,
+        "specificity": 1
+      },
+      "resolved": {
+        "targetMarginAdjustment": {
+          "targets": [
+            {
+              "primitiveId": "33da7c6b5688d29ee8",
+              "type": "ComponentPad",
+              "x": 370.3,
+              "y": 400,
+              "width": 31.8,
+              "height": 34,
+              "shapeKind": "rect",
+              "boundaryShapeKind": "rect",
+              "shapeWidth": 31.8,
+              "shapeHeight": 34,
+              "roundRadius": 0,
+              "sideCount": 0,
+              "localPolygonPoints": [],
+              "rotation": 0,
+              "net": "ACE_IN_A",
+              "resolvedLayer": "top",
+              "resolvedLayerId": 1,
+              "sourceLayerId": 1,
+              "viaType": null,
+              "requestedBy": "33da7c6b5688d29e",
+              "netSource": "component.getAllPins().getState_Net"
+            }
+          ],
+          "reducedCount": 0
+        },
+        "boundaryReducedExpansionCount": 0,
+        "boundarySelection": {
+          "avoidedCount": 0,
+          "unresolvedCount": 0,
+          "twoTargetEdgeBoundary": false,
+          "multiPadHybridBoundary": false,
+          "multiPadBridgedBoundary": false,
+          "boundaryReducedExpansionCount": 0,
+          "genericFallbackDetourRejected": false,
+          "boundaryAvoidanceMode": "detour",
+          "successfullyAvoidedObstacleKeys": [],
+          "clipFallbackObstacleKeys": []
+        },
+        "clearance": {
+          "clippedTraceCount": 0,
+          "clippedCopperAreaCount": 0,
+          "clippedCopperNodeCount": 0,
+          "usedClipping": false,
+          "reason": "",
+          "debug": {
+            "mode": "base-polygon",
+            "reason": "no clearance zone overlaps desired polygon",
+            "desiredArea": 1839.2,
+            "desiredPointCount": 4,
+            "traceCount": 1,
+            "copperAreaCount": 0,
+            "copperNodeCount": 0,
+            "outputPolygonCount": 1,
+            "outputRingCount": 1,
+            "outputAreas": [
+              1839.2
+            ],
+            "coveredTargetCount": 1,
+            "targetContourCount": 1,
+            "fullTargetContourCount": 1,
+            "edgeSelectionApplied": false,
+            "skippedNonClipObstacleCount": 0
+          },
+          "polygonSources": [
+            [
+              349.4,
+              378,
+              "L",
+              391.2,
+              378,
+              391.2,
+              422,
+              349.4,
+              422,
+              349.4,
+              378
+            ]
+          ]
+        },
+        "skippedObstacleCount": 0,
+        "obstacles": {
+          "boundary": [
+            {
+              "id": "33da7c6b5688d29ee7",
+              "type": "Pad",
+              "net": "$1N1",
+              "clearanceMil": 5.9843,
+              "clearanceRuleSource": "getCurrentRuleConfiguration.safeSpacingMatrix",
+              "clearanceRulePath": "config.Spacing.Safe Spacing.copperThickness1oz.tables.1.content[6][1] (Fill Region/Teardrop <-> SMD Pad)"
+            }
+          ],
+          "avoidance": [
+            {
+              "id": "33da7c6b5688d29ee7",
+              "type": "Pad",
+              "net": "$1N1",
+              "clearanceMil": 5.9843,
+              "clearanceRuleSource": "getCurrentRuleConfiguration.safeSpacingMatrix",
+              "clearanceRulePath": "config.Spacing.Safe Spacing.copperThickness1oz.tables.1.content[6][1] (Fill Region/Teardrop <-> SMD Pad)"
+            }
+          ],
+          "trace": [
+            {
+              "id": "35c7b88c489eb5c3",
+              "type": "Line",
+              "net": "$1N1",
+              "clearanceMil": 5.9843,
+              "clearanceRuleSource": "getCurrentRuleConfiguration.safeSpacingMatrix",
+              "clearanceRulePath": "config.Spacing.Safe Spacing.copperThickness1oz.tables.1.content[6][0] (Fill Region/Teardrop <-> Track)"
+            }
+          ],
+          "copperArea": []
+        }
+      },
+      "diagnostics": [
+        {
+          "level": "diagnostic",
+          "args": [
+            "Resolved PCB DRC clearance rules:",
+            {
+              "contextLabel": "boundary",
+              "obstacleCount": 1,
+              "clearances": [
+                5.984
+              ],
+              "sources": [
+                "getCurrentRuleConfiguration.safeSpacingMatrix"
+              ],
+              "rules": [
+                "5.984mil @ getCurrentRuleConfiguration.safeSpacingMatrix:config.Spacing.Safe Spacing.copperThickness1oz.tables.1.content[6][1] (Fill Region/Teardrop <-> SMD Pad)"
+              ],
+              "currentRuleConfigurationName": "JLCPCB Capability(Two Layers Board)"
+            }
+          ]
+        },
+        {
+          "level": "diagnostic",
+          "args": [
+            "Resolved PCB DRC clearance rules:",
+            {
+              "contextLabel": "avoidance",
+              "obstacleCount": 1,
+              "clearances": [
+                5.984
+              ],
+              "sources": [
+                "getCurrentRuleConfiguration.safeSpacingMatrix"
+              ],
+              "rules": [
+                "5.984mil @ getCurrentRuleConfiguration.safeSpacingMatrix:config.Spacing.Safe Spacing.copperThickness1oz.tables.1.content[6][1] (Fill Region/Teardrop <-> SMD Pad)"
+              ],
+              "currentRuleConfigurationName": "JLCPCB Capability(Two Layers Board)"
+            }
+          ]
+        },
+        {
+          "level": "diagnostic",
+          "args": [
+            "Pad edge shield obstacles collected",
+            {
+              "targetCount": 1,
+              "shieldTargetCount": 1,
+              "shieldTargets": [
+                {
+                  "id": "33da7c6b5688d29ee8",
+                  "type": "Pad",
+                  "net": "ACE_IN_A"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "level": "diagnostic",
+          "args": [
+            "Resolved PCB DRC clearance rules:",
+            {
+              "contextLabel": "trace clipping",
+              "obstacleCount": 1,
+              "clearances": [
+                5.984
+              ],
+              "sources": [
+                "getCurrentRuleConfiguration.safeSpacingMatrix"
+              ],
+              "rules": [
+                "5.984mil @ getCurrentRuleConfiguration.safeSpacingMatrix:config.Spacing.Safe Spacing.copperThickness1oz.tables.1.content[6][0] (Fill Region/Teardrop <-> Track)"
+              ],
+              "currentRuleConfigurationName": "JLCPCB Capability(Two Layers Board)"
+            }
+          ]
+        },
+        {
+          "level": "diagnostic",
+          "args": [
+            "Resolved PCB DRC clearance rules:",
+            {
+              "contextLabel": "copper area clipping",
+              "obstacleCount": 1,
+              "clearances": [
+                5.984
+              ],
+              "sources": [
+                "getCurrentRuleConfiguration.safeSpacingMatrix"
+              ],
+              "rules": [
+                "5.984mil @ getCurrentRuleConfiguration.safeSpacingMatrix:config.Spacing.Safe Spacing.copperThickness1oz.tables.1.content[6][6] (Fill Region/Teardrop <-> Fill Region/Teardrop)"
+              ],
+              "currentRuleConfigurationName": "JLCPCB Capability(Two Layers Board)"
+            }
+          ]
+        },
+        {
+          "level": "diagnostic",
+          "args": [
+            "Reduced target expansion due to DRC spacing:",
+            {
+              "reducedCount": 1,
+              "desiredMargin": 5
+            }
+          ]
+        },
+        {
+          "level": "warning",
+          "args": [
+            "Pour boundary diagnostic",
+            {
+              "targetCount": 1,
+              "targets": [
+                {
+                  "key": "id:33da7c6b5688d29ee7:pad",
+                  "primitiveId": "33da7c6b5688d29ee7",
+                  "type": "ComponentPad",
+                  "net": "$1N1",
+                  "x": 429.7,
+                  "y": 400,
+                  "width": 31.8,
+                  "height": 34,
+                  "shapeWidth": 31.8,
+                  "shapeHeight": 34,
+                  "rotation": 0
+                }
+              ],
+              "polygon": {
+                "edgeSelectionApplied": false,
+                "boundaryPoints": {
+                  "raw": 4,
+                  "base": 4,
+                  "final": 4,
+                  "covered": 4
+                },
+                "detour": {
+                  "obstacleCount": 1,
+                  "isMultiPadScenario": false,
+                  "mode": "detour",
+                  "avoidedCount": 0,
+                  "unresolvedCount": 1,
+                  "clipFallbackCount": 0,
+                  "usedDirectShortBridgeFallback": false,
+                  "genericFallbackDetourRejected": false,
+                  "detourInvalidReasons": []
+                }
+              },
+              "notes": [
+                {
+                  "message": "Multi-pad edge filter gate",
+                  "details": {
+                    "targetCount": 1,
+                    "sourceTargetCount": 1,
+                    "obstacleCount": 2,
+                    "isTwoRectTargetSet": false,
+                    "shouldTryEdgeFilteredBoundary": false,
+                    "targets": [
+                      {
+                        "key": "id:33da7c6b5688d29ee7:pad",
+                        "primitiveId": "33da7c6b5688d29ee7",
+                        "type": "ComponentPad",
+                        "net": "$1N1",
+                        "x": 429.7,
+                        "y": 400,
+                        "width": 31.8,
+                        "height": 34,
+                        "shapeWidth": 31.8,
+                        "shapeHeight": 34,
+                        "rotation": 0
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "level": "diagnostic",
+          "args": [
+            "Resolved PCB DRC clearance rules:",
+            {
+              "contextLabel": "boundary",
+              "obstacleCount": 1,
+              "clearances": [
+                5.984
+              ],
+              "sources": [
+                "getCurrentRuleConfiguration.safeSpacingMatrix"
+              ],
+              "rules": [
+                "5.984mil @ getCurrentRuleConfiguration.safeSpacingMatrix:config.Spacing.Safe Spacing.copperThickness1oz.tables.1.content[6][1] (Fill Region/Teardrop <-> SMD Pad)"
+              ],
+              "currentRuleConfigurationName": "JLCPCB Capability(Two Layers Board)"
+            }
+          ]
+        },
+        {
+          "level": "diagnostic",
+          "args": [
+            "Resolved PCB DRC clearance rules:",
+            {
+              "contextLabel": "avoidance",
+              "obstacleCount": 1,
+              "clearances": [
+                5.984
+              ],
+              "sources": [
+                "getCurrentRuleConfiguration.safeSpacingMatrix"
+              ],
+              "rules": [
+                "5.984mil @ getCurrentRuleConfiguration.safeSpacingMatrix:config.Spacing.Safe Spacing.copperThickness1oz.tables.1.content[6][1] (Fill Region/Teardrop <-> SMD Pad)"
+              ],
+              "currentRuleConfigurationName": "JLCPCB Capability(Two Layers Board)"
+            }
+          ]
+        },
+        {
+          "level": "diagnostic",
+          "args": [
+            "Pad edge shield obstacles collected",
+            {
+              "targetCount": 1,
+              "shieldTargetCount": 1,
+              "shieldTargets": [
+                {
+                  "id": "33da7c6b5688d29ee7",
+                  "type": "Pad",
+                  "net": "$1N1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "level": "diagnostic",
+          "args": [
+            "Resolved PCB DRC clearance rules:",
+            {
+              "contextLabel": "trace clipping",
+              "obstacleCount": 1,
+              "clearances": [
+                5.984
+              ],
+              "sources": [
+                "getCurrentRuleConfiguration.safeSpacingMatrix"
+              ],
+              "rules": [
+                "5.984mil @ getCurrentRuleConfiguration.safeSpacingMatrix:config.Spacing.Safe Spacing.copperThickness1oz.tables.1.content[6][0] (Fill Region/Teardrop <-> Track)"
+              ],
+              "currentRuleConfigurationName": "JLCPCB Capability(Two Layers Board)"
+            }
+          ]
+        },
+        {
+          "level": "diagnostic",
+          "args": [
+            "Resolved PCB DRC clearance rules:",
+            {
+              "contextLabel": "copper area clipping",
+              "obstacleCount": 0,
+              "clearances": [],
+              "sources": [],
+              "rules": [],
+              "currentRuleConfigurationName": "JLCPCB Capability(Two Layers Board)"
+            }
+          ]
+        },
+        {
+          "level": "warning",
+          "args": [
+            "Pour boundary diagnostic",
+            {
+              "targetCount": 1,
+              "targets": [
+                {
+                  "key": "id:33da7c6b5688d29ee8:pad",
+                  "primitiveId": "33da7c6b5688d29ee8",
+                  "type": "ComponentPad",
+                  "net": "ACE_IN_A",
+                  "x": 370.3,
+                  "y": 400,
+                  "width": 31.8,
+                  "height": 34,
+                  "shapeWidth": 31.8,
+                  "shapeHeight": 34,
+                  "rotation": 0
+                }
+              ],
+              "polygon": {
+                "edgeSelectionApplied": false,
+                "boundaryPoints": {
+                  "raw": 4,
+                  "base": 4,
+                  "final": 4,
+                  "covered": 4
+                },
+                "detour": {
+                  "obstacleCount": 0,
+                  "isMultiPadScenario": false,
+                  "mode": "detour",
+                  "avoidedCount": 0,
+                  "unresolvedCount": 0,
+                  "clipFallbackCount": 0,
+                  "usedDirectShortBridgeFallback": false,
+                  "genericFallbackDetourRejected": false,
+                  "detourInvalidReasons": []
+                }
+              },
+              "notes": [
+                {
+                  "message": "Multi-pad edge filter gate",
+                  "details": {
+                    "targetCount": 1,
+                    "sourceTargetCount": 1,
+                    "obstacleCount": 1,
+                    "isTwoRectTargetSet": false,
+                    "shouldTryEdgeFilteredBoundary": false,
+                    "targets": [
+                      {
+                        "key": "id:33da7c6b5688d29ee8:pad",
+                        "primitiveId": "33da7c6b5688d29ee8",
+                        "type": "ComponentPad",
+                        "net": "ACE_IN_A",
+                        "x": 370.3,
+                        "y": 400,
+                        "width": 31.8,
+                        "height": 34,
+                        "shapeWidth": 31.8,
+                        "shapeHeight": 34,
+                        "rotation": 0
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "plannedPrimitives": [
+    {
+      "net": "$1N1",
+      "layer": "top",
+      "layerId": 1,
+      "polygonSources": [
+        [
+          413.8,
+          383,
+          "L",
+          445.6,
+          383,
+          445.6,
+          417,
+          413.8,
+          417,
+          413.8,
+          383
+        ]
+      ],
+      "points": [
+        {
+          "x": 413.8,
+          "y": 383
+        },
+        {
+          "x": 445.6,
+          "y": 383
+        },
+        {
+          "x": 445.6,
+          "y": 417
+        },
+        {
+          "x": 413.8,
+          "y": 417
+        }
+      ],
+      "area": 1081.1999999999825
+    },
+    {
+      "net": "ACE_IN_A",
+      "layer": "top",
+      "layerId": 1,
+      "polygonSources": [
+        [
+          349.4,
+          378,
+          "L",
+          391.2,
+          378,
+          391.2,
+          422,
+          349.4,
+          422,
+          349.4,
+          378
+        ]
+      ],
+      "points": [
+        {
+          "x": 349.4,
+          "y": 378
+        },
+        {
+          "x": 391.2,
+          "y": 378
+        },
+        {
+          "x": 391.2,
+          "y": 422
+        },
+        {
+          "x": 349.4,
+          "y": 422
+        }
+      ],
+      "area": 1839.1999999999825
+    }
+  ],
+  "executable": true,
+  "coverage": {
+    "upstreamBoundaryAvoidanceAndClipping": "完整静态提取：实际边界生成、DRC margin、difference/union/offsetRings、障碍裁剪及多目标 envelope-to-bridge 几何策略",
+    "arcClearance": {
+      "complete": true,
+      "method": "目标多边形边界框冲突核对，远离目标的圆弧不参与形状裁剪"
+    },
+    "boardOutline": {
+      "complete": true,
+      "lineRingCount": 1,
+      "arcs": 0,
+      "polylines": [
+        {
+          "id": "8b85022ac9adcacb",
+          "source": [
+            "R",
+            0,
+            1575,
+            1969,
+            1575,
+            0,
+            0
+          ],
+          "lineCount": 4
+        }
+      ],
+      "method": "线段闭环核对并验证多边形点；多环/弧线及未知板框折线明确拒绝"
+    },
+    "search": "上游按目标外接范围有限收集候选；collectors 对数据层执行完整 getAll 后再按搜索范围筛选",
+    "drc": "完整读取规则；候选网络需解析到通用铜间距规则，收集到的异网障碍逐一解析，计划网络之间另作保守包围框净距核对；不代表完整板级 DRC 结论",
+    "crossGroupClearance": [
+      {
+        "nets": [
+          "$1N1",
+          "ACE_IN_A"
+        ],
+        "resolved": true,
+        "clearanceMil": 5.9843,
+        "ruleSource": "getCurrentRuleConfiguration.safeSpacingMatrix",
+        "rulePath": "config.Spacing.Safe Spacing.copperThickness1oz.tables.1.content[6][0] (Fill Region/Teardrop <-> Track)",
+        "check": "conservative-expanded outer bounding boxes"
+      }
+    ],
+    "copperConnectionRules": [
+      {
+        "net": "$1N1",
+        "layerId": 1,
+        "generationType": "fill",
+        "source": "baseline.source",
+        "sourceStatus": "candidates-found",
+        "candidates": [
+          {
+            "selector": "sglPad",
+            "ruleId": "[\"RULE\",\"COPPER\",\"copperRegion\"]",
+            "sourceLine": 92,
+            "isOpen": true,
+            "layerId": 1,
+            "connectionType": {
+              "status": "known",
+              "raw": "DIVERGENCE",
+              "sourcePath": "ruleContext.sglPad.content[0].connType"
+            },
+            "thermalGap": {
+              "status": "known",
+              "raw": 10,
+              "sourcePath": "ruleContext.sglPad.content[0].spoSpac",
+              "unit": {
+                "status": "unknown",
+                "reason": "source spoSpac 存储单位未确认"
+              }
+            },
+            "spokeWidth": {
+              "status": "known",
+              "raw": 10,
+              "sourcePath": "ruleContext.sglPad.content[0].spoWidth",
+              "unit": {
+                "status": "unknown",
+                "reason": "源码字段单位语义未确认"
+              }
+            },
+            "spokeAngle": {
+              "status": "known",
+              "raw": 90,
+              "sourcePath": "ruleContext.sglPad.content[0].spoAng",
+              "unit": {
+                "status": "unknown",
+                "reason": "源码字段单位语义未确认"
+              }
+            },
+            "unitLabel": "mm"
+          },
+          {
+            "selector": "mulPad",
+            "ruleId": "[\"RULE\",\"COPPER\",\"copperRegion\"]",
+            "sourceLine": 92,
+            "isOpen": true,
+            "layerId": 1,
+            "connectionType": {
+              "status": "known",
+              "raw": "DIVERGENCE",
+              "sourcePath": "ruleContext.mulPad.content[0].connType"
+            },
+            "thermalGap": {
+              "status": "known",
+              "raw": 10,
+              "sourcePath": "ruleContext.mulPad.content[0].spoSpac",
+              "unit": {
+                "status": "unknown",
+                "reason": "source spoSpac 存储单位未确认"
+              }
+            },
+            "spokeWidth": {
+              "status": "known",
+              "raw": 10,
+              "sourcePath": "ruleContext.mulPad.content[0].spoWidth",
+              "unit": {
+                "status": "unknown",
+                "reason": "源码字段单位语义未确认"
+              }
+            },
+            "spokeAngle": {
+              "status": "known",
+              "raw": 90,
+              "sourcePath": "ruleContext.mulPad.content[0].spoAng",
+              "unit": {
+                "status": "unknown",
+                "reason": "源码字段单位语义未确认"
+              }
+            },
+            "unitLabel": "mm"
+          },
+          {
+            "selector": "track",
+            "ruleId": "[\"RULE\",\"COPPER\",\"copperRegion\"]",
+            "sourceLine": 92,
+            "isOpen": true,
+            "layerId": 1,
+            "connectionType": {
+              "status": "known",
+              "raw": "DIRECT",
+              "sourcePath": "ruleContext.track.content[0].connType"
+            },
+            "thermalGap": {
+              "status": "unknown",
+              "reason": "source 缺少 spoSpac",
+              "sourcePath": "ruleContext.track.content[0].spoSpac",
+              "unit": {
+                "status": "unknown",
+                "reason": "source spoSpac 存储单位未确认"
+              }
+            },
+            "spokeWidth": {
+              "status": "unknown",
+              "reason": "source 缺少 spoWidth",
+              "sourcePath": "ruleContext.track.content[0].spoWidth",
+              "unit": {
+                "status": "unknown",
+                "reason": "源码字段单位语义未确认"
+              }
+            },
+            "spokeAngle": {
+              "status": "unknown",
+              "reason": "source 缺少 spoAng",
+              "sourcePath": "ruleContext.track.content[0].spoAng",
+              "unit": {
+                "status": "unknown",
+                "reason": "源码字段单位语义未确认"
+              }
+            },
+            "unitLabel": "mm"
+          }
+        ],
+        "selection": {
+          "status": "unknown",
+          "reason": "当前可读源码只能证明存在的候选记录，无法确认覆铜实际选择的 selector"
+        },
+        "preserveSilos": {
+          "status": "not-applicable"
+        }
+      },
+      {
+        "net": "ACE_IN_A",
+        "layerId": 1,
+        "generationType": "fill",
+        "source": "baseline.source",
+        "sourceStatus": "candidates-found",
+        "candidates": [
+          {
+            "selector": "sglPad",
+            "ruleId": "[\"RULE\",\"COPPER\",\"copperRegion\"]",
+            "sourceLine": 92,
+            "isOpen": true,
+            "layerId": 1,
+            "connectionType": {
+              "status": "known",
+              "raw": "DIVERGENCE",
+              "sourcePath": "ruleContext.sglPad.content[0].connType"
+            },
+            "thermalGap": {
+              "status": "known",
+              "raw": 10,
+              "sourcePath": "ruleContext.sglPad.content[0].spoSpac",
+              "unit": {
+                "status": "unknown",
+                "reason": "source spoSpac 存储单位未确认"
+              }
+            },
+            "spokeWidth": {
+              "status": "known",
+              "raw": 10,
+              "sourcePath": "ruleContext.sglPad.content[0].spoWidth",
+              "unit": {
+                "status": "unknown",
+                "reason": "源码字段单位语义未确认"
+              }
+            },
+            "spokeAngle": {
+              "status": "known",
+              "raw": 90,
+              "sourcePath": "ruleContext.sglPad.content[0].spoAng",
+              "unit": {
+                "status": "unknown",
+                "reason": "源码字段单位语义未确认"
+              }
+            },
+            "unitLabel": "mm"
+          },
+          {
+            "selector": "mulPad",
+            "ruleId": "[\"RULE\",\"COPPER\",\"copperRegion\"]",
+            "sourceLine": 92,
+            "isOpen": true,
+            "layerId": 1,
+            "connectionType": {
+              "status": "known",
+              "raw": "DIVERGENCE",
+              "sourcePath": "ruleContext.mulPad.content[0].connType"
+            },
+            "thermalGap": {
+              "status": "known",
+              "raw": 10,
+              "sourcePath": "ruleContext.mulPad.content[0].spoSpac",
+              "unit": {
+                "status": "unknown",
+                "reason": "source spoSpac 存储单位未确认"
+              }
+            },
+            "spokeWidth": {
+              "status": "known",
+              "raw": 10,
+              "sourcePath": "ruleContext.mulPad.content[0].spoWidth",
+              "unit": {
+                "status": "unknown",
+                "reason": "源码字段单位语义未确认"
+              }
+            },
+            "spokeAngle": {
+              "status": "known",
+              "raw": 90,
+              "sourcePath": "ruleContext.mulPad.content[0].spoAng",
+              "unit": {
+                "status": "unknown",
+                "reason": "源码字段单位语义未确认"
+              }
+            },
+            "unitLabel": "mm"
+          },
+          {
+            "selector": "track",
+            "ruleId": "[\"RULE\",\"COPPER\",\"copperRegion\"]",
+            "sourceLine": 92,
+            "isOpen": true,
+            "layerId": 1,
+            "connectionType": {
+              "status": "known",
+              "raw": "DIRECT",
+              "sourcePath": "ruleContext.track.content[0].connType"
+            },
+            "thermalGap": {
+              "status": "unknown",
+              "reason": "source 缺少 spoSpac",
+              "sourcePath": "ruleContext.track.content[0].spoSpac",
+              "unit": {
+                "status": "unknown",
+                "reason": "source spoSpac 存储单位未确认"
+              }
+            },
+            "spokeWidth": {
+              "status": "unknown",
+              "reason": "source 缺少 spoWidth",
+              "sourcePath": "ruleContext.track.content[0].spoWidth",
+              "unit": {
+                "status": "unknown",
+                "reason": "源码字段单位语义未确认"
+              }
+            },
+            "spokeAngle": {
+              "status": "unknown",
+              "reason": "source 缺少 spoAng",
+              "sourcePath": "ruleContext.track.content[0].spoAng",
+              "unit": {
+                "status": "unknown",
+                "reason": "源码字段单位语义未确认"
+              }
+            },
+            "unitLabel": "mm"
+          }
+        ],
+        "selection": {
+          "status": "unknown",
+          "reason": "当前可读源码只能证明存在的候选记录，无法确认覆铜实际选择的 selector"
+        },
+        "preserveSilos": {
+          "status": "not-applicable"
+        }
+      }
+    ],
+    "excludedTargets": [],
+    "unresolved": []
+  },
+  "warnings": [
+    {
+      "code": "upstreamExpansionReduced",
+      "net": "$1N1",
+      "layer": "top",
+      "requestedMil": 5,
+      "reducedMarginCount": 1,
+      "boundaryReducedCount": 0,
+      "resolved": [
+        {
+          "id": "33da7c6b5688d29ee7",
+          "boundaryMargin": 0,
+          "autoReducedExpansion": true,
+          "boundaryReducedExpansion": false,
+          "blockers": [
+            {
+              "primitiveId": "86b3052d2e8b7b70",
+              "type": "Pour",
+              "net": "ACE_IN_A",
+              "layer": null,
+              "clearanceMil": 5.9843,
+              "clearanceRuleSource": "getCurrentRuleConfiguration.safeSpacingMatrix",
+              "clearanceRulePath": "config.Spacing.Safe Spacing.copperThickness1oz.tables.1.content[6][6] (Fill Region/Teardrop <-> Fill Region/Teardrop)",
+              "trigger": "firstTrigger"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "upstreamNarrowNeckResolution",
+      "net": "$1N1",
+      "layer": "top",
+      "narrowCountBefore": 0,
+      "narrowCountAfter": 0,
+      "minimumWidthBefore": 31.8,
+      "minimumWidthAfter": 31.8,
+      "repairApplied": false,
+      "repairPassCount": 0,
+      "repairReason": "trace neck repair skipped without active traces",
+      "debug": {
+        "desiredArea": 1081.2,
+        "desiredPointCount": 4,
+        "traceCount": 1,
+        "copperAreaCount": 1,
+        "copperNodeCount": 0,
+        "fullTargetContourCount": 1,
+        "coverageValidationContourCount": 1,
+        "activeTraceCount": 0,
+        "activeCopperAreaCount": 1,
+        "activeCopperNodeCount": 0,
+        "traceClearances": [],
+        "traceClearanceSources": [],
+        "traceClearanceRules": [],
+        "copperAreaClearances": [
+          5.984
+        ],
+        "copperAreaClearanceSources": [
+          "getCurrentRuleConfiguration.safeSpacingMatrix"
+        ],
+        "copperAreaClearanceRules": [
+          "5.984mil @ getCurrentRuleConfiguration.safeSpacingMatrix:config.Spacing.Safe Spacing.copperThickness1oz.tables.1.content[6][6] (Fill Region/Teardrop <-> Fill Region/Teardrop)"
+        ],
+        "copperNodeClearances": [],
+        "copperNodeClearanceSources": [],
+        "copperNodeClearanceRules": [],
+        "skippedNonClipObstacleCount": 0,
+        "mode": "polygon-clipping-difference",
+        "forbiddenSourceCount": 1,
+        "forbiddenGeometryCount": 1,
+        "protectedGeometryCount": 1,
+        "outputPolygonCount": 1,
+        "outputRingCount": 1,
+        "outputAreas": [
+          1081.2
+        ],
+        "coveredTargetCount": 1,
+        "targetContourCount": 1,
+        "edgeSelectionApplied": false,
+        "neckRepairApplied": false,
+        "neckRepairPassCount": 0,
+        "neckRepairPatchCount": 0,
+        "neckRepairReason": "trace neck repair skipped without active traces",
+        "neckNarrowCountBefore": 0,
+        "neckMinWidthBefore": 31.8,
+        "neckNarrowCountAfter": 0,
+        "neckMinWidthAfter": 31.8
+      }
+    },
+    {
+      "code": "upstreamGeometryDiagnostic",
+      "level": "warning",
+      "args": [
+        "Pour boundary diagnostic",
+        {
+          "targetCount": 1,
+          "targets": [
+            {
+              "key": "id:33da7c6b5688d29ee7:pad",
+              "primitiveId": "33da7c6b5688d29ee7",
+              "type": "ComponentPad",
+              "net": "$1N1",
+              "x": 429.7,
+              "y": 400,
+              "width": 31.8,
+              "height": 34,
+              "shapeWidth": 31.8,
+              "shapeHeight": 34,
+              "rotation": 0
+            }
+          ],
+          "polygon": {
+            "edgeSelectionApplied": false,
+            "boundaryPoints": {
+              "raw": 4,
+              "base": 4,
+              "final": 4,
+              "covered": 4
+            },
+            "detour": {
+              "obstacleCount": 1,
+              "isMultiPadScenario": false,
+              "mode": "detour",
+              "avoidedCount": 0,
+              "unresolvedCount": 1,
+              "clipFallbackCount": 0,
+              "usedDirectShortBridgeFallback": false,
+              "genericFallbackDetourRejected": false,
+              "detourInvalidReasons": []
+            }
+          },
+          "notes": [
+            {
+              "message": "Multi-pad edge filter gate",
+              "details": {
+                "targetCount": 1,
+                "sourceTargetCount": 1,
+                "obstacleCount": 2,
+                "isTwoRectTargetSet": false,
+                "shouldTryEdgeFilteredBoundary": false,
+                "targets": [
+                  {
+                    "key": "id:33da7c6b5688d29ee7:pad",
+                    "primitiveId": "33da7c6b5688d29ee7",
+                    "type": "ComponentPad",
+                    "net": "$1N1",
+                    "x": 429.7,
+                    "y": 400,
+                    "width": 31.8,
+                    "height": 34,
+                    "shapeWidth": 31.8,
+                    "shapeHeight": 34,
+                    "rotation": 0
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "upstreamGeometryDiagnostic",
+      "level": "warning",
+      "args": [
+        "Pour boundary diagnostic",
+        {
+          "targetCount": 1,
+          "targets": [
+            {
+              "key": "id:33da7c6b5688d29ee8:pad",
+              "primitiveId": "33da7c6b5688d29ee8",
+              "type": "ComponentPad",
+              "net": "ACE_IN_A",
+              "x": 370.3,
+              "y": 400,
+              "width": 31.8,
+              "height": 34,
+              "shapeWidth": 31.8,
+              "shapeHeight": 34,
+              "rotation": 0
+            }
+          ],
+          "polygon": {
+            "edgeSelectionApplied": false,
+            "boundaryPoints": {
+              "raw": 4,
+              "base": 4,
+              "final": 4,
+              "covered": 4
+            },
+            "detour": {
+              "obstacleCount": 0,
+              "isMultiPadScenario": false,
+              "mode": "detour",
+              "avoidedCount": 0,
+              "unresolvedCount": 0,
+              "clipFallbackCount": 0,
+              "usedDirectShortBridgeFallback": false,
+              "genericFallbackDetourRejected": false,
+              "detourInvalidReasons": []
+            }
+          },
+          "notes": [
+            {
+              "message": "Multi-pad edge filter gate",
+              "details": {
+                "targetCount": 1,
+                "sourceTargetCount": 1,
+                "obstacleCount": 1,
+                "isTwoRectTargetSet": false,
+                "shouldTryEdgeFilteredBoundary": false,
+                "targets": [
+                  {
+                    "key": "id:33da7c6b5688d29ee8:pad",
+                    "primitiveId": "33da7c6b5688d29ee8",
+                    "type": "ComponentPad",
+                    "net": "ACE_IN_A",
+                    "x": 370.3,
+                    "y": 400,
+                    "width": 31.8,
+                    "height": 34,
+                    "shapeWidth": 31.8,
+                    "shapeHeight": 34,
+                    "rotation": 0
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "repository": "JLCEDA/eext-auto-copper-shape",
+    "commit": "98317b6b5941977a3ae90948a05295f9d8b1169f",
+    "license": "Apache-2.0",
+    "algorithm": "static pure extraction; UI and original SDK write flow removed",
+    "geometryRuntime": "bundled upstream polygon-clipping.js including clipper-lib offsetRings"
+  }
+}

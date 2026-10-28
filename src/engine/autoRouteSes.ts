@@ -27,6 +27,9 @@ export interface SesWire {
 	layerName: string
 	widthMil: number
 	points: Array<{ xMil: number, yMil: number }>
+	type?: string
+	wireIndex?: number
+	pathIndex?: number
 }
 
 export interface SesVia {
@@ -46,13 +49,15 @@ export interface SesExpectedModel {
 	unsupported: []
 }
 
-export interface SesLayer { id: number, name: string, type: string }
+export interface SesLayer { id: number, name: string, type: string, layerStatus?: unknown }
 export interface SesRoutePoint { x: number, y: number }
 export interface SesRouteLine { id?: string, net: string, layer: number, widthMil: number, a: SesRoutePoint, b: SesRoutePoint, locked?: boolean }
-export interface SesRouteVia { id?: string, net: string, x: number, y: number, diameterMil: number, holeDiameterMil?: number, viaType?: 'through' | 0 | 1 | 2, locked?: boolean, padstackName?: string }
+export interface SesRouteVia { id?: string, net: string, x: number, y: number, diameterMil: number, holeDiameterMil?: number, holeDiameterSource?: 'caller-specified' | 'existing-board-readback', viaType?: 'through' | 0 | 1 | 2, locked?: boolean, padstackName?: string }
 export interface SesRouteExpected {
 	lines: SesRouteLine[]
 	vias: SesRouteVia[]
+	/** Verified SES layer names keyed by current PCB layer ID. */
+	sesLayerNamesById?: Record<number, string>
 	coordinateMapping: 'easyeda-pro-4.1.78-direct-xy'
 	toleranceMil: 0.001
 	toleranceScope: 'current mil/1000 fixture'
@@ -79,7 +84,7 @@ export interface SesImportPlan {
 export interface SesImportVerification {
 	verified: boolean
 	differences: Array<Record<string, unknown>>
-	coverage: { toleranceMil: 0.001, lineToleranceCapMil: 0.001, lineToleranceUsedMil: number, lineGroupCount: number, expectedLineLengthMil: number, actualLineLengthMil: number, holeDiameterVerified: boolean, holeDiameterStatus: 'partially-specified' | 'not-specified-by-ses' }
+	coverage: { toleranceMil: 0.001, lineToleranceCapMil: 0.001, lineToleranceUsedMil: number, lineGroupCount: number, expectedLineLengthMil: number, actualLineLengthMil: number, holeDiameterVerified: boolean, holeDiameterStatus: 'partially-specified' | 'not-specified-by-ses', holeDiameterSources: Array<'caller-specified' | 'existing-board-readback'> }
 }
 
 function tokenize(source: string): SesToken[] {
@@ -357,6 +362,7 @@ function readRoutes(section: SesNode, placementResolution: SesResolution, placem
 	const padstackNames = new Set(padstacks.map(p => p.name))
 	const wires: SesWire[] = []
 	const vias: SesVia[] = []
+	let wireIndex = 0
 	requireListChildren(networkOut, 1, 'network_out')
 	for (const netNode of namedChildren(networkOut, 'network_out')) {
 		if (head(netNode, 'network_out') !== 'net')
@@ -370,10 +376,15 @@ function readRoutes(section: SesNode, placementResolution: SesResolution, placem
 			if (itemName === 'wire') {
 				requireListChildren(itemNode, 1, `net ${net} wire`)
 				const paths = childrenNamed(itemNode, 'path')
+				const wireTypes = childrenNamed(itemNode, 'type')
+				if (wireTypes.length > 1 || wireTypes.some(type => type.length !== 2 || typeof type[1] !== 'string'))
+					throw new Error(`net ${net} wire type 元数据重复或无效`)
+				const wireType = wireTypes.length ? scalar(wireTypes[0][1], `net ${net} wire type`) : undefined
 				if (!paths.length)
 					throw new Error(`net ${net} wire 缺少 path 几何`)
 				onlyMetadata(namedChildren(itemNode, `net ${net} wire`), `net ${net} wire`, ['path', 'type'])
-				for (const pathNode of paths) {
+				for (let pathIndex = 0; pathIndex < paths.length; pathIndex++) {
+					const pathNode = paths[pathIndex]
 					const path = list(pathNode, `net ${net} path`)
 					if (path.length < 6 || (path.length - 3) % 2 !== 0)
 						throw new Error(`net ${net} path 坐标必须至少包含两个完整点`)
@@ -385,8 +396,9 @@ function readRoutes(section: SesNode, placementResolution: SesResolution, placem
 					const points: SesWire['points'] = []
 					for (let i = 0; i < coords.length; i += 2)
 						points.push({ xMil: toMil(coords[i], resolution), yMil: toMil(coords[i + 1], resolution) })
-					wires.push({ net, layerName, widthMil: toMil(width, resolution), points })
+					wires.push({ net, layerName, widthMil: toMil(width, resolution), points, ...(wireType ? { type: wireType } : {}), wireIndex, pathIndex })
 				}
+				wireIndex++
 			}
 			else if (itemName === 'via') {
 				if (item.length !== 4 && item.length !== 5)
@@ -466,14 +478,31 @@ function layerIdForSesName(name: string, layers: SesLayer[]): number {
 	const layer = matches[0]
 	if (String(layer.type).toUpperCase() !== 'SIGNAL')
 		throw new Error(`SES 层 ${name} 映射到的 PCB 层 ${layer.name} 不是 SIGNAL 铜层`)
+	if (isInnerSesLayer(name) && layer.layerStatus !== 1)
+		throw new Error(`SES 内层 ${name} 对应的 PCB 层 ${layer.id} 未确认启用（layerStatus=${String(layer.layerStatus)}）`)
 	return layer.id
+}
+
+function isInnerSesLayer(name: string): boolean {
+	return /^Inner[1-9]\d*$/.test(name)
 }
 
 /** Convert supported SES layer names and padstacks into explicitly mapped SDK route geometry. */
 export function mapSesRoutes(model: SesExpectedModel, layers: SesLayer[]): SesRouteExpected {
 	const lines: SesRouteLine[] = []
+	const sesLayerNamesById: Record<number, string> = {}
+	const rememberLayer = (name: string): number => {
+		if (!['TopLayer', 'Top Layer', 'BottomLayer', 'Bottom Layer'].includes(name) && !isInnerSesLayer(name))
+			throw new Error(`SES 层名 ${name} 当前不支持`)
+		const id = layerIdForSesName(name, layers)
+		const prior = sesLayerNamesById[id]
+		if (prior !== undefined && prior !== name)
+			throw new Error(`多个 SES 层名映射到同一 PCB 层 ID ${id}（${prior} / ${name}）`)
+		sesLayerNamesById[id] = name
+		return id
+	}
 	for (const wire of model.wires) {
-		const layer = layerIdForSesName(wire.layerName, layers)
+		const layer = rememberLayer(wire.layerName)
 		for (let i = 1; i < wire.points.length; i++) {
 			const previous = wire.points[i - 1]
 			const current = wire.points[i]
@@ -497,32 +526,69 @@ export function mapSesRoutes(model: SesExpectedModel, layers: SesLayer[]): SesRo
 		if (!padstack)
 			throw new Error(`SES via 引用了未定义 padstack ${via.padstackName}`)
 		const shapeByLayer = new Map<string, typeof padstack.shapesByLayer[number]>()
+		const shapeById = new Map<number, typeof padstack.shapesByLayer[number]>()
 		for (const shape of padstack.shapesByLayer) {
-			if (!['TopLayer', 'BottomLayer'].includes(shape.layerName))
+			if (!['TopLayer', 'BottomLayer'].includes(shape.layerName) && !isInnerSesLayer(shape.layerName))
 				throw new Error(`padstack ${padstack.name} 的跨层形状 ${shape.layerName} 当前不支持`)
 			if (shapeByLayer.has(shape.layerName))
 				throw new Error(`padstack ${padstack.name} 在 ${shape.layerName} 重复定义形状`)
 			if (Math.abs(shape.offsetXMil) > ROUTE_TOLERANCE_MIL || Math.abs(shape.offsetYMil) > ROUTE_TOLERANCE_MIL)
 				throw new Error(`padstack ${padstack.name} 当前不支持偏心形状`)
+			const layerId = rememberLayer(shape.layerName)
+			if (shapeById.has(layerId))
+				throw new Error(`padstack ${padstack.name} 的多个形状映射到同一 PCB 层 ID ${layerId}`)
 			shapeByLayer.set(shape.layerName, shape)
+			shapeById.set(layerId, shape)
 		}
 		const top = shapeByLayer.get('TopLayer')
 		const bottom = shapeByLayer.get('BottomLayer')
-		if (!top || !bottom || shapeByLayer.size !== 2)
+		if (!top || !bottom)
 			throw new Error(`padstack ${padstack.name} 不是当前支持的 TopLayer/BottomLayer 通孔形状`)
-		if (Math.abs(top.diameterMil - bottom.diameterMil) > ROUTE_TOLERANCE_MIL)
-			throw new Error(`padstack ${padstack.name} 的上下层圆直径不一致`)
-		layerIdForSesName('TopLayer', layers)
-		layerIdForSesName('BottomLayer', layers)
+		if ([...shapeByLayer.values()].some(shape => Math.abs(top.diameterMil - shape.diameterMil) > ROUTE_TOLERANCE_MIL))
+			throw new Error(`padstack ${padstack.name} 各层圆直径不一致`)
 		return { net: via.net, x: via.xMil, y: via.yMil, diameterMil: top.diameterMil, viaType: 'through', padstackName: via.padstackName }
 	})
 	return {
 		lines,
 		vias,
+		sesLayerNamesById,
 		coordinateMapping: 'easyeda-pro-4.1.78-direct-xy',
 		toleranceMil: ROUTE_TOLERANCE_MIL,
 		toleranceScope: 'current mil/1000 fixture',
 		holeDiameterStatus: 'not-specified-by-ses',
+	}
+}
+
+/** Add caller-provided drill expectations without attributing them to the SES file. */
+export function applySesViaHoleDiameters(expected: SesRouteExpected, input: unknown): SesRouteExpected {
+	if (input === null || typeof input !== 'object' || Array.isArray(input) || Object.getPrototypeOf(input) !== Object.prototype)
+		throw new Error('viaHoleDiametersMil 必须是普通对象')
+	const values = input as Record<string, unknown>
+	const viasByPadstack = new Map<string, SesRouteVia[]>()
+	for (const via of expected.vias) {
+		if (!via.padstackName)
+			throw new Error('SES via 缺少 padstackName，无法套用 viaHoleDiametersMil')
+		const vias = viasByPadstack.get(via.padstackName) ?? []
+		vias.push(via)
+		viasByPadstack.set(via.padstackName, vias)
+	}
+	for (const [padstackName, holeDiameterMil] of Object.entries(values)) {
+		const vias = viasByPadstack.get(padstackName)
+		if (!vias)
+			throw new Error(`viaHoleDiametersMil 包含未知或未使用的 padstack ${padstackName}`)
+		if (typeof holeDiameterMil !== 'number' || !Number.isFinite(holeDiameterMil) || holeDiameterMil <= 0)
+			throw new Error(`viaHoleDiametersMil.${padstackName} 必须是大于 0 的有限数值`)
+		if (vias.some(via => holeDiameterMil >= via.diameterMil))
+			throw new Error(`viaHoleDiametersMil.${padstackName} 必须小于对应 padstack 铜径`)
+	}
+	return {
+		...expected,
+		vias: expected.vias.map(via => {
+			const holeDiameterMil = via.padstackName ? values[via.padstackName] : undefined
+			return typeof holeDiameterMil === 'number'
+				? { ...via, holeDiameterMil, holeDiameterSource: 'caller-specified' as const }
+				: via
+		}),
 	}
 }
 
@@ -583,6 +649,11 @@ function pointAt(frame: LineFrame, t: number): SesRoutePoint {
 	return { x: frame.ux * t - frame.uy * frame.offset, y: frame.uy * t + frame.ux * frame.offset }
 }
 
+function numericEndpointError(line: SesRouteLine): number {
+	const scale = Math.max(1, Math.abs(line.a.x), Math.abs(line.a.y), Math.abs(line.b.x), Math.abs(line.b.y))
+	return Math.min(ROUTE_TOLERANCE_MIL, Number.EPSILON * scale * 64)
+}
+
 function subtractLine(line: SesRouteLine, blockers: SesRouteLine[], mode: 'append' | 'replace-unlocked', toleranceMil: number): SesRouteLine[] {
 	const frame = lineFrame(line)
 	const coverage: Array<[number, number]> = []
@@ -598,6 +669,8 @@ function subtractLine(line: SesRouteLine, blockers: SesRouteLine[], mode: 'appen
 			throw new Error(`${mode} SES 路径与现有不同网络/层/线宽图元共线重叠：SES=${JSON.stringify(line)} existing=${JSON.stringify(blocker)}`)
 		coverage.push(overlap)
 	}
+	if (coverage.length === 0)
+		return [line]
 	coverage.sort((a, b) => a[0] - b[0])
 	const merged: Array<[number, number]> = []
 	for (const interval of coverage) {
@@ -609,13 +682,18 @@ function subtractLine(line: SesRouteLine, blockers: SesRouteLine[], mode: 'appen
 	}
 	const remaining: Array<[number, number]> = []
 	let cursor = frame.t0
+	const endpointError = Math.min(numericEndpointError(line), toleranceMil)
 	for (const [start, end] of merged) {
-		if (start > cursor)
-			remaining.push([cursor, start])
-		cursor = Math.max(cursor, end)
+		const snappedStart = Math.abs(start - frame.t0) <= endpointError ? frame.t0 : start
+		const snappedEnd = Math.abs(end - frame.t1) <= endpointError ? frame.t1 : end
+		if (snappedStart > cursor)
+			remaining.push([cursor, snappedStart])
+		cursor = Math.max(cursor, snappedEnd)
 	}
 	if (frame.t1 > cursor)
 		remaining.push([cursor, frame.t1])
+	if (remaining.length === 1 && Math.abs(remaining[0][0] - frame.t0) <= endpointError && Math.abs(remaining[0][1] - frame.t1) <= endpointError)
+		return [line]
 	return remaining.map(([start, end]) => ({ ...line, a: pointAt(frame, start), b: pointAt(frame, end) }))
 }
 
@@ -654,6 +732,13 @@ function prepareDeltaVias(expected: SesRouteVia[], blockers: SesRouteVia[], prio
 	}
 	const delta: SesRouteVia[] = []
 	for (const via of expected) {
+		const priorAtGeometry = prior.filter(item => sameViaGeometry(via, item))
+		if (via.holeDiameterSource === 'caller-specified' && priorAtGeometry.some(item =>
+			item.holeDiameterMil === undefined
+			|| !Number.isFinite(item.holeDiameterMil)
+			|| Math.abs(item.holeDiameterMil - via.holeDiameterMil!) > ROUTE_TOLERANCE_MIL,
+		))
+			throw new Error(`${mode} SES 显式指定的过孔孔径与现有同位置过孔孔径不一致或不可读：${JSON.stringify(via)} / ${JSON.stringify(priorAtGeometry)}`)
 		const atLocation = blockers.filter(item => sameViaLocation(via, item))
 		if (atLocation.some(item => !sameViaGeometry(via, item)))
 			throw new Error(`${mode} SES 过孔与现有同位置过孔网络/外径/类型冲突：${JSON.stringify(via)} / ${JSON.stringify(atLocation)}`)
@@ -663,7 +748,11 @@ function prepareDeltaVias(expected: SesRouteVia[], blockers: SesRouteVia[], prio
 			continue
 		}
 		const old = prior.find(item => sameViaGeometry(via, item))
-		delta.push(old?.holeDiameterMil === undefined ? { ...via } : { ...via, holeDiameterMil: old.holeDiameterMil })
+		delta.push(via.holeDiameterSource === 'caller-specified'
+			? { ...via }
+			: old?.holeDiameterMil === undefined
+				? { ...via }
+				: { ...via, holeDiameterMil: old.holeDiameterMil, holeDiameterSource: 'existing-board-readback' })
 	}
 	return delta
 }
@@ -704,7 +793,9 @@ function compareLineCoverage(expected: SesRouteLine[], actual: SesRouteLine[]): 
 	const toleranceMil = lineTolerance([...expected, ...actual])
 	const groups: Array<{ expected: SesRouteLine[], actual: SesRouteLine[], representative: SesRouteLine }> = []
 	for (const [line, source] of [...expected.map(line => [line, 'expected'] as const), ...actual.map(line => [line, 'actual'] as const)]) {
-		const group = groups.find(item => lineAttributesEqual(item.representative, line) && sameSupport(item.representative, line, toleranceMil))
+		// Group by electrical identity and geometry first. Width is checked separately
+		// so a width-only readback change is diagnosed as such, never as missing copper.
+		const group = groups.find(item => item.representative.net === line.net && item.representative.layer === line.layer && sameSupport(item.representative, line, toleranceMil))
 		if (group)
 			group[source].push(line)
 		else
@@ -733,10 +824,45 @@ function compareLineCoverage(expected: SesRouteLine[], actual: SesRouteLine[]): 
 			if (end - start <= 0)
 				continue
 			const middle = (start + end) / 2
-			const expectedCount = eIntervals.filter(([start, end]) => middle > start && middle < end).length
-			const actualCount = aIntervals.filter(([start, end]) => middle > start && middle < end).length
+			const expectedAt = e.filter((_, index) => middle > eIntervals[index][0] && middle < eIntervals[index][1])
+			const actualAt = a.filter((_, index) => middle > aIntervals[index][0] && middle < aIntervals[index][1])
+			const expectedCount = expectedAt.length
+			const actualCount = actualAt.length
 			if (expectedCount !== actualCount)
 				differences.push({ code: actualCount < expectedCount ? 'lineCoverageMissing' : 'lineCoverageUnexpected', net: representative.net, layer: representative.layer, widthMil: representative.widthMil, from: pointAt(frame, start), to: pointAt(frame, end), expectedMultiplicity: expectedCount, actualMultiplicity: actualCount })
+			else if (expectedCount > 0) {
+				const unmatchedExpected = [...expectedAt]
+				const unmatchedActual = [...actualAt]
+				// Match exact-width pairs first, then pair the remaining geometry so a
+				// width-only difference gets a useful expected/actual diagnostic.
+				for (let i = unmatchedExpected.length - 1; i >= 0; i--) {
+					const match = unmatchedActual.findIndex(line => Math.abs(line.widthMil - unmatchedExpected[i].widthMil) <= ROUTE_TOLERANCE_MIL)
+					if (match >= 0) {
+						unmatchedExpected.splice(i, 1)
+						unmatchedActual.splice(match, 1)
+					}
+				}
+				while (unmatchedExpected.length && unmatchedActual.length) {
+					let expectedIndex = 0
+					let actualIndex = 0
+					let smallestDifference = Number.POSITIVE_INFINITY
+					for (let ei = 0; ei < unmatchedExpected.length; ei++) {
+						for (let ai = 0; ai < unmatchedActual.length; ai++) {
+							const delta = Math.abs(unmatchedExpected[ei].widthMil - unmatchedActual[ai].widthMil)
+							if (delta < smallestDifference) {
+								smallestDifference = delta
+								expectedIndex = ei
+								actualIndex = ai
+							}
+						}
+					}
+					const expectedLine = unmatchedExpected.splice(expectedIndex, 1)[0]
+					const actualLine = unmatchedActual.splice(actualIndex, 1)[0]
+					const differenceMil = actualLine.widthMil - expectedLine.widthMil
+					if (Math.abs(differenceMil) > ROUTE_TOLERANCE_MIL)
+						differences.push({ code: 'lineWidthMismatch', net: representative.net, layer: representative.layer, from: pointAt(frame, start), to: pointAt(frame, end), expectedWidthMil: expectedLine.widthMil, actualWidthMil: actualLine.widthMil, differenceMil, expectedLineId: expectedLine.id ?? null, actualLineId: actualLine.id ?? null })
+				}
+			}
 		}
 	}
 	return {
@@ -776,6 +902,15 @@ export function verifySesImport(plan: SesImportPlan, after: SesRouteSnapshot): S
 	differences.push(...lineCheck.differences)
 	differences.push(...compareViaMultiset(plan.targetVias, after.vias))
 	const holeDiameterVerified = plan.targetVias.some(via => via.holeDiameterMil !== undefined)
+	const holeDiameterSources = new Set<'caller-specified' | 'existing-board-readback'>()
+	for (const via of plan.expected.vias) {
+		if (via.holeDiameterSource === 'caller-specified')
+			holeDiameterSources.add('caller-specified')
+	}
+	for (const via of plan.targetVias) {
+		if (via.holeDiameterMil !== undefined)
+			holeDiameterSources.add(via.holeDiameterSource ?? 'existing-board-readback')
+	}
 	return {
 		verified: differences.length === 0,
 		differences,
@@ -788,6 +923,7 @@ export function verifySesImport(plan: SesImportPlan, after: SesRouteSnapshot): S
 			actualLineLengthMil: lineCheck.actualLength,
 			holeDiameterVerified,
 			holeDiameterStatus: holeDiameterVerified ? 'partially-specified' : 'not-specified-by-ses',
+			holeDiameterSources: [...holeDiameterSources],
 		},
 	}
 }
@@ -828,7 +964,17 @@ function fromMil(value: number, resolution: SesResolution): number {
 	return value * milToUnit * resolution.ticksPerUnit
 }
 
-function routeLayerName(layer: number): string {
+function routeLayerName(layer: number, sesLayerNamesById?: Record<number, string>): string {
+	if (sesLayerNamesById !== undefined) {
+		const name = sesLayerNamesById[layer]
+		if (!name || (!['TopLayer', 'Top Layer', 'BottomLayer', 'Bottom Layer'].includes(name) && !isInnerSesLayer(name)))
+			throw new Error(`SES 子集序列化缺少已验证的 PCB 层 ID ${layer} 映射`)
+		if (name === 'TopLayer' || name === 'Top Layer')
+			return 'TopLayer'
+		if (name === 'BottomLayer' || name === 'Bottom Layer')
+			return 'BottomLayer'
+		return name
+	}
 	if (layer === 1)
 		return 'TopLayer'
 	if (layer === 2)
@@ -858,7 +1004,7 @@ export function serializeSesSubset(source: string, delta: SesRouteExpected): str
 		return list
 	}
 	for (const line of delta.lines) {
-		const layer = routeLayerName(line.layer)
+		const layer = routeLayerName(line.layer, delta.sesLayerNamesById)
 		const rawWidth = formatSesNumber(fromMil(line.widthMil, originalModel.resolution))
 		const rawPoints = [line.a, line.b].flatMap(point => [
 			formatSesNumber(fromMil(point.x, originalModel.resolution)),

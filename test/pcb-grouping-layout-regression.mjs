@@ -60,7 +60,7 @@ async function main() {
 		`${JSON.stringify({ type: 'DOCHEAD' })}||${JSON.stringify({ docType, uuid, client: 'test' })}`,
 		...records.map(({ type, id, ticket, data }) => `${JSON.stringify({ type, id, ticket })}||${JSON.stringify(data)}`),
 	].join('\n');
-	const makeFixture = ({ names, boardHeight }) => {
+	const makeFixture = ({ names, boardHeight, footprintSource, componentPose }) => {
 		const schematicUuid = 'schematic-test';
 		const pcbUuid = 'pcb-test';
 		const schematicRecords = [];
@@ -75,8 +75,9 @@ async function main() {
 				{ type: 'COMPONENT', id: schComponentId, ticket: schematicRecords.length + 2, data: { x, y: 50 } },
 				{ type: 'ATTR', id: `sch-attr-${index}`, ticket: schematicRecords.length + 3, data: { parentId: schComponentId, key: 'Designator', value: designator, x, y: 50 } },
 			);
+			const pose = componentPose && index === 0 ? componentPose : { x, y: 50, angle: 0, layerId: 1, footprintUuid: '' };
 			pcbRecords.push(
-				{ type: 'COMPONENT', id: pcbComponentId, ticket: pcbRecords.length + 1, data: { positionX: x, positionY: 50, angle: 0, layerId: 1, footprintUuid: '', deviceUuid: '' } },
+				{ type: 'COMPONENT', id: pcbComponentId, ticket: pcbRecords.length + 1, data: { positionX: pose.x, positionY: pose.y, angle: pose.angle, layerId: pose.layerId, footprintUuid: pose.footprintUuid, deviceUuid: '' } },
 				{ type: 'ATTR', id: `pcb-attr-${index}`, ticket: pcbRecords.length + 2, data: { parentId: pcbComponentId, key: 'Designator', value: designator } },
 			);
 		}
@@ -98,7 +99,7 @@ async function main() {
 			},
 			sys_FileManager: {
 				getDocumentSource: async () => sources.get(activeUuid),
-				getDocumentFootprintSources: async () => [],
+				getDocumentFootprintSources: async () => footprintSource ? [footprintSource] : [],
 				setDocumentSource: async () => {
 					sourceWrites++;
 					return true;
@@ -132,6 +133,39 @@ async function main() {
 		assert.equal(fixture.writes, 0, 'an unplaced group cannot reach setDocumentSource');
 	}
 	console.log('PASS PCB grouping rejects first-row and later-row height exhaustion before any write');
+
+	const footprintUuid = 'fp-asymmetric-bottom';
+	const footprintSource = {
+		footprintUuid,
+		documentSource: source('FOOTPRINT', 'footprint-source-test', [
+			{ type: 'TRACK', id: 'asymmetric-geometry', ticket: 1, data: { path: [10, 20, 30, 60] } },
+		]),
+	};
+	const footprintFixture = makeFixture({
+		names: ['U1'],
+		boardHeight: 500,
+		footprintSource,
+		componentPose: { x: 100, y: 200, angle: 90, layerId: 2, footprintUuid },
+	});
+	const preview = await grouping({
+		dryRun: true,
+		origin: { x: 0, y: 0 },
+		boardSize: { width: 1000, height: 500 },
+		groupGap: 1,
+	}, {});
+	assert.equal(preview.dryRun, true);
+	assert.equal(preview.groups.length, 1);
+	assert.equal(preview.groups[0].placements[0].measureSource, 'footprint-source', 'a returned footprint source must flow through measureGeometry');
+	assert.equal(preview.groups[0].placements[0].measured, true);
+	assert.deepEqual({ x: preview.groups[0].placements[0].x, y: preview.groups[0].placements[0].y }, { x: -5, y: 5 }, 'bottom 90° asymmetric source bbox keeps its correct anchor offset through dryRun');
+	// U1 adds no visible-designator space: maxY = max(20 + 2*15 + 70 + 20, 35 + 20 + 35 + 40 + 15) = 145.
+	assert.deepEqual(
+		{ minX: preview.groups[0].bbox.minX, minY: preview.groups[0].bbox.minY, maxX: preview.groups[0].bbox.maxX, maxY: preview.groups[0].bbox.maxY },
+		{ minX: 0, minY: 0, maxX: 201, maxY: 145 },
+		'dryRun group bounds include the transformed 40×20 footprint extent and layout margins',
+	);
+	assert.equal(footprintFixture.writes, 0, 'dryRun must not write source');
+	console.log('PASS PCB grouping dryRun measures a real bottom 90° asymmetric footprint source and reports the expected anchor and extents');
 }
 
 main().catch((error) => {

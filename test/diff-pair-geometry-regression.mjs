@@ -1,0 +1,65 @@
+import assert from 'node:assert/strict'
+const { planDifferentialPair } = await import(new URL('../src/pcb/diffPairGeometry.ts', import.meta.url))
+const close = (actual, expected, tolerance = 1e-9) => assert.ok(Math.abs(actual - expected) <= tolerance, `${actual} != ${expected}`)
+const pair = (path, width = 6, gap = 4) => planDifferentialPair({ path, width, gap })
+
+const prescribed = pair([[0, 0], [100, 0], [200, 100]])
+assert.deepEqual(prescribed.positivePath, [[0, 5], [97.92893218813452, 5], [196.46446609406726, 103.53553390593274]])
+assert.deepEqual(prescribed.negativePath, [[0, -5], [102.07106781186548, -5], [203.53553390593274, 96.46446609406726]])
+close(prescribed.plannedLengths.positive, 237.27922061357856)
+close(prescribed.plannedLengths.negative, 245.56349186104046)
+close(prescribed.plannedLengths.positiveMinusNegative, -8.284271247461902)
+close(prescribed.plannedLengths.absoluteDifference, 8.284271247461902)
+close(prescribed.minimumCopperGapMil, 4)
+
+const straight = pair([[0, 0], [20, 0]])
+assert.deepEqual(straight.positivePath, [[0, 5], [20, 5]])
+assert.deepEqual(straight.negativePath, [[0, -5], [20, -5]])
+assert.equal(pair([[0, 0], [1, 0]]).positivePath[1][0], 1, 'a 1 mil output segment is accepted')
+const verticalNegative = pair([[-10, -20], [-10, -5]])
+assert.deepEqual(verticalNegative.positivePath, [[-15, -20], [-15, -5]])
+assert.deepEqual(verticalNegative.negativePath, [[-5, -20], [-5, -5]])
+
+const arbitrary = pair([[2, -3], [5, 1]], 4, 4)
+close(arbitrary.positivePath[0][0], -1.2)
+close(arbitrary.positivePath[0][1], -0.6)
+close(arbitrary.negativePath[0][0], 5.2)
+close(arbitrary.negativePath[0][1], -5.4)
+close(arbitrary.minimumCopperGapMil, 4)
+
+const mirrored = pair([[0, 0], [100, 0], [200, 100]].map(([x, y]) => [-x, y]))
+const reversed = pair([[200, 100], [100, 0], [0, 0]])
+for (let i = 0; i < prescribed.positivePath.length; i++) {
+	close(mirrored.positivePath[i][0], -prescribed.negativePath[i][0])
+	close(mirrored.positivePath[i][1], prescribed.negativePath[i][1])
+	close(reversed.positivePath[i][0], prescribed.negativePath[2 - i][0])
+	close(reversed.positivePath[i][1], prescribed.negativePath[2 - i][1])
+}
+
+const sBend = pair([[0, 0], [30, 0], [50, 20], [70, 20], [90, 0]])
+assert.equal(sBend.positivePath.length, 5)
+const normalized = pair([[0, 0], [0, 0], [10, 0], [20, 0], [30, 0], [30, 20]])
+assert.deepEqual(normalized.positivePath, pair([[0, 0], [30, 0], [30, 20]]).positivePath)
+assert.match(normalized.normalization, /重复点 1 个、同向共线中间点 2 个/)
+assert.match(normalized.normalization, /未吸附、拉长或调整路径/)
+
+assert.throws(() => pair([[0, 0], [10, 0], [9.5, 0], [20, 0]]), /反转|求交/)
+assert.throws(() => pair([[0, 0], [20, 0], [20, 20], [0, 20], [0, 0], [20, 0]]), /自交|触碰|间距不足/)
+assert.throws(() => pair([[0, 0], [0.5, 0], [10, 10]]), /反转|1 mil/)
+assert.throws(() => pair([[0, 0], [20, 0], [20, 2], [40, 2]]), /间距不足|自交|触碰/)
+assert.throws(() => pair([[0, 0], [100, 0], [100, 16], [0, 16]]), /铜自交或触碰/, 'same-side copper touching at exactly the trace width is rejected')
+assert.throws(() => pair([[0, 0], [100, 0], [100, 12], [0, 12]]), /铜自交或触碰|间距不足/)
+assert.doesNotThrow(() => pair([[0, 0], [100, 0], [100, 16.1], [0, 16.1]]), 'a small margin above 16 mil separates same-side copper')
+assert.doesNotThrow(() => pair([[0, 0], [100, 0], [100, 20.1], [0, 20.1]]), 'an explicit clearance margin remains valid')
+assert.throws(() => pair([[0, 0], [10, 0], [10, 20], [10.1, 20], [10.1, 0], [20, 0]]), /触碰|反转|求交/)
+assert.throws(() => pair([[1e15, 0], [1e15 + 10, 0]]), /精度不足/)
+assert.throws(() => pair([[0, 0], [Number.MAX_VALUE, Number.MAX_VALUE], [0, Number.MAX_VALUE]]), /有限|精度|数值/)
+assert.throws(() => planDifferentialPair({ path: [[0, 0], [10, 0]], width: '6', gap: 4 }), /有限数值/)
+assert.throws(() => planDifferentialPair({ path: [[0, 0], [10, 0]], width: 6, gap: 0 }), /必须为正数/)
+
+let budgetChecks = 0
+pair([[0, 0], [20, 0], [30, 10], [40, 10]], 2, 2)
+planDifferentialPair({ path: [[0, 0], [20, 0], [30, 10], [40, 10]], width: 2, gap: 2 }, () => { budgetChecks++ })
+assert.ok(budgetChecks > 10, 'shared budget is checked through normalization, generation and pairwise checks')
+
+console.log('diff-pair-geometry-regression: all assertions passed')

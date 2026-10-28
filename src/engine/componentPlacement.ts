@@ -4,7 +4,7 @@ interface DeviceRef { libraryUuid: string; uuid: string }
 
 interface PlacementApi {
 	lib_Device: {
-		getByLcscIds: (ids: Array<string>) => Promise<Array<any> | null | undefined>;
+		getByLcscIds: (ids: Array<string>, libraryUuid?: string) => Promise<Array<any> | null | undefined>;
 		get: (uuid: string, libraryUuid: string) => Promise<any>;
 	};
 	sch_PrimitiveComponent: {
@@ -229,15 +229,28 @@ export async function placeDeviceSafely(api: PlacementApi, params: Record<string
 		fail('当前焦点不是带有效工程 UUID 的原理图页', 'focus-before-library', false);
 
 	let ref: DeviceRef;
+	let requestedLcscId: string | undefined;
+	let requestedLibraryUuid: string | undefined;
 	try {
 		if (params.lcscId) {
-			const items = await api.lib_Device.getByLcscIds([String(params.lcscId)]);
+			requestedLcscId = String(params.lcscId);
+			if (params.libraryUuid != null) {
+				requestedLibraryUuid = requireString(params.libraryUuid, '请求 libraryUuid');
+			}
+			const items = requestedLibraryUuid
+				? await api.lib_Device.getByLcscIds([requestedLcscId], requestedLibraryUuid)
+				: await api.lib_Device.getByLcscIds([requestedLcscId]);
 			if (!items?.[0])
-				fail(`未找到立创编号为 ${params.lcscId} 的器件`, 'resolve-device', false);
-			ref = { libraryUuid: requireString(items[0].libraryUuid, '立创器件 libraryUuid'), uuid: requireString(items[0].uuid, '立创器件 uuid') };
+				fail(`未找到立创编号为 ${requestedLcscId}${requestedLibraryUuid ? `（库 ${requestedLibraryUuid}）` : ''} 的器件`, 'resolve-device', false);
+			const selectedLibraryUuid = requireString(items[0].libraryUuid, '立创器件 libraryUuid');
+			const selectedDeviceUuid = requireString(items[0].uuid, '立创器件 uuid');
+			if (requestedLibraryUuid && selectedLibraryUuid !== requestedLibraryUuid)
+				fail(`立创器件搜索返回了非请求库的结果（want ${requestedLibraryUuid}, got ${selectedLibraryUuid}）`, 'resolve-device', false);
+			ref = { libraryUuid: selectedLibraryUuid, uuid: selectedDeviceUuid };
 		}
 		else if (params.deviceUuid && params.libraryUuid) {
-			ref = { libraryUuid: String(params.libraryUuid), uuid: String(params.deviceUuid) };
+			requestedLibraryUuid = requireString(params.libraryUuid, '请求 libraryUuid');
+			ref = { libraryUuid: requestedLibraryUuid, uuid: String(params.deviceUuid) };
 		}
 		else {
 			fail('需要提供 lcscId，或 deviceUuid + libraryUuid', 'resolve-device', false);
@@ -358,12 +371,29 @@ export async function placeDeviceSafely(api: PlacementApi, params: Record<string
 		return {
 			primitiveId,
 			designator,
+			device: {
+				requestedLcscId: requestedLcscId ?? null,
+				requestedLibraryUuid: requestedLibraryUuid ?? null,
+				selectedDeviceUuid: ref.uuid,
+				selectedLibraryUuid: ref.libraryUuid,
+			},
+			placementVerified: true,
+			footprintVerified: Boolean(expected && footprintReadback.resourceVerified === true),
+			footprintStatus: expected
+				? (footprintReadback.resourceVerified === true ? 'verified' : 'unverified')
+				: (instanceFootprintUuid ? 'unexpected-instance-footprint' : 'missing'),
+			pcbReady: Boolean(expected && footprintReadback.resourceVerified === true && pinPadMapVerified),
+			pcbReadyScope: 'footprint-and-instance-pin-pad-map-only',
+			warnings: expected ? [] : [
+				'器件未关联可核验的库封装；如需用于 PCB，请明确选择带封装的库器件后重新放置。插件不会自动替换器件。',
+			],
 			readback: {
 				footprint: footprintReadback,
 				...(pinPadMap ? { pinPadMap } : {}),
 				...(pinPadMap ? { pinMapScope: 'placed-instance-only' } : {}),
 				pinPadMapVerified,
 				...(electricalMapping ? { electricalMapping } : {}),
+				// Compatibility field: verifies successful placement and instance readback only.
 				verified: true,
 				persistenceVerified: false,
 			},

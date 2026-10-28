@@ -1,5 +1,6 @@
 import type { GeometryHost } from '../geometryHost';
 import { comparePolygonSource } from './geometryReadback';
+import { normalizePouredPathSource, readEditorVersion } from '../pouredUnits';
 
 interface ParentExpectation {
 	primitiveId: string;
@@ -20,6 +21,9 @@ interface FilledRegionReadback {
 	lineWidth: number | null;
 	pathGetter: 'function' | 'missing';
 	pathSource?: unknown;
+	normalizedPathMil?: unknown | null;
+	coordinateUnit: 'mil' | 'unknown';
+	normalization: { status: 'normalized' | 'unsupported'; reason: string; editorVersion: string | null; conversionFactor: number | null };
 }
 
 export interface PourFillReadback {
@@ -85,6 +89,7 @@ function fail(message: string, evidence: Record<string, unknown>): never {
 }
 
 async function collectPourFillReadback(host: GeometryHost, sdk: any, expected: ParentExpectation & { plannedSource?: unknown }, observed: Record<string, unknown>): Promise<PourFillReadback> {
+	const editorVersion = readEditorVersion(sdk);
 	const parentObject = await host.read(`按 ID 读回覆铜边框 ${expected.primitiveId}`, async () => await sdk.pcb_PrimitivePour.get(expected.primitiveId));
 	if (!parentObject)
 		fail(`覆铜边框 ${expected.primitiveId} 按 ID 读回为空`, { parentId: expected.primitiveId, matchedPouredIds: [] });
@@ -159,6 +164,8 @@ async function collectPourFillReadback(host: GeometryHost, sdk: any, expected: P
 					fill: typeof fill === 'boolean' ? fill : null,
 					lineWidth: finite(lineWidth) ? lineWidth : null,
 					pathGetter: typeof path?.getSource === 'function' ? 'function' : 'missing',
+					coordinateUnit: 'unknown',
+					normalization: { status: 'unsupported', reason: fill === true ? 'path-not-read' : 'not-filled', editorVersion, conversionFactor: null },
 				};
 				filledRegions.push(evidence);
 				if (typeof id !== 'string' || !id || typeof fill !== 'boolean' || !finite(lineWidth) || lineWidth < 0)
@@ -177,6 +184,10 @@ async function collectPourFillReadback(host: GeometryHost, sdk: any, expected: P
 					evidence.pathSource = sourceSnapshot(source);
 					if (!validSource(source))
 						throw new Error(`实填充 ${association.id} 区域 ${id} 的 path.getSource() 未返回非空合法数组`);
+					const normalized = normalizePouredPathSource(source, { fill, lineWidth, editorVersion, declaredCoordinateUnit: (region as any)?.coordinateUnit });
+					evidence.coordinateUnit = normalized.coordinateUnit;
+					evidence.normalization = { status: normalized.status, reason: normalized.normalization, editorVersion: normalized.editorVersion, conversionFactor: normalized.conversionFactor };
+					evidence.normalizedPathMil = normalized.normalizedPathMil === undefined ? null : sourceSnapshot(normalized.normalizedPathMil);
 					filledRegionCount++;
 				}
 				return { ...evidence };

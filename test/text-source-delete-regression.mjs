@@ -99,6 +99,8 @@ function installEda({
 	let source = initialSource
 	let sourceReads = 0
 	let setCalls = 0
+	let deleteCalls = 0
+	let lastDeleteIds = []
 	let resolveLate
 	const getSource = async () => {
 		sourceReads++
@@ -111,13 +113,18 @@ function installEda({
 		dmt_SelectControl: { getCurrentDocumentInfo: async () => ({ documentType: 1, uuid: DOC_UUID }) },
 		sys_FileManager: {
 			getDocumentSource: getSource,
-			setDocumentSource: async next => {
-				setCalls++
-				if (setMode === 'reject') throw new Error('setter rejected')
+			setDocumentSource: async () => { setCalls++; return true },
+		},
+		sch_PrimitiveText: {
+			getAllPrimitiveId: async () => modelIds(source),
+			delete: async ids => {
+				deleteCalls++
+				lastDeleteIds = [...ids]
+				if (setMode === 'reject') throw new Error('typed delete rejected')
 				if (setMode === 'false') return false
-				if (lateWrite) return new Promise(resolve => { resolveLate = () => { source = next; resolve(true) } })
+				if (lateWrite) return new Promise(resolve => { resolveLate = () => { source = removeTargets(source, ids); resolve(true) } })
 				if (setMode === 'no-effect') return true
-				source = next
+				source = removeTargets(source, ids)
 				if (mutateOther)
 					source = source.replace('"value":"V"', '"value":"changed"')
 				if (mutateAnonymous)
@@ -137,14 +144,19 @@ function installEda({
 				return true
 			},
 		},
-		sch_PrimitiveText: { getAllPrimitiveId: async () => modelIds(source) },
 	}
-	return { get source() { return source }, get setCalls() { return setCalls }, resolveLate: () => resolveLate?.() }
+	return { get source() { return source }, get setCalls() { return setCalls }, get deleteCalls() { return deleteCalls }, get lastDeleteIds() { return lastDeleteIds }, resolveLate: () => resolveLate?.() }
+}
+
+function removeTargets(value, ids) {
+	const targets = new Set(ids)
+	return updateRecords(value, recordHeader => !(recordHeader.type === 'TEXT' && targets.has(String(recordHeader.id))))
 }
 
 function installOrdinaryDeleteEda({ mutateOther = false, mutateAnonymous = false, lateWrite = false } = {}) {
 	let source = baseSource
 	let setCalls = 0
+	let deleteCalls = 0
 	let saveCalls = 0
 	let probeCalls = 0
 	let resolveLate
@@ -155,16 +167,23 @@ function installOrdinaryDeleteEda({ mutateOther = false, mutateAnonymous = false
 			getDocumentSource: async () => source,
 			setDocumentSource: async next => {
 				setCalls++
-				if (lateWrite) return new Promise(resolve => { resolveLate = () => { source = next; resolve(true) } })
 				source = next
-		if (mutateOther) source = source.replace('"value":"V"', '"value":"changed"')
-		if (mutateAnonymous) source = source.replace('"value":"plain"', '"value":"changed"')
 				return true
 			},
 		},
 		sch_PrimitiveComponent: { getAllPrimitiveId: noIds },
 		sch_PrimitiveWire: { getAllPrimitiveId: noIds, delete: async () => true, create: async () => { probeCalls++; return undefined } },
-		sch_PrimitiveText: { getAllPrimitiveId: async () => modelIds(source) },
+		sch_PrimitiveText: {
+			getAllPrimitiveId: async () => modelIds(source),
+			delete: async ids => {
+				deleteCalls++
+				if (lateWrite) return new Promise(resolve => { resolveLate = () => { source = removeTargets(source, ids); resolve(true) } })
+				source = removeTargets(source, ids)
+				if (mutateOther) source = source.replace('"value":"V"', '"value":"changed"')
+				if (mutateAnonymous) source = source.replace('"value":"plain"', '"value":"changed"')
+				return true
+			},
+		},
 		sch_PrimitiveRectangle: { getAllPrimitiveId: noIds, delete: async () => true },
 		sch_PrimitiveAttribute: { getAllPrimitiveId: noIds, getAll: async () => [], delete: async () => true },
 		sch_Document: { save: async () => { saveCalls++; return true } },
@@ -172,6 +191,7 @@ function installOrdinaryDeleteEda({ mutateOther = false, mutateAnonymous = false
 	return {
 		get source() { return source },
 		get setCalls() { return setCalls },
+		get deleteCalls() { return deleteCalls },
 		get saveCalls() { return saveCalls },
 		get probeCalls() { return probeCalls },
 		resolveLate: () => resolveLate?.(),
@@ -192,10 +212,13 @@ async function capture(params, setup) {
 	const { value, state } = result
 	assert.ok(value, `normal snapshot deletion failed: ${result.error?.message}; cause=${JSON.stringify(result.error?.cause)}`)
 	assert.deepEqual(value.deleted, ['target-a', 'target "quoted"'])
-	assert.equal(value.strategy, 'source-snapshot')
+	assert.equal(value.strategy, 'typed-api')
 	assert.equal(value.sourceVerified, true)
 	assert.equal(value.modelVerified, true)
-	assert.equal(state.source, [header, canvas, referenceText, versionOld, versionNew, other, wire, unknownHeader, anonymousRecord].join('\n'), 'snapshot removes only exact target TEXT rows and preserves unrelated source rows')
+	assert.equal(state.source, [header, canvas, referenceText, versionOld, versionNew, other, wire, unknownHeader, anonymousRecord].join('\n'), 'typed delete removes only exact target TEXT rows and preserves unrelated source rows')
+	assert.deepEqual(state.lastDeleteIds, ['target-a', 'target "quoted"'])
+	assert.equal(state.deleteCalls, 1)
+	assert.equal(state.setCalls, 0, 'typed delete never calls setDocumentSource')
 }
 
 {
@@ -207,13 +230,13 @@ async function capture(params, setup) {
 
 {
 	const { error, state } = await capture({ primitiveIds: ['target-a'] }, { setMode: 'no-effect' })
-	assert.equal(error.cause.partial, true, 'true setter acknowledgment without actual deletion is partial')
+	assert.equal(error.cause.partial, true, 'typed delete acknowledgment without actual deletion is partial')
 	assert.match(error.message, /目标 TEXT target-a.*源码仍存在/)
 }
 
 	for (const [label, setup] of [
-	['setter false', { setMode: 'false' }],
-	['setter reject', { setMode: 'reject' }],
+	['typed delete false', { setMode: 'false' }],
+	['typed delete throws', { setMode: 'reject' }],
 	['post-write read throws', { readMode: 'post-fail' }],
 	['post-write source is invalid', { readMode: 'post-invalid' }],
 	['non-target content changes', { mutateOther: true }],
@@ -287,16 +310,17 @@ async function capture(params, setup) {
 {
 	const state = installOrdinaryDeleteEda({ lateWrite: true })
 	const pending = deleteCommand.handler({ primitiveIds: ['target-a', 'target "quoted"'] }).then(value => ({ value }), error => ({ error }))
-	for (let turn = 0; state.setCalls === 0 && turn < 1000; turn++)
+	for (let turn = 0; state.deleteCalls === 0 && turn < 1000; turn++)
 		await new Promise(resolve => setImmediate(resolve))
-	assert.ok(state.setCalls > 0, 'ordinary TEXT path should reach setDocumentSource before the item timeout')
+	assert.ok(state.deleteCalls > 0, 'ordinary TEXT path should reach typed delete before the item timeout')
 	await new Promise(resolve => setTimeout(resolve, 8_100))
 	const result = await pending
 	assert.equal(result.error?.cause?.partial, true)
 	state.resolveLate()
 	await new Promise(resolve => setImmediate(resolve))
 	assert.equal(state.saveCalls, 0, 'late ordinary source write cannot continue into save')
-	assert.equal(state.setCalls, 1, 'late completion cannot start the next TEXT snapshot write')
+	assert.equal(state.deleteCalls, 1, 'late completion cannot start the next TEXT typed delete')
+	assert.equal(state.setCalls, 0, 'ordinary TEXT deletion never uses setDocumentSource')
 }
 
 {
@@ -319,12 +343,12 @@ async function capture(params, setup) {
 	}
 	try {
 		const pending = deleteTextFromSourceSnapshot(['target-a'], { timeoutMs: 1000 }).then(value => ({ value }), error => ({ error }))
-		while (state.setCalls === 0) await new Promise(resolve => setImmediate(resolve))
+		while (state.deleteCalls === 0) await new Promise(resolve => setImmediate(resolve))
 		const activeTimer = [...timers.values()].find(timer => timer.active)
-		assert.ok(activeTimer, 'the pending source write has an active shared-budget timer')
+		assert.ok(activeTimer, 'the pending typed delete has an active shared-budget timer')
 		activeTimer.fire()
 		const result = await pending
-		assert.equal(result.error.cause.partial, true, 'late setter timeout is partial')
+		assert.equal(result.error.cause.partial, true, 'late typed delete timeout is partial')
 		state.resolveLate()
 		await new Promise(resolve => setImmediate(resolve))
 	}

@@ -184,7 +184,7 @@ function connectionFor(instanceId) {
 /** 向扩展转发一条指令并等待结果。
  *  instanceId 为空时严格发往 selectedInstanceId（绝不改投其他窗口）；
  *  指定 instanceId 时按请求级路由发往该实例（多 AI 客户端并行各带各的窗口，互不抢全局选择） */
-function forwardToExtension(message, instanceId, isWrite = false) {
+function forwardToExtension(message, instanceId) {
 	return new Promise((resolve, reject) => {
 		const target = instanceId ? connectionFor(instanceId) : selectedConnection()
 		if (!target) {
@@ -203,12 +203,9 @@ function forwardToExtension(message, instanceId, isWrite = false) {
 		const id = randomUUID()
 		const timeoutMs = COMMAND_TIMEOUT_OVERRIDES[message.cmd] ?? COMMAND_TIMEOUT_MS
 		const targetId = target.instanceId ?? target.info?.instanceId
-		const entry = { resolve, timer: null, lastProgress: undefined, timeoutMs, write: isWrite, cmd: message.cmd, id, instanceId: targetId, owner: target.ws }
+		const entry = { resolve, timer: null, lastProgress: undefined, timeoutMs, id, instanceId: targetId, owner: target.ws }
 		entry.timer = setTimeout(() => {
 			pending.delete(id)
-			// 0.10.72：写指令超时 = 结果不确定，标记写保护（拒绝后续写直到自愈/确认）
-			// 0.10.73：保护按实例号键并记录本指令 id，迟到结果只认这个 id
-			if (isWrite) markWriteUncertain(targetId, message.cmd, '指令超时', id, target.ws)
 			tryCompleteStop(targetId)
 			// 0.10.37：超时只是代理放弃等待，扩展侧可能仍在后台执行（EDA API 无取消机制）——如实告知边界
 			// 0.10.49：附最后收到的进度心跳，客户端可据此判断任务实际推进到哪
@@ -252,33 +249,8 @@ function isReadOnlyCommand(cmd) {
 /** 每个 EDA 窗口（ws）一条写队列；tail 永远 resolved，深度单独计数 */
 const writeQueues = new Map()
 
-// ---------- 0.10.73 写结果不确定保护 v2（KIMI-EDA-20261006-04 P1-3 复核收口） ----------
-// 背景：写指令超时/心跳丢失时代理放弃等待，但扩展侧可能仍在后台执行（EDA API 无取消）。
-// 此时若放行下一条写指令，两条写会在扩展侧交错，产生半注册导线等不可预期现场。
-// v2 定案（GPT 复核四点全部采纳）：
-//  ① 保护按实例号（instanceId）键——ws 断开重连不清除，防同一宿主旧写与新写重叠；
-//  ② 只认"导致保护的那条指令的 id"的迟到结果，任何其他无主 result 不解保护；
-//  ③ 扩展熔断杀死的结果带 error.cause.partial 标记，partial 的迟到结果不算可信完成信号；
-//  ④ 删除"冷却期满 + task.list 空 → 自动解除"——普通写不在任务表里，空表什么也证明不了。
-// 解除只有两条路：id 匹配且非 partial 的迟到 result（=该指令真实跑完），或 write.acknowledge
-// （调用方只读核对现场后的显式确认）。永不返回的任务不会被自动放行，读指令始终可用。
-const writeUncertain = new Map() // key: instanceId；value: { since, cmd, reason, id }
-function markWriteUncertain(instanceId, cmd, reason, id, owner = null) {
-	if (!instanceId) return
-	// 已标记则不覆盖首次触发记录（保留最早的"现场开始不确定"时点与原始指令 id）
-	if (writeUncertain.has(instanceId)) return
-	writeUncertain.set(instanceId, { since: Date.now(), cmd, reason, id, owner })
-	laneLog({ event: 'write-uncertain-set', instanceId, cmd, reason, id })
-}
-function clearWriteUncertain(instanceId, why) {
-	if (!writeUncertain.has(instanceId)) return
-	writeUncertain.delete(instanceId)
-	laneLog({ event: 'write-uncertain-cleared', instanceId, why })
-	const stop = stoppingInstances.get(instanceId)
-	if (stop?.blocked)
-		stop.blocked = false
-	tryCompleteStop(instanceId)
-}
+// Request writes serialize until their response or timeout. A timeout reports that
+// the proxy stopped waiting; it does not cancel work inside the EDA SDK.
 function queueDepthFor(instanceId) {
 	let depth = 0
 	for (const [ws, q] of writeQueues) {
@@ -298,14 +270,6 @@ function tryCompleteStop(instanceId) {
 	const stop = stoppingInstances.get(instanceId)
 	if (!stop || stop.readySent || pendingFor(instanceId) || queueDepthFor(instanceId) > 0)
 		return
-	if (writeUncertain.has(instanceId)) {
-		if (stop.blocked)
-			return
-		stop.blocked = true
-		try { stop.ws.send(JSON.stringify({ type: 'stop-blocked', requestId: stop.requestId, reason: 'writeUncertain' })) }
-		catch {}
-		return
-	}
 	stop.readySent = true
 	try { stop.ws.send(JSON.stringify({ type: 'stop-ready', requestId: stop.requestId })) }
 	catch {}
@@ -315,7 +279,6 @@ function lifecycleBusy() {
 	return [...connections.values()].some(c => !pausedIds.has(c.instanceId))
 		|| pending.size > 0
 		|| [...writeQueues.values()].some(q => q.depth > 0)
-		|| writeUncertain.size > 0
 }
 function refreshDisconnectedAt() {
 	if (!everConnected || lifecycleBusy()) {
@@ -325,17 +288,6 @@ function refreshDisconnectedAt() {
 	if (!disconnectedAt)
 		disconnectedAt = Date.now()
 }
-/** 写保护闸：返回非空字符串 = 拒绝原因（HTTP 200 + { ok:false } 由调用方组装）；null = 放行 */
-async function assertWriteCertain(routeId) {
-	const target = routeId ? connectionFor(routeId) : selectedConnection()
-	if (!target) return null // 连接问题交给后续正常报错路径
-	const iid = target.instanceId ?? target.info?.instanceId
-	const rec = iid ? writeUncertain.get(iid) : undefined
-	if (!rec) return null
-	const minutes = Math.floor((Date.now() - rec.since) / 60000)
-	return `写保护生效：写指令「${rec.cmd}」结果不确定（${rec.reason}，已保护 ${minutes} 分钟），代理已放弃等待且扩展可能仍在后台执行，期间拒绝一切写指令防交错污染现场。解除只有两条路：① 该指令真实完成的迟到结果到达（代理自动核验请求 id 后自愈）；② 你用只读指令核对现场（task.get 查该指令结果 + listComponents/listWires 看无半注册残留）后，发 write.acknowledge（带顶层 instanceId=${iid}）显式解除。读指令不受限`
-}
-
 // 0.10.51：单行道事件日志——按时间戳记录每条写指令的入队/放行/完成与队列深度，
 // 用于给调用方提供「同一目标实例的请求起止/队列」证据（JSONL，每日一个文件）
 const LANE_LOG_FILE = path.join(PROXY_DIR, `lane-log-${new Date().toISOString().slice(0, 10)}.jsonl`)
@@ -563,12 +515,12 @@ const LOCAL_COMMAND_DOCS = [
 	},
 	{
 		name: 'write.acknowledge',
-		summary: '解除目标实例的写保护（0.10.72 写结果不确定保护）。仅在前一条写指令超时/心跳丢失、且你已用只读指令核对现场无半注册残留后使用——本指令不替你核对现场',
+		summary: '兼容旧客户端的空操作，不再需要手动解除写保护',
 		params: {
-			instanceId: '目标窗口实例 ID（必填，先 GET /connections 查）',
+			instanceId: '可选目标窗口实例 ID（为兼容旧客户端保留；本地空操作，不查询目标）',
 		},
-		returns: '{ ok, acknowledged: true, instanceId, hadProtection: true/false }；无 instanceId 返回 ok:false',
-		note: '保护按实例号键、断线重连不清除。自动解除只认一种：导致保护的那条指令的迟到结果（id 匹配且非 partial）。发本指令前必须已用只读指令核对现场',
+		returns: '{ ok: true, acknowledged: true, noOp: true, instanceId: string | null, hadProtection: false }',
+		note: '不会检查、清除或绕过当前写队列，也不要求目标窗口在线；超时仍只表示代理停止等待，不能据此判断 EDA 中的操作已取消',
 	},
 ]
 
@@ -578,16 +530,14 @@ async function executeLocalCommand(command) {
 	if (command.cmd === 'smt.queryComponentDetail')
 		return { ok: true, cmd: command.cmd, data: await smtQueryComponentDetails(command.params) }
 	if (command.cmd === 'write.acknowledge') {
-		// 0.10.72：显式解除写保护。必须带 instanceId（本指令作用对象就是某个窗口的写通道）
-		if (!command.instanceId)
-			return { ok: false, cmd: command.cmd, error: { message: 'write.acknowledge 必须带顶层 instanceId（先 GET /connections 查，勿缓存）' } }
-		const target = connectionFor(command.instanceId)
-		if (!target)
-			return { ok: false, cmd: command.cmd, error: { message: `目标实例 ${command.instanceId} 不在线，无法定位写通道` } }
-		// 0.10.73：保护按实例号键，按实例号直接清除（不要求特定连接）
-		const had = writeUncertain.has(command.instanceId)
-		clearWriteUncertain(command.instanceId, 'acknowledged')
-		return { ok: true, cmd: command.cmd, acknowledged: true, instanceId: command.instanceId, hadProtection: had }
+		return {
+			ok: true,
+			cmd: command.cmd,
+			acknowledged: true,
+			noOp: true,
+			instanceId: typeof command.instanceId === 'string' ? command.instanceId : null,
+			hadProtection: false,
+		}
 	}
 	return null
 }
@@ -874,6 +824,7 @@ const server = http.createServer(async (req, res) => {
 				ok: true,
 				service: 'ai-command-proxy',
 				lifecycleProtocol: 1,
+				writeProtection: false,
 				extensionConnected: Boolean(selectedConnection()),
 				extension: extensionInfo,
 				connections: [...connections.entries()].map(([ws, c]) => ({
@@ -935,7 +886,7 @@ const server = http.createServer(async (req, res) => {
 		else if (req.method === 'POST' && url.pathname === '/command') {
 			const body = await readBody(req)
 			const command = JSON.parse(body)
-			// smt.* / write.acknowledge 指令由代理本地执行，无需 EDA 在线（write.acknowledge 需目标在线以定位写通道）
+			// smt.* / write.acknowledge 指令由代理本地执行，无需 EDA 在线；acknowledge 为兼容旧客户端保留的 no-op
 			if (typeof command.cmd === 'string' && (command.cmd.startsWith('smt.') || command.cmd === 'write.acknowledge')) {
 				try {
 					const result = await executeLocalCommand(command)
@@ -967,29 +918,13 @@ const server = http.createServer(async (req, res) => {
 			// 0.10.50：写指令单行道——并发的写指令按目标窗口 FIFO 逐个放行（官方导线 create
 			// 并发容量≈2，并发批量 create failed）。读指令不进队列。对调用方透明：并发方式 3
 			// 自动退化为逐条执行，不再失败，代价是吞吐 ~3s/条。
-			// 0.10.72：放行前先过写保护闸——上一条写结果不确定（超时/心跳丢失）时拒绝一切写，
-			// 防止两条写在扩展侧交错污染现场（writeUncertain 自愈或 write.acknowledge 后恢复）
-			if (!isReadOnlyCommand(command.cmd)) {
-				const blockReason = await assertWriteCertain(routeId)
-				if (blockReason)
-					return json(res, 200, { ok: false, cmd: command.cmd, error: { message: blockReason } })
-			}
 			const writeLane = isReadOnlyCommand(command.cmd) ? null : acquireWriteLane(routeId)
 			const executeWrite = async () => {
-				// 0.10.73b（KIMI-EDA-20261006-05 用例1）：出队二次检查——入队时保护尚未设置
-				// （前一条写还在跑），排队期间前写超时触发 writeUncertain 的，本条不得发往扩展，
-				// 否则会与可能仍在后台执行的旧写交错。解除（可信迟到结果/acknowledge）后重发即可。
-				// 注意：读指令也走本函数（不进队列直接转发），二次检查只对写生效。
-				if (!isReadOnlyCommand(command.cmd)) {
-					const blockReason = await assertWriteCertain(routeId)
-					if (blockReason)
-						return { ok: false, cmd: command.cmd, error: { message: blockReason } }
-				}
 				// 破坏性指令执行前自动导出 .epro 备份（官方没有撤销 API，删错不可挽回）
 				let backupFile = null
 				if (DESTRUCTIVE_COMMANDS.has(command.cmd))
 					backupFile = await autoBackupBeforeDestructive(command.cmd, routeId)
-				const result = await forwardToExtension(command, routeId, true) // 0.10.72：true=写指令，超时/心跳丢失要触发写保护
+				const result = await forwardToExtension(command, routeId)
 				if (backupFile && result && typeof result === 'object' && !Array.isArray(result))
 					result.backup = backupFile
 				return result
@@ -1210,7 +1145,7 @@ wss.on('connection', (ws) => {
 			pausedIds.add(entry.instanceId)
 			if (typeof msg.nonce === 'string' && msg.nonce)
 				instanceNonces.set(entry.instanceId, msg.nonce)
-			stoppingInstances.set(entry.instanceId, { ws, requestId: msg.requestId, blocked: false, readySent: false })
+			stoppingInstances.set(entry.instanceId, { ws, requestId: msg.requestId, readySent: false })
 			laneLog({ event: 'stop-request', instanceId: entry.instanceId, requestId: msg.requestId })
 			try { ws.send(JSON.stringify({ type: 'stop-accepted', requestId: msg.requestId })) }
 			catch {}
@@ -1274,27 +1209,9 @@ wss.on('connection', (ws) => {
 			}
 			pending.delete(msg.id)
 			clearTimeout(entry.timer)
-			if (entry.write && msg.result?.error?.cause?.partial)
-				markWriteUncertain(entry.instanceId, entry.cmd ?? '(partial result)', '扩展返回 partial，底层操作是否结束未知', entry.id, ws)
 			entry.resolve(msg.result)
 			tryCompleteStop(entry.instanceId)
 			return
-		}
-
-		// 0.10.73：迟到结果只在「id 匹配导致保护的那条写」且「非 partial（非扩展熔断包装层返回）」
-		// 时解除保护——其他无主 result（别的超时读请求、其他操作）一律不动保护
-		if (msg?.type === 'result' && msg.id && writeUncertain.size) {
-			for (const [iid, rec] of writeUncertain) {
-				if (rec.id !== msg.id || rec.owner !== ws || connections.get(ws)?.instanceId !== iid) continue
-				if (msg.result?.error?.cause?.partial) {
-					laneLog({ event: 'late-result-partial-ignored', instanceId: iid, id: msg.id })
-				}
-				else {
-					clearWriteUncertain(iid, 'late-result')
-				}
-				tryCompleteStop(iid)
-				break
-			}
 		}
 
 		// 0.10.49：进度心跳——长指令（批量删除/batchWire/macro）执行中扩展逐条/逐阶段上报，
@@ -1308,9 +1225,6 @@ wss.on('connection', (ws) => {
 			entry.lastProgress = msg.progress
 			entry.timer = setTimeout(() => {
 				pending.delete(msg.id)
-				// 0.10.72：心跳超时 = 写结果不确定（此分支只可能是写指令，读指令无心跳机制不走这），标记写保护
-				// 0.10.73：按实例号键并记录指令 id
-				if (entry.write) markWriteUncertain(entry.instanceId, entry.cmd ?? '(心跳超时)', '心跳超时', entry.id, entry.owner)
 				tryCompleteStop(entry.instanceId)
 				const prog = entry.lastProgress !== undefined ? `；最后进度：${JSON.stringify(entry.lastProgress).slice(0, 500)}` : ''
 				entry.resolve({ ok: false, cmd: '(超时)', error: { message: `指令执行超时（${Math.round(entry.timeoutMs / 1000)}s 无进度心跳，代理已放弃等待）${prog}。这≠任务已取消，扩展可能仍在后台执行；重发同参数只回进度不重复执行，或用 task.get 查询` } })
@@ -1329,7 +1243,7 @@ wss.on('connection', (ws) => {
 		laneLog({ event: 'close', instanceId: closed?.instanceId ?? null })
 		connections.delete(ws)
 		writeQueues.delete(ws) // 0.10.50：窗口断开即废弃其写队列（重连后新建）
-		// 0.10.73：写保护按实例号键，ws close 不清除——同一宿主重连后旧写仍可能在后台跑，保护必须延续
+		// 新连接会创建新的写队列，不继承旧连接的历史写保护状态。
 		if (extensionSocket === ws) {
 			extensionSocket = null
 			extensionInfo = null

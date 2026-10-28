@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 import { readFileSync } from 'node:fs'
 
 const root = resolve(import.meta.dirname, '..')
+const pcbSourceOverride = process.env.PCB_SOURCE_OVERRIDE
 const built = await build({
 	stdin: {
 		contents: `import { pcbCommands } from '../src/commands/pcb.ts'; import { parseAutoRouteSes, mapSesRoutes, serializeSesSubset } from '../src/engine/autoRouteSes.ts'; export { pcbCommands, parseAutoRouteSes, mapSesRoutes, serializeSesSubset }`,
@@ -15,6 +16,16 @@ const built = await build({
 	format: 'esm',
 	write: false,
 	target: 'node24',
+	...(pcbSourceOverride ? { plugins: [{
+		name: 'pcb-source-baseline-override',
+		setup(builder) {
+			builder.onLoad({ filter: /[\\/]src[\\/]commands[\\/]pcb\.ts$/u }, args => ({
+				contents: readFileSync(pcbSourceOverride, 'utf8'),
+				loader: 'ts',
+				resolveDir: resolve(root, 'src', 'commands'),
+			}))
+		},
+	}] } : {}),
 })
 const moduleUrl = `data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`
 const { pcbCommands, parseAutoRouteSes, mapSesRoutes, serializeSesSubset } = await import(moduleUrl)
@@ -25,6 +36,8 @@ let activeUuid = 'pcb-A'
 let focusSequence = []
 let documentSourceReads = 0
 let nextPrimitive = 0
+let nextSourceTicket = 0
+const sourceTickets = new Map()
 let routeLines = []
 let routeVias = []
 let pouredPresent = true
@@ -32,7 +45,11 @@ let sourceReadCount = 0
 let neverSourceReadAt = -1
 let delayBeforeRecoveryDiagnosticWrite = false
 let hostRouteReadCount = 0
-const sourceRecord = (type, id, data) => `${JSON.stringify({ type, id, ticket: ++nextPrimitive })}||${JSON.stringify(data)}`
+const sourceRecord = (type, id, data) => {
+	const key = `${type}\0${id}`
+	if (!sourceTickets.has(key)) sourceTickets.set(key, ++nextSourceTicket)
+	return `${JSON.stringify({ type, id, ticket: sourceTickets.get(key) })}||${JSON.stringify(data)}`
+}
 const documentSource = () => [
 	`${JSON.stringify({ type: 'DOCHEAD', ticket: 0 })}||${JSON.stringify({ docType: 'PCB', uuid: activeUuid })}`,
 	...(pouredPresent ? [sourceRecord('POURED', 'pour-1', { layer: 1, net: 'GND', outline: 'stable-pour' })] : []),
@@ -320,7 +337,7 @@ sesImportMode = 'noop'
 let fiveMissingError
 try { await command('pcb.importAutoRouteSes').handler({ base64: lineOnlyBase64 }, {}) }
 catch (error) { fiveMissingError = error }
-assert.match(fiveMissingError?.message ?? '', /SES 路由几何(?:读回不匹配|未通过验证)|未出现在完整 ID 列表/)
+assert.match(fiveMissingError?.message ?? '', /SES 路由几何(?:读回不匹配|未通过验证)|未出现在完整 ID 列表|本批完整前缀几何不等价/)
 const fiveMissingDiagnostic = diagnosticRecord(fiveMissingError)
 assert.equal(fiveMissingDiagnostic.backend, 'direct-primitives')
 assert.deepEqual(fiveMissingDiagnostic.sdk, { attempted: false, returned: false, threw: false }, 'direct primitive import does not claim the native SES SDK ran')
@@ -367,7 +384,7 @@ routeLines = []
 routeVias = []
 pouredPresent = true
 sesImportMode = 'noop'
-neverSourceReadAt = sourceReadCount + 4 // capture snapshot, native-import fresh snapshot, final verification, then the pre-recovery diagnostic source read
+neverSourceReadAt = sourceReadCount + 5 // capture snapshot, native-import fresh snapshot, final verification, width-rule source-stability check, then the pre-recovery diagnostic source read
 delayBeforeRecoveryDiagnosticWrite = true
 const routeReadsBeforeTimeout = hostRouteReadCount
 let timeoutDiagnosticError
@@ -459,28 +476,17 @@ assert.equal(manualFailure?.cause?.partial, true)
 assert.equal(manualFailure?.cause?.restored, false)
 assert.equal(manualFailure?.cause?.retryable, false)
 const beforeManualRetry = { snapshots: snapshotWrites.length, writes: routeWriteCount(), sources: documentSourceReads, outputs: outputRequestCount(), drc: drcCallCount() }
-await assert.rejects(() => command('pcb.importAutoRouteSes').handler({ base64: realBase64 }, {}), /(专用恢复未能确认|恢复未确认)/)
-assert.equal(snapshotWrites.length, beforeManualRetry.snapshots, 'a failed manual recovery keeps the original snapshot and lock')
-assert.equal(routeWriteCount(), beforeManualRetry.writes, 'a locked retry performs no native, primitive, delete, or source write')
-assert.equal(documentSourceReads, beforeManualRetry.sources)
-assert.equal(outputRequestCount(), beforeManualRetry.outputs)
-assert.equal(drcCallCount(), beforeManualRetry.drc)
-const lockedStatusStart = await command('pcb.autoRouteStart').handler({ skipDrc: true }, {})
-const beforeLockedStatus = { snapshots: snapshotWrites.length, writes: routeWriteCount(), sources: documentSourceReads, outputs: outputRequestCount(), drc: drcCallCount(), hostRoutes: hostRouteReadCount }
-const lockedStatus = await command('pcb.autoRouteStatus').handler({ jobId: lockedStatusStart.jobId }, {})
-assert.equal(lockedStatus.state, 'COMPLETED')
-assert.equal(lockedStatus.imported, false)
-assert.equal(lockedStatus.autoImportEnabled, false)
-assert.equal(snapshotWrites.length, beforeLockedStatus.snapshots)
-assert.equal(routeWriteCount(), beforeLockedStatus.writes)
-assert.equal(documentSourceReads, beforeLockedStatus.sources)
-assert.equal(outputRequestCount(), beforeLockedStatus.outputs)
-assert.equal(drcCallCount(), beforeLockedStatus.drc)
-assert.equal(hostRouteReadCount, beforeLockedStatus.hostRoutes)
-const beforeLockedManualRetry = { snapshots: snapshotWrites.length, writes: routeWriteCount() }
-await assert.rejects(() => command('pcb.importAutoRouteSes').handler({ base64: realBase64 }, {}), /(专用恢复未能确认|恢复未确认)/)
-assert.equal(snapshotWrites.length, beforeLockedManualRetry.snapshots)
-assert.equal(routeWriteCount(), beforeLockedManualRetry.writes, 'status query does not clear a genuine manual recovery lock')
+assert.equal(manualFailure?.cause?.retryable, false, 'the failed operation itself remains non-retryable')
+failNextSesImport = false
+mutateSourceOnFailedSesImport = false
+recoveryWriteSucceeds = true
+const sameBoardAfterPartial = await command('pcb.importAutoRouteSes').handler({ base64: realBase64 }, {})
+assert.equal(sameBoardAfterPartial.imported, true, 'a new same-board request reaches normal validation/import after the prior partial failure')
+assert.ok(snapshotWrites.length > beforeManualRetry.snapshots, 'the independent request captures fresh recovery snapshots')
+assert.ok(routeWriteCount() > beforeManualRetry.writes, 'the independent request runs the ordinary import path')
+assert.ok(documentSourceReads > beforeManualRetry.sources)
+assert.ok(outputRequestCount() >= beforeManualRetry.outputs)
+assert.equal(drcCallCount(), beforeManualRetry.drc, 'manual append does not add an unrelated DRC operation')
 
 activeUuid = 'pcb-independent'
 routeLines = []

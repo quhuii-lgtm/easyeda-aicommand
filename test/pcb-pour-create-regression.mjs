@@ -265,4 +265,17 @@ for (const phase of ['net', 'source']) {
 	})
 }
 
-console.log('PASS pcb.pourCopper optional preserveSilos, exact SDK arity, source readback, and no-rebuild behavior')
+// Named internal layers must be identical to the already accepted numeric IDs.
+for (const [layer, expected] of [['inner1', 15], ['inner2', 16], ['15', 15], [15, 15], [undefined, 1], ['', 1]]) {
+	const f = install()
+	const result = await createPour({ net: 'GND', layer, x: 10, y: 5, width: 20, height: 30 })
+	assert.equal(f.state.args[1], expected)
+	assert.equal(result.readback.layer, expected)
+	assert.equal(result.readback.verified, true)
+}
+{
+	const f = install()
+	await assert.rejects(() => createPour({ net: 'GND', layer: 'unknown-inner', x: 10, y: 5, width: 20, height: 30 }), /不认识的层/)
+	assert.equal(f.state.created.length, 0)
+}
+console.log('PASS pcb.pourCopper preserveSilos, layer names, exact SDK arity, source readback, and no-rebuild behavior')

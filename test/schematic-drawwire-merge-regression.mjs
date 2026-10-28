@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { installVirtualClock } from './virtual-clock.mjs'
 import { buildSync } from 'esbuild'
 import { resolve } from 'node:path'
 
@@ -17,7 +18,10 @@ const built = buildSync({
 })
 const { schematicCommands, executeCommand, registerCommand } = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`)
 for (const command of schematicCommands) registerCommand(command)
-const drawWire = schematicCommands.find(item => item.name === 'schematic.drawWire').handler
+const drawWireHandler = schematicCommands.find(item => item.name === 'schematic.drawWire').handler
+const clock = installVirtualClock()
+try {
+const drawWire = params => drawWireHandler({ _timeoutMs: 1000, ...params })
 
 function makeHarness({ initial = [], onCreate, failReadAfterWrite = false, sourceOnlyDrift = false, sourceLineMode, wireLineEvidence = false, sourceStyleOverride = {}, getterStyleOverride = {}, netValueOverride, netDisplayOverride, netParentOverride } = {}) {
 	const wires = new Map(initial.map(w => [w.id, { ...w }]))
@@ -47,7 +51,7 @@ function makeHarness({ initial = [], onCreate, failReadAfterWrite = false, sourc
 				if (sourceLineMode === 'nonfinite') startX = Number.POSITIVE_INFINITY
 				rows.push(`${JSON.stringify({ type: 'LINE', id: `line-${item.id}-${i}`, ticket: ticket++ })}||${JSON.stringify({ lineGroup: sourceLineMode === 'missing-group' ? undefined : item.id, startX, startY: -item.line[i + 1], endX, endY: -item.line[i + 3], strokeColor: sourceStyleOverride.color ?? item.color, strokeWidth: sourceStyleOverride.width ?? item.lineWidth, strokeStyle: sourceStyleOverride.type ?? ['SOLID', 'SHORT_DASH', 'DOT'][item.lineType] })}`)
 			}
-			if (item.net !== undefined && item.net !== null) rows.push(`${JSON.stringify({ type: 'ATTR', id: `net-${item.id}`, ticket: ticket++ })}||${JSON.stringify({ parentId: netParentOverride ?? item.id, key: 'NET', value: netValueOverride ?? item.net, display: netDisplayOverride ?? item.net })}`)
+			if (item.net !== undefined && item.net !== null) rows.push(`${JSON.stringify({ type: 'ATTR', id: `net-${item.id}`, ticket: ticket++ })}||${JSON.stringify({ parentId: netParentOverride ?? item.id, key: 'NET', value: netValueOverride ?? item.net, ...(netDisplayOverride !== undefined ? { display: netDisplayOverride } : { valueVisible: true }) })}`)
 		}
 		return rows.join('\n')
 	}
@@ -274,7 +278,7 @@ for (const [sourceLineMode, wireLineEvidence, message] of [
 	assert.equal(error.cause?.partial, true)
 	assert.equal(error.cause?.retryable, false)
 	assert.equal(error.cause?.result?.partial?.state, 'partial')
-	assert.deepEqual(error.cause?.result?.primitiveIds, ['wire-old'])
+	assert.deepEqual(error.cause?.result?.primitiveIds, [], 'rejected samples cannot publish primitive IDs')
 }
 
 {
@@ -307,7 +311,7 @@ for (const mode of ['empty', 'throw']) {
 	assert.equal(harness.calls, 1)
 	assert.equal(error.cause?.partial, true)
 	assert.equal(error.cause?.retryable, false)
-	assert.deepEqual(error.cause?.result?.primitiveIds, [`written-${mode}`], 'unknown create outcome still needs readback reconciliation')
+	assert.deepEqual(error.cause?.result?.primitiveIds, [], 'unknown create outcome stops without promoting unverified geometry')
 	assert.equal(error.cause?.result?.partial?.state, 'unknown')
 }
 
@@ -322,7 +326,7 @@ for (const mode of ['empty', 'throw']) {
 	assert.equal(error.cause?.partial, true)
 	assert.deepEqual(error.cause?.result?.primitiveIds, [])
 	assert.equal(error.cause?.result?.partial?.state, 'unknown')
-	assert.match(error.cause?.result?.partial?.reason, /读回失败/)
+	assert.match(error.cause?.result?.partial?.reason, /后验|读回失败/)
 	assert.equal(error.cause?.result?.verification?.sourceAndModelReadback, false)
 	assert.equal(error.cause?.result?.verification?.lastVerifiedPhase, 'pre-write')
 }
@@ -439,3 +443,5 @@ for (const mode of ['empty', 'throw']) {
 }
 
 console.log('schematic-drawwire-merge-regression: all checks passed')
+
+} finally { clock.restore() }

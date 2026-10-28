@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { installVirtualClock } from './virtual-clock.mjs'
 import { buildSync } from 'esbuild'
 import { resolve } from 'node:path'
 
@@ -17,15 +18,20 @@ const built = buildSync({
 })
 const { schematicCommands, registerCommand } = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`)
 for (const command of schematicCommands) registerCommand(command)
-const drawWire = schematicCommands.find(item => item.name === 'schematic.drawWire').handler
+const drawWireHandler = schematicCommands.find(item => item.name === 'schematic.drawWire').handler
+const clock = installVirtualClock()
+try {
+const drawWire = params => drawWireHandler({ _timeoutMs: 1000, ...params })
 
-function makeHarness({ onCreate, lagReads = 0, persistentLag = false, changeFocusAfterLag = false, wrongGeometry = false, lateSourceMs = 0, lateModelMs = 0 } = {}) {
+function makeHarness({ onCreate, lagReads = 0, persistentLag = false, changeFocusAfterLag = false, wrongGeometry = false, transientSourceReads = 0, transientKind = "geometry", finalDrift, failAfterFirstSample = false, lateSourceMs = 0, lateModelMs = 0 } = {}) {
 	const wires = new Map()
 	let calls = 0
 	let readsAfterWrite = 0
 	let sourceReads = 0
+	let postSourceReads = 0
 	let modelReads = 0
 	let focusUuid = 'page-1'
+	let transientSamples = 0
 	const wire = item => ({
 		getState_PrimitiveId: () => item.id,
 		getState_Line: () => item.line,
@@ -35,14 +41,21 @@ function makeHarness({ onCreate, lagReads = 0, persistentLag = false, changeFocu
 		getState_Net: () => item.net,
 	})
 	const source = () => {
+ if (finalDrift === 'style' && postSourceReads >= 2) for (const item of wires.values()) item.lineWidth = 99
 		const rows = [`{"type":"DOCHEAD","ticket":1}||${JSON.stringify({ docType: 'SCH_PAGE', uuid: 'page-1', client: 'test', version: 1 })}`]
+		rows.push('{"type":"TEXT","id":"non-target"}||' + JSON.stringify({text: finalDrift === 'attribute' && postSourceReads >= 2 ? 'changed' : 'original', x:100, y:100}))
 		let ticket = 2
 		for (const item of wires.values()) {
 			rows.push(`${JSON.stringify({ type: 'WIRE', id: item.id, ticket: ticket++ })}||${JSON.stringify({ zIndex: 0 })}`)
 			for (let i = 0; i + 3 < item.line.length; i += 2) {
-				const endX = wrongGeometry ? item.line[i + 2] + 1 : item.line[i + 2]
-				rows.push(`${JSON.stringify({ type: 'LINE', id: `line-${item.id}-${i}`, ticket: ticket++ })}||${JSON.stringify({ lineGroup: item.id, startX: item.line[i], startY: -item.line[i + 1], endX, endY: -item.line[i + 3], strokeColor: item.color, strokeWidth: item.lineWidth, strokeStyle: 'SOLID' })}`)
+				const transient = calls > 0 && transientSamples < transientSourceReads
+				const endX = wrongGeometry || (transient && transientKind === "geometry") ? item.line[i + 2] + 1 : item.line[i + 2]
+				rows.push(`${JSON.stringify({ type: 'LINE', id: `line-${item.id}-${i}`, ticket: ticket++ })}||${JSON.stringify({ lineGroup: item.id, startX: item.line[i], startY: -item.line[i + 1], endX, endY: -item.line[i + 3], strokeColor: item.color, strokeWidth: transient && transientKind === 'style' ? 99 : item.lineWidth, strokeStyle: 'SOLID' })}`)
 			}
+		}
+		if (calls > 0 && transientSamples < transientSourceReads) {
+			if (transientKind === 'attr') rows.push('{"type":"ATTR","id":"transient-attr"}||{"parentId":"wire-created","key":"Unexpected","value":"lag"}')
+			transientSamples++
 		}
 		return rows.join('\n')
 	}
@@ -50,6 +63,8 @@ function makeHarness({ onCreate, lagReads = 0, persistentLag = false, changeFocu
 		dmt_SelectControl: { getCurrentDocumentInfo: async () => ({ documentType: 1, uuid: focusUuid }) },
 		sys_FileManager: { getDocumentSource: async () => {
 			sourceReads++
+ if(calls > 0) postSourceReads++
+ if(failAfterFirstSample && postSourceReads > 1) throw new Error('injected latest capture failure')
 			if (calls > 0 && lateSourceMs) await new Promise(resolve => setTimeout(resolve, lateSourceMs))
 			return source()
 		} },
@@ -157,4 +172,26 @@ for (const delayedRead of ['source', 'model']) {
 	assert.equal(error.cause?.partial, true)
 }
 
+for (const transientKind of ['geometry', 'style', 'attr']) {
+ const harness = makeHarness({ transientSourceReads: 2, transientKind, onCreate: standardCreate })
+ const result = await drawWire({ points: [[0, 0], [10, 0]], lineWidth: 6 })
+ assert.deepEqual(result.primitiveIds, ['wire-created'], transientKind + ' must converge through full read-only validation with unchanged IDs')
+ assert.equal(harness.calls, 1, 'full convergence must not repeat create')
+ assert.deepEqual(result.drawingOrderChanges ?? [], [], 'rejected samples cannot publish changes')
+}
+for (const finalDrift of ['style', 'attribute']) {
+ const harness = makeHarness({ finalDrift, onCreate: standardCreate })
+ const error = await captureError(() => drawWire({ points: [[0,0],[10,0]] }))
+ assert.equal(error.cause?.partial, true, finalDrift + ' final drift must fail')
+ assert.equal(error.cause?.result?.verification?.lastVerifiedPhase, 'post-write', 'rejected final sample is not verified')
+ assert.equal(harness.calls, 1)
+}
+{
+ const harness = makeHarness({ wrongGeometry: true, failAfterFirstSample: true, onCreate: standardCreate })
+ const error = await captureError(() => drawWire({ points: [[0,0],[10,0],[10,10]] }))
+ assert.equal(error.cause?.result?.partial?.state, 'unknown', 'latest capture failure must not inherit older complete validation classification')
+ assert.equal(harness.calls, 1)
+}
 console.log('schematic-drawwire-lag-regression: PASS')
+
+} finally { clock.restore() }

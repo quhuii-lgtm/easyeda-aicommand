@@ -165,6 +165,18 @@ assert.deepEqual(diagnosticResult.diagnostic, {
 assert.ok(Date.parse(diagnosticResult.diagnostic.startedAt) >= startedBefore)
 assert.ok(Date.parse(diagnosticResult.diagnostic.finishedAt) >= Date.parse(diagnosticResult.diagnostic.startedAt))
 
+const deviceWithoutFootprint = { uuid: 'no-footprint', libraryUuid: 'library-a', footprintUuid: '' }
+globalThis.eda.lib_Device.getByLcscIds = async () => deviceWithoutFootprint
+assert.equal(
+	await deviceGetByLcscIds({ lcscIds: ['C8734'], libraryUuid: 'library-a' }),
+	deviceWithoutFootprint,
+	'default response shape stays the original SDK object and does not claim PCB readiness',
+)
+const missingFootprintResult = await deviceGetByLcscIds({ lcscIds: ['C8734'], libraryUuid: 'library-a', diagnostic: true })
+assert.equal(missingFootprintResult.result, deviceWithoutFootprint)
+assert.equal(missingFootprintResult.diagnostic.missingFootprint, true, 'diagnostic identifies an explicitly empty footprint UUID')
+assert.equal('pcbReady' in missingFootprintResult.diagnostic, false, 'missing footprint is not translated into a PCB readiness claim')
+
 const mutationInput = ['C999']
 globalThis.eda.lib_Device.getByLcscIds = async ids => {
 	ids.push('SDK-mutated')

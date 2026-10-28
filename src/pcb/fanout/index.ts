@@ -3,6 +3,7 @@ import type { GeometryHost } from '../geometryHost';
 import type { CopperObstacle, Point, RouteRequest } from './fanout-routing';
 import { normalizeBoardOutlinePolylines } from '../boardOutline';
 import { createGeometryHost } from '../geometryHost';
+import { normalizePouredPathSource, readEditorVersion } from '../pouredUnits';
 import { normalizeRoute, planRouteDetailed } from './fanout-routing';
 
 type Direction = 'auto' | '8directions' | 'N' | 'NE' | 'E' | 'SE' | 'S' | 'SW' | 'W' | 'NW';
@@ -203,11 +204,11 @@ function polygonSource(source: unknown): Point[][] | undefined {
 		if (!Array.isArray(raw) || raw.length === 0)
 			return undefined;
 		if (raw[0] === 'R' && raw.length >= 5) {
-			const [, x, y, w, h, rotation = 0] = raw as [string, number, number, number, number, number];
-			if (![x, y, w, h, rotation].every(finite) || w <= 0 || h <= 0)
+			const [, x, y, w, h, rotation = 0, radius = 0] = raw as [string, number, number, number, number, number, number];
+			if (![x, y, w, h, rotation, radius].every(finite) || w <= 0 || h <= 0 || rotation !== 0 || radius !== 0)
 				return undefined;
-			const center = { x: x + w / 2, y: y + h / 2 };
-			output.push([{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }].map(point => rotate(point, rotation, center)));
+			// Native R stores the upper-left corner; PCB public coordinates grow upwards.
+			output.push([{ x, y }, { x: x + w, y }, { x: x + w, y: y - h }, { x, y: y - h }]);
 			continue;
 		}
 		const points: Point[] = [];
@@ -407,12 +408,25 @@ function getPolygonState(obj: any): unknown {
 	const polygon = requiredState<any>(obj, 'getState_ComplexPolygon', '铜图元');
 	return typeof polygon?.getSource === 'function' ? polygon.getSource() : polygon;
 }
+function insideOrOnPolygon(point: Point, polygon: Point[]): boolean {
+	let inside = false;
+	for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+		const a = polygon[j], b = polygon[i];
+		const cross = (point.x - a.x) * (b.y - a.y) - (point.y - a.y) * (b.x - a.x);
+		if (Math.abs(cross) <= 1e-6 && point.x >= Math.min(a.x, b.x) - 1e-6 && point.x <= Math.max(a.x, b.x) + 1e-6 && point.y >= Math.min(a.y, b.y) - 1e-6 && point.y <= Math.max(a.y, b.y) + 1e-6)
+			return true;
+		if ((a.y > point.y) !== (b.y > point.y) && point.x < (b.x - a.x) * (point.y - a.y) / (b.y - a.y) + a.x)
+			inside = !inside;
+	}
+	return inside;
+}
 function layerOf(obj: any, label: string): number {
 	return requiredState<number>(obj, 'getState_Layer', label);
 }
 
 async function collect(host: GeometryHost, readViaHoleSizes: boolean): Promise<Collected> {
 	const sdk = host.sdk;
+	const editorVersion = readEditorVersion(sdk);
 	const [regularPads, components, lines, arcs, vias, fills, pours, poured, regions, layers, holeLines, polylines] = await Promise.all([
 		host.read('读取全部独立焊盘', () => sdk.pcb_PrimitivePad.getAll()),
 		host.read('读取全部器件', () => sdk.pcb_PrimitiveComponent.getAll()),
@@ -594,6 +608,7 @@ async function collect(host: GeometryHost, readViaHoleSizes: boolean): Promise<C
 			continue;
 		}
 		const regions = requiredState<any[]>(item, 'getState_PourFills', `覆铜实填充 ${pourId}`);
+		const parentPolygons = polygonSource(getPolygonState(sourcePour));
 		if (!Array.isArray(regions)) {
 			complete = false;
 			warnings.push(`覆铜实填充 ${pourId} 子区域列表无效`);
@@ -602,10 +617,22 @@ async function collect(host: GeometryHost, readViaHoleSizes: boolean): Promise<C
 		for (const fill of regions) {
 			if (fill?.fill !== true)
 				continue;
-			const polygons = polygonSource(getPolygonState({ getState_ComplexPolygon: () => fill.path }));
-			if (!polygons || !positive(fill.lineWidth)) {
+			const rawPath = getPolygonState({ getState_ComplexPolygon: () => fill.path });
+			const normalized = normalizePouredPathSource(rawPath, { fill: fill.fill, lineWidth: fill.lineWidth, editorVersion, declaredCoordinateUnit: fill.coordinateUnit });
+			if (normalized.status !== 'normalized') {
 				complete = false;
-				warnings.push(`覆铜实填充 ${pourId} 中有无法读取的填充区域`);
+				warnings.push(`覆铜实填充 ${pourId} 坐标无法安全归一化（${normalized.normalization}，EDA ${normalized.editorVersion ?? '未知版本'}）；该区域不用于自动布线规划`);
+				continue;
+			}
+			const polygons = polygonSource(normalized.normalizedPathMil);
+			if (!polygons || !finite(fill.lineWidth) || fill.lineWidth < 0) {
+				complete = false;
+				warnings.push(`覆铜实填充 ${pourId} 中有无法读取的直线多边形`);
+				continue;
+			}
+			if (!parentPolygons || polygons.some(points => points.some(point => !parentPolygons.some(parent => insideOrOnPolygon(point, parent))))) {
+				complete = false;
+				warnings.push(`覆铜实填充 ${pourId} 归一化后与父边框坐标不一致`);
 				continue;
 			}
 			for (const points of polygons) obstacles.push({ type: 'polygon', points, margin: fill.lineWidth / 2, bounds: polygonBounds(points), net: '', copperLayers: [layer] });

@@ -36,7 +36,7 @@ async function freshDedupe(caseName) {
 	const module = await import(`${pathToFileURL(resolve(schematicBundle)).href}?case=${encodeURIComponent(caseName)}`)
 	return module.schematicCommands.find(c => c.name === 'schematic.dedupeWireNets').handler
 }
-const sourceFor = (uuid, extra = '') => `{"type":"DOCHEAD","id":"head"}||{"docType":"${uuid.startsWith('pcb') ? 'PCB' : 'SCH'}","uuid":"${uuid}"}|\n${extra}`
+const sourceFor = (uuid, extra = '') => `{"type":"DOCHEAD","id":"head"}||{"docType":"${uuid.startsWith('pcb') ? 'PCB' : 'SCH_PAGE'}","uuid":"${uuid}"}|\n${extra}`
 const mutatedSource = uuid => sourceFor(uuid, '{"type":"NET","ticket":1,"id":"partial"}||{"name":"partial-net"}|\n')
 let checks = 0
 function check(condition, label) {
@@ -231,8 +231,6 @@ function makePcb(options = {}) {
 
 function makeSchematic(options = {}) {
 	const uuid = options.uuid ?? `sch-${Math.random().toString(36).slice(2)}`
-	const initialSource = sourceFor(uuid)
-	let currentSource = options.initialSource ?? initialSource
 	let focus = { documentType: 1, uuid }
 	let focusCalls = 0
 	let restoreCalls = 0
@@ -240,11 +238,41 @@ function makeSchematic(options = {}) {
 	const events = []
 	const storage = makeStorage(options)
 	const oldWires = (options.wireLines ?? [options.diagonalOnly ? [0, 0, 10, 10] : [0, 0, 10, 0, 20, 0]]).map((line, index) => ({
-		getState_PrimitiveId: () => index === 0 ? 'old-wire' : `old-wire-${index + 1}`,
-		getState_Line: () => line,
-		getState_Net: () => undefined,
+		id: index === 0 ? 'old-wire' : `old-wire-${index + 1}`,
+		line,
+		net: undefined,
+		color: '#000000',
+		lineWidth: 6,
+		lineType: 0,
+		getState_PrimitiveId() { return this.id },
+		getState_Line() { return this.line },
+		getState_Net() { return this.net },
+		getState_Color() { return this.color },
+		getState_LineWidth() { return this.lineWidth },
+		getState_LineType() { return this.lineType },
 	}))
 	let wires = options.duplicate === false ? [] : oldWires
+	const sourceFromWires = values => {
+		const rows = []
+		let ticket = 1
+		for (const wire of values) {
+			rows.push(`${JSON.stringify({ type: 'WIRE', id: wire.id, ticket: ticket++ })}||${JSON.stringify({ line: wire.line })}|`)
+			for (let index = 0; index + 3 < wire.line.length; index += 2) {
+				const [startX, startY, endX, endY] = wire.line.slice(index, index + 4)
+				if (options.omitCreatedLines && String(wire.id).startsWith('new-wire-')) continue
+				const lineStyle = options.sourceLineStyles?.[wire.id]?.[index / 2] ?? { color: wire.color, width: wire.lineWidth, type: wire.lineType }
+				rows.push(`${JSON.stringify({ type: 'LINE', id: `line-${wire.id}-${index / 2}`, ticket: ticket++ })}||${JSON.stringify({ lineGroup: wire.id, startX, startY: -startY, endX, endY: -endY, strokeColor: lineStyle.color, strokeWidth: lineStyle.width, strokeStyle: ({ 0: 'SOLID', 1: 'SHORT_DASH', 2: 'DOT' })[lineStyle.type] ?? null })}|`)
+			}
+			const attrs = String(wire.id).startsWith('new-wire-')
+				? options.createdNetAttrs ?? [{ key: 'Name', value: wire.net }]
+				: options.netAttrsByWire?.[wire.id] ?? options.netAttrs ?? [{ key: 'NET', value: 'N1' }, { key: 'NET', value: 'N1' }]
+			for (const [index, attr] of attrs.entries())
+				rows.push(`${JSON.stringify({ type: 'ATTR', id: `attr-${wire.id}-${index}`, ticket: ticket++ })}||${JSON.stringify({ parentId: wire.id, key: attr.key, value: attr.value })}|`)
+		}
+		return sourceFor(uuid, rows.join('\n'))
+	}
+	const initialSource = sourceFromWires(wires)
+	let currentSource = options.initialSource ?? initialSource
 	const resetSource = source => {
 		currentSource = source
 		if (source === initialSource)
@@ -293,30 +321,30 @@ function makeSchematic(options = {}) {
 			},
 			delete: async ids => {
 				events.push(`delete:${(Array.isArray(ids) ? ids : [ids]).map(x => typeof x === 'string' ? x : x?.getState_PrimitiveId?.()).join(',')}`)
-				currentSource = mutatedSource(uuid)
 				if (options.deleteMode === 'throw')
-					throw new Error('wire delete threw after partial change')
+					{ currentSource = mutatedSource(uuid); throw new Error('wire delete threw after partial change') }
 				if (options.deleteMode === 'false')
 					return false
-				wires = []
+				const remove = new Set((Array.isArray(ids) ? ids : [ids]).map(x => typeof x === 'string' ? x : x?.getState_PrimitiveId?.()))
+				wires = wires.filter(w => !remove.has(w.id))
+				currentSource = sourceFromWires(wires)
 				return true
 			},
-			create: async (line, net) => {
+			create: async (line, net, color = '#000000', lineWidth = 6, lineType = 0) => {
 				createCount++
 				events.push(`create:${createCount}`)
 				events.push(`create-line:${JSON.stringify(line)}:net=${net}`)
-				currentSource = mutatedSource(uuid)
 				if (options.createMode === 'throw' && createCount === 2)
-					throw new Error('second create threw after merge')
+					{ currentSource = mutatedSource(uuid); throw new Error('second create threw after merge') }
 				if (options.createMode === 'empty' && createCount === 2)
 					return undefined
 				const id = options.missingCreatedId && createCount === 1 ? '' : `new-wire-${createCount}`
-				const wire = {
-					getState_PrimitiveId: () => id,
-					getState_Line: () => line,
-					getState_Net: () => Object.hasOwn(options, 'createdNet') ? options.createdNet : net,
+				const wire = { id, line, net: Object.hasOwn(options, 'createdNet') ? options.createdNet : net, color, lineWidth, lineType,
+					getState_PrimitiveId() { return this.id }, getState_Line() { return this.line }, getState_Net() { return this.net },
+					getState_Color() { return this.color }, getState_LineWidth() { return this.lineWidth }, getState_LineType() { return this.lineType },
 				}
 				wires.push(wire)
+				currentSource = sourceFromWires(wires)
 				return wire
 			},
 			get: async id => {
@@ -366,6 +394,20 @@ function makeSchematic(options = {}) {
 	return { eda, events, storage, initialSource, get source() { return currentSource }, get restoreCalls() { return restoreCalls }, get createCount() { return createCount } }
 }
 
+{
+	const sch = makeSchematic({ sourceLineStyles: { 'old-wire': [{ color: '#000000', width: 6, type: 0 }, { color: '#FF0000', width: 6, type: 0 }] } }); globalThis.eda = sch.eda
+	const error = await expectReject(() => dedupe(), 'R3 混合线型写前拒绝')
+	assert.equal(sch.events.some(event => event.startsWith('delete:') || event.startsWith('create:')), false, 'mixed source styles are rejected before destructive writes')
+	assert.match(error.message, /混合颜色\/线宽\/线型/)
+}
+
+{
+	const sch = makeSchematic({ wireLines: [[0, 0, 10, 10]] }); globalThis.eda = sch.eda
+	const error = await expectReject(() => dedupe(), 'R3 真实斜 LINE 写前拒绝')
+	assert.match(error.message, /真实斜 LINE/)
+	assert.equal(sch.events.some(event => event.startsWith('delete:') || event.startsWith('create:')), false)
+}
+
 async function runPcb(options = {}) {
 	const mock = makePcb(options)
 	globalThis.eda = mock.eda
@@ -404,8 +446,8 @@ for (const [label, netAttrs] of [
 		const sch = await runDedupe({ netAttrs: attrs, wireLines: [line] })
 		check(sch.result.rebuilt === 1 && sch.result.renamed === 0, `R3 ${label}按原导线一次带名重建`)
 		const expectedCreate = label === 'straight'
-			? 'create-line:[[0,0,20,0]]:net=RECOVERY_A'
-			: 'create-line:[[0,0,10,0],[10,0,10,10]]:net=RECOVERY_A'
+			? 'create-line:[0,0,20,0]:net=RECOVERY_A'
+			: 'create-line:[0,0,10,0,10,0,10,10]:net=RECOVERY_A'
 		check(sch.events.filter(e => e.startsWith('create:')).length === 1 && sch.events.includes(expectedCreate), `R3 ${label}单次create保留目标网络与线段`)
 		check(sch.events.includes('get:new-wire-1') && sch.events.includes('attributes:new-wire-1'), `R3 ${label}按create返回ID立即读回线与属性`)
 	}
@@ -414,8 +456,8 @@ for (const [label, netAttrs] of [
 	const sch = await runDedupe({ wireLines: [[0, 0, 10, 0], [100, 0, 110, 0]] })
 	check(sch.result.dupWires === 2 && sch.result.rebuilt === 2, 'R3 同网但断开的两根原导线分别计数重建')
 	check(sch.events.filter(e => e.startsWith('create:')).length === 2
-		&& sch.events.includes('create-line:[[0,0,10,0]]:net=N1')
-		&& sch.events.includes('create-line:[[100,0,110,0]]:net=N1'), 'R3 同网断线不合并为一根导线')
+		&& sch.events.includes('create-line:[0,0,10,0]:net=N1')
+		&& sch.events.includes('create-line:[100,0,110,0]:net=N1'), 'R3 同网断线不合并为一根导线')
 }
 for (const [label, options, expectedValues] of [
 	['conflict', { netAttrs: [{ key: 'Name', value: 'RECOVERY_A' }, { key: 'Name', value: 'RECOVERY_B' }] }, 'values=["RECOVERY_A","RECOVERY_B"]'],
@@ -515,6 +557,7 @@ for (const [label, opts, causeKey] of [
 	['wire-read-throws', { getMode: 'throw' }, 'restored'],
 	['focus-change', { switchFocusOnGet: true }, 'partial'],
 	['wrong-net', { createdNet: 'RECOVERY_B' }, 'restored'],
+	['object-without-line-readback', { omitCreatedLines: true }, 'restored'],
 	['attribute-read-throws', { readbackAttributeReadThrows: true }, 'restored'],
 	['missing-network-attribute', { createdNetAttrs: [] }, 'restored'],
 	['duplicate-network-attributes', { createdNetAttrs: [{ key: 'Name', value: 'RECOVERY_A' }, { key: 'NET', value: 'RECOVERY_A' }] }, 'restored'],

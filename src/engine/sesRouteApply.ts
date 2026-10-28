@@ -13,6 +13,7 @@ type JournalWrite = {
 	phase: string
 	result?: unknown
 	error?: string
+	mergeReadback?: { candidateId: string, actualIds: string[], confirmedLineCount: number }
 }
 
 export interface SesRouteApplyContextOptions {
@@ -23,6 +24,7 @@ export interface SesRouteApplyContextOptions {
 	deletedArcIds: string[]
 	file: File
 	timeoutMs: number
+	manualAppendViaFirst?: boolean
 	onStage?: (stage: string) => void
 	onMayWrite?: () => void
 }
@@ -75,7 +77,26 @@ export function createSesRouteApplyContext(options: SesRouteApplyContextOptions)
 	const backend: SesRouteApplyContext['backend'] = plan.deltaVias.length === 0 || plan.deltaVias.every(credibleVia)
 		? 'direct-primitives'
 		: 'native-ses'
+	const manualAppendViaFirst = options.manualAppendViaFirst === true
+		&& plan.mode === 'append'
+		&& backend === 'direct-primitives'
+		&& plan.deltaVias.length > 0
 	const journal: SesRouteApplyContext['journal'] = { writes: [], phase: 'prepared' }
+	const confirmedAddedLineIds = new Set<string>()
+	const beforeLineIds = new Set(before.sourceRecords.filter(record => record.type === 'LINE' || record.type === 'TRACK').map(record => record.id))
+	const lineIdSetsEqual = (actual: string[], expected: Iterable<string>) => {
+		const actualSet = new Set(actual)
+		const expectedSet = new Set(expected)
+		return actual.length === actualSet.size
+			&& actualSet.size === expectedSet.size
+			&& [...expectedSet].every(id => actualSet.has(id))
+	}
+	const readAllLineIds = async () => {
+		const ids = await readBounded('走线 ID 枚举', () => api.pcb_PrimitiveLine.getAllPrimitiveId())
+		if (!Array.isArray(ids) || ids.some((value: unknown) => typeof value !== 'string'))
+			throw new Error('走线 ID 枚举返回无效结果')
+		return ids
+	}
 	const budgetStart = Date.now()
 	const totalDeadline = budgetStart + Math.max(1, options.timeoutMs)
 	const recoveryReserveMs = Math.min(Math.max(20, Math.floor(options.timeoutMs * 0.2)), Math.max(20, options.timeoutMs - 1))
@@ -175,9 +196,9 @@ export function createSesRouteApplyContext(options: SesRouteApplyContextOptions)
 		}
 	}
 	const readCreatedLine = async (line: SesRouteLine, id: string) => {
-		const ids = await readBounded('走线 ID 枚举', () => api.pcb_PrimitiveLine.getAllPrimitiveId())
-		if (!Array.isArray(ids) || ids.some((value: unknown) => typeof value !== 'string') || !ids.includes(id))
-			throw new Error(`新走线 ${id} 未出现在完整 ID 列表`)
+		const ids = await readAllLineIds()
+		if (!lineIdSetsEqual(ids, [...beforeLineIds, ...confirmedAddedLineIds, id]))
+			return undefined
 		const item = await readBounded(`走线 ${id} fresh get`, () => api.pcb_PrimitiveLine.get(id))
 		if (!item || state(item, 'getState_PrimitiveId') !== id || state(item, 'getState_Net') !== line.net || state(item, 'getState_Layer') !== line.layer)
 			throw new Error(`新走线 ${id} 身份、网络或层读回不匹配`)
@@ -185,6 +206,38 @@ export function createSesRouteApplyContext(options: SesRouteApplyContextOptions)
 		const check = verifySesImport({ ...plan, targetLines: [line], targetVias: [] }, { documentUuid: snapshot.documentUuid, lines: [actual], vias: [] })
 		if (!check.verified) throw new Error(`新走线 ${id} 几何读回失败：${JSON.stringify(check.differences)}`)
 		return actual
+	}
+	const verifyCreatedLinePrefix = (current: HostRouteSnapshot, lineCount: number, viaCount: number, currentLineIds: string[]) => {
+		const beforeIds = new Set([...before.lines, ...before.vias, ...before.arcs].map(item => item.id))
+		const addedLines = current.lines.filter(item => !beforeIds.has(item.id))
+		const addedVias = current.vias.filter(item => !beforeIds.has(item.id))
+		const addedArcs = current.arcs.filter(item => !beforeIds.has(item.id))
+		if (addedArcs.length)
+			throw new Error('新走线合并读回期间出现非预期圆弧')
+		if (!lineIdSetsEqual(currentLineIds, [...beforeLineIds, ...addedLines.map(item => item.id)]))
+			throw new Error('新走线合并读回期间LINE ID列表与完整源码/几何不一致')
+		const confirmedViaIds = journal.writes
+			.filter(item => item.kind === 'create-via' && item.confirmed && typeof item.candidateId === 'string')
+			.map(item => item.candidateId as string)
+			.sort()
+		if (addedVias.map(item => item.id).sort().join('\0') !== confirmedViaIds.join('\0'))
+			throw new Error('新走线合并读回期间新增过孔 ID 与已确认候选不一致')
+		if (!geometrySame(before, {
+			...current,
+			lines: current.lines.filter(item => beforeIds.has(item.id)),
+			vias: current.vias.filter(item => beforeIds.has(item.id)),
+			arcs: current.arcs.filter(item => beforeIds.has(item.id)),
+		}) || !verifySourceChanges(before, current, [], routeSourceRecords(current, [...addedLines, ...addedVias].map(item => item.id)).map(item => ({ type: item.type, id: item.id }))).verified)
+			throw new Error('新走线合并读回期间原有路由或有效源码发生变化')
+		const prefix: SesImportPlan = {
+			...plan,
+			targetLines: [...before.lines, ...plan.deltaLines.slice(0, lineCount)],
+			targetVias: [...before.vias, ...plan.deltaVias.slice(0, viaCount)],
+		}
+		const semantic = verifySesImport(prefix, { documentUuid: current.documentUuid, lines: current.lines, vias: current.vias })
+		if (!semantic.verified)
+			throw new Error(`新走线候选 ID 消失，且本批完整前缀几何不等价：${JSON.stringify(semantic.differences)}`)
+		return addedLines.map(item => item.id)
 	}
 	const readCreatedVia = async (via: SesRouteVia, id: string) => {
 		const ids = await readBounded('过孔 ID 枚举', () => api.pcb_PrimitiveVia.getAllPrimitiveId())
@@ -206,14 +259,33 @@ export function createSesRouteApplyContext(options: SesRouteApplyContextOptions)
 		return semantic
 	}
 	const addLines = async (write: TDocumentWrite, ids: string[]) => {
-		for (const line of plan.deltaLines) {
+		for (const [index, line] of plan.deltaLines.entries()) {
 			phase('create-line')
 			const created = await recordWrite('create-line', () => api.pcb_PrimitiveLine.create(line.net, line.layer, line.a.x, line.a.y, line.b.x, line.b.y, line.widthMil), write, undefined, line)
 			const id = state<unknown>(created, 'getState_PrimitiveId')
 			if (typeof id !== 'string' || !id.trim()) throw new Error('新建走线未返回有效图元 ID')
 			ids.push(id)
 			journal.writes.at(-1)!.candidateId = id
-			await readCreatedLine(line, id)
+			const actual = await readCreatedLine(line, id)
+			if (!actual) {
+				if (plan.mode !== 'append')
+					throw new Error(`新走线 ${id} 未出现在完整 ID 列表`)
+				phase('verify-merged-line-prefix')
+				const current = await fresh()
+				const currentLineIds = await readAllLineIds()
+				const actualIds = verifyCreatedLinePrefix(current, index + 1, manualAppendViaFirst ? plan.deltaVias.length : 0, currentLineIds)
+				if (!actualIds.length)
+					throw new Error(`新走线 ${id} 未出现在完整 ID 列表，无法确认合并后的本批新线`)
+				const beforeIds = new Set([...before.lines, ...before.vias, ...before.arcs].map(item => item.id))
+				const viaIds = current.vias.filter(item => !beforeIds.has(item.id)).map(item => item.id)
+				confirmedAddedLineIds.clear()
+				for (const actualId of actualIds) confirmedAddedLineIds.add(actualId)
+				ids.splice(0, ids.length, ...actualIds, ...viaIds)
+				journal.writes.at(-1)!.mergeReadback = { candidateId: id, actualIds, confirmedLineCount: index + 1 }
+			}
+			else {
+				confirmedAddedLineIds.add(id)
+			}
 			journal.writes.at(-1)!.confirmed = true
 		}
 	}
@@ -227,6 +299,14 @@ export function createSesRouteApplyContext(options: SesRouteApplyContextOptions)
 			journal.writes.at(-1)!.candidateId = id
 			await readCreatedVia(via, id)
 			journal.writes.at(-1)!.confirmed = true
+			if (manualAppendViaFirst) {
+				phase('calculate-ratline')
+				await focusGuard()
+				const accepted = await recordWrite('calculate-ratline', () => api.pcb_Document.startCalculatingRatline(), write, undefined, { primitiveId: id, via })
+				if (accepted !== true)
+					throw new Error(`新过孔 ${id} 后的飞线重算请求未接受（startCalculatingRatline 返回 ${String(accepted)}）`)
+				journal.writes.at(-1)!.confirmed = true
+			}
 		}
 	}
 	const deleteIds = async (kind: 'line' | 'via' | 'arc', ids: string[], write: TDocumentWrite) => {
@@ -256,12 +336,32 @@ export function createSesRouteApplyContext(options: SesRouteApplyContextOptions)
 				addedIds.push(...added)
 			}
 			else {
-				await addLines(write, addedIds)
-				await addVias(write, addedIds)
+				if (manualAppendViaFirst) {
+					await addVias(write, addedIds)
+					await addLines(write, addedIds)
+				}
+				else {
+					await addLines(write, addedIds)
+					await addVias(write, addedIds)
+				}
 			}
 			const temporaryPlan: SesImportPlan = { ...plan, targetLines: [...before.lines, ...plan.deltaLines], targetVias: [...before.vias, ...plan.deltaVias] }
 			phase('verify-temporary')
 			let current = await fresh()
+			if (backend === 'direct-primitives' && plan.mode === 'append') {
+				const currentLineIds = await readAllLineIds()
+				if (!lineIdSetsEqual(currentLineIds, [...beforeLineIds, ...confirmedAddedLineIds])) {
+					const actualIds = verifyCreatedLinePrefix(current, plan.deltaLines.length, plan.deltaVias.length, currentLineIds)
+					confirmedAddedLineIds.clear()
+					for (const actualId of actualIds) confirmedAddedLineIds.add(actualId)
+					const beforeIds = new Set([...before.lines, ...before.vias, ...before.arcs].map(item => item.id))
+					const viaIds = current.vias.filter(item => !beforeIds.has(item.id)).map(item => item.id)
+					addedIds.splice(0, addedIds.length, ...actualIds, ...viaIds)
+					const lastLineWrite = [...journal.writes].reverse().find(entry => entry.kind === 'create-line' && entry.confirmed && typeof entry.candidateId === 'string')
+					if (lastLineWrite)
+						lastLineWrite.mergeReadback = { candidateId: String(lastLineWrite.candidateId), actualIds, confirmedLineCount: plan.deltaLines.length }
+				}
+			}
 			let semantic = checkSnapshot(temporaryPlan, current, [], addedIds)
 			if (deleteLineIds.length || deleteViaIds.length || options.deletedArcIds.length) {
 				phase('delete-old-routes')
@@ -299,7 +399,10 @@ export function createSesRouteApplyContext(options: SesRouteApplyContextOptions)
 				if (!geometrySame(before, { ...after, lines: after.lines.filter(item => beforeIds.has(item.id)), vias: after.vias.filter(item => beforeIds.has(item.id)), arcs: after.arcs.filter(item => beforeIds.has(item.id)) })
 					|| !verifySourceChanges(before, after, [], routeSourceRecords(after, [...newLines, ...newVias].map(item => item.id))).verified)
 					return { restored: false, cause: { ...details(), compensation: 'skipped-old-or-source-drift' } }
-				const confirmedIds = new Set(journal.writes.filter(item => item.confirmed && item.candidateId).flatMap(item => Array.isArray(item.candidateId) ? item.candidateId : [item.candidateId!]))
+				const confirmedViaIds = journal.writes
+					.filter(item => item.kind === 'create-via' && item.confirmed && typeof item.candidateId === 'string')
+					.map(item => item.candidateId as string)
+				const confirmedIds = new Set([...confirmedAddedLineIds, ...confirmedViaIds])
 				if ([...newLines, ...newVias].some(item => !confirmedIds.has(item.id)))
 					return { restored: false, cause: { ...details(), compensation: 'skipped-unrecognized-added-id' } }
 				const lineIds = newLines.map(item => item.id)

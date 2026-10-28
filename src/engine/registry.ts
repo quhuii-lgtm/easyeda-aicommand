@@ -28,7 +28,20 @@ export function hasCommand(name: string): boolean {
 
 /** 指令文档（喂给 AI 的元数据，不含 handler） */
 export function getCommandDocs(): Array<Omit<ICommandDef, 'handler'>> {
-	return [...registry.values()].map(({ handler: _handler, ...doc }) => doc)
+	return [...registry.values()].map(({ handler: _handler, ...doc }) => {
+		if (!doc.name.startsWith('schematic.') && !doc.name.startsWith('pcb.'))
+			return doc
+		const params = [...doc.params]
+		if (!params.some(param => param.name === '__docUuid')) {
+			params.push({
+				name: '__docUuid',
+				type: 'string',
+				required: false,
+				description: '可选目标页 UUID；提供时须为非空字符串，并与当前焦点页匹配。不会自动切换页面，也不保证指令执行期间页面身份保持不变。目标页未激活时，请先显式执行 editor.openDocument。',
+			})
+		}
+		return { ...doc, params }
+	})
 }
 
 export function listCommandNames(): Array<string> {
@@ -84,7 +97,7 @@ function withFuse<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
  * 心跳感知熔断（0.10.65）：与 withFuse 的区别是每次心跳（onArm 拿到的 reset 回调）重设计时窗口，
  * 只有「超过 ms 无任何心跳」才拒绝。不上报心跳的指令退化为绝对时长熔断（与 withFuse 等价）。
  */
-function withHeartbeatFuse<T>(p: Promise<T>, ms: number, label: string, onArm: (reset: () => void) => void): Promise<T> {
+function withHeartbeatFuse<T>(p: Promise<T>, ms: number, label: string, onArm: (reset: () => void) => void, resetMs = ms): Promise<T> {
 	return new Promise<T>((resolve, reject) => {
 		// 0.10.73：熔断杀死的拒绝带 partial 标记（经 cause 透传到 error 对象）——代理侧据此区分
 		// "包装层超时返回"与"指令真实完成"，只有后者才允许解除写保护（KIMI-EDA-20261006-04 P1-3）
@@ -92,7 +105,7 @@ function withHeartbeatFuse<T>(p: Promise<T>, ms: number, label: string, onArm: (
 		let timer = setTimeout(() => reject(fuseError()), ms)
 		onArm(() => {
 			clearTimeout(timer)
-			timer = setTimeout(() => reject(fuseError()), ms)
+			timer = setTimeout(() => reject(fuseError()), resetMs)
 		})
 		p.then(v => { clearTimeout(timer); resolve(v) }, e => { clearTimeout(timer); reject(e) })
 	})
@@ -141,7 +154,7 @@ export function resolveRefs<T>(value: T, ctx: ICommandContext): T {
 		// $$ 显式表示字面量 $；EDA 导入自动网名 $1N1 也必须原样传给指令。
 		if (value.startsWith('$$'))
 			return value.slice(1) as T
-		if (/^\$\d+N\d+$/i.test(value))
+		if (/^\$\d+N\d+(?::\d+)?$/i.test(value))
 			return value
 		return lookupVar(value, ctx)
 	}
@@ -178,67 +191,49 @@ export async function executeCommand(req: ICommandRequest, ctx?: ICommandContext
 	const context = ctx ?? { vars: {} }
 	try {
 		const params = resolveRefs(req.params ?? {}, context)
+		// Native timers overflow above the signed 32-bit range; reject before any SDK or handler starts.
+		const requestedTimeout = params._timeoutMs == null ? 290_000 : Number(params._timeoutMs)
+		if (!Number.isFinite(requestedTimeout) || requestedTimeout > 2_147_483_647)
+			throw new Error('_timeoutMs 必须可转换为有限毫秒数，且不得超过定时器支持的 2147483647ms')
+		const fuseMs = Math.max(1000, requestedTimeout)
+		let handlerFuseMs = fuseMs
 		// 文档类型守卫：schematic.*/pcb.* 指令要求焦点文档类型匹配。
 		// 官方读接口在焦点不在目标文档时可能返回空数据（不报错），写接口则可能静默失败，
 		// 曾导致"放置成功但读回为空/写到错误文档"的误判。守卫把这类情况变成明确报错。
 		const needDocType = cmd.startsWith('schematic.') ? 1 : cmd.startsWith('pcb.') ? 3 : 0
 		if (needDocType) {
-			// 0.10.73（KIMI-EDA-20261006-04 P1-1 复核）：删除"全树同类候选唯一→自愈"分支——
-			// 唯一候选也可能是无关页（焦点在 PCB、树上只有一个未激活的无关原理图标签的反例），
-			// 候选数量不能证明目标身份（GPT 复核定案）。现规则：**只有激活的同类标签才自愈**
-			// （这是已确认的"焦点卡住"场景：激活页=用户/AI 正在看的页=操作目标）；
-			// 无激活命中 → 拒绝，要求显式声明目标（params.__docUuid）并 editor.openDocument 激活。
-			const expectUuid = typeof (params as any)?.__docUuid === 'string' && (params as any).__docUuid
-				? (params as any).__docUuid
-				: undefined
-			let doc = await eda.dmt_SelectControl.getCurrentDocumentInfo().catch(() => undefined)
-			if (doc?.documentType !== needDocType) {
-				// 焦点卡住自愈（实测：层叠变更等操作后 getCurrentDocumentInfo 可能滞留旧文档，
-				// 此时激活中的标签页已是正确类型）：只认当前激活的同类标签，绝不猜测未激活标签
-				try {
-					const tree = await (eda.dmt_EditorControl as any).getSplitScreenTree()
-					let activeHit: any
-					const walk = (node: any): void => {
-						if (!node)
-							return
-						if (Array.isArray(node.tabs)) {
-							for (const t of node.tabs) {
-								if (t?.documentType === needDocType && t.active && !activeHit)
-									activeHit = t
-							}
-						}
-						for (const child of node.children ?? [])
-							walk(child)
-					}
-					walk(tree)
-					const target = activeHit
-					if (target?.tabId) {
-						await eda.dmt_EditorControl.activateDocument(String(target.tabId)).catch(() => false)
-						await new Promise(resolve => setTimeout(resolve, 300))
-						doc = await eda.dmt_SelectControl.getCurrentDocumentInfo().catch(() => undefined)
-					}
-				}
-				catch {
-					// 自愈失败走原报错
-				}
-			}
+			const hasExpectedUuid = Object.prototype.hasOwnProperty.call(params, '__docUuid')
+			const expectUuid = hasExpectedUuid ? (params as any).__docUuid : undefined
+			if (hasExpectedUuid && (typeof expectUuid !== 'string' || !expectUuid.trim()))
+				throw new Error('__docUuid 必须是非空、非纯空白字符串')
+			const elapsedBeforeLookup = Date.now() - started
+			const lookupBudgetMs = fuseMs - elapsedBeforeLookup
+			if (lookupBudgetMs <= 0)
+				throw new Error(`读取当前文档信息前执行预算已耗尽（${fuseMs}ms）；未启动页级指令`)
+			const lookup = Promise.resolve().then(() => eda.dmt_SelectControl.getCurrentDocumentInfo())
+			const doc = await withFuse(lookup, lookupBudgetMs, `读取当前文档信息超时（${lookupBudgetMs}ms）；未启动页级指令`)
 			if (doc?.documentType !== needDocType) {
 				const want = needDocType === 1 ? '原理图' : 'PCB'
 				return errorResult(
 					cmd,
-					new Error(`当前焦点文档不是${want}（documentType=${doc?.documentType ?? '无焦点文档'}），且没有激活的同类标签可自愈。请先 editor.listTabs 找到目标文档，editor.openDocument 激活后重试；页级操作建议显式传 params.__docUuid 声明目标页身份`),
+					new Error(`当前焦点文档不是${want}（documentType=${doc?.documentType ?? '无焦点文档'}）。请确认目标页后显式执行 editor.openDocument 激活，再重试`),
 					undefined,
 					Date.now() - started,
 				)
 			}
-			if (expectUuid && doc?.uuid !== expectUuid) {
+			if (typeof doc?.uuid !== 'string' || !doc.uuid.trim())
+				return errorResult(cmd, new Error(`当前${needDocType === 1 ? '原理图' : 'PCB'}页没有有效文档 UUID，未启动页级指令`), undefined, Date.now() - started)
+			if (hasExpectedUuid && doc.uuid !== expectUuid) {
 				return errorResult(
 					cmd,
-					new Error(`焦点文档与 __docUuid 不符（焦点=${doc?.uuid ?? '未知'}，要求=${expectUuid}）。请 editor.openDocument 激活目标文档后重试`),
+					new Error(`当前焦点页 UUID 与 __docUuid 不符（焦点=${doc.uuid}，要求=${expectUuid}）。请确认目标页后显式执行 editor.openDocument 激活，再重试`),
 					undefined,
 					Date.now() - started,
 				)
 			}
+			handlerFuseMs = fuseMs - (Date.now() - started)
+			if (handlerFuseMs <= 0)
+				throw new Error(`页级文档校验后执行预算已耗尽（${fuseMs}ms）；未启动页级指令`)
 		}
 		// 0.10.62：单指令全局熔断——此前裸 await handler，某个官方调用挂起会占住扩展执行队列
 		// 直到代理 300s 超时。默认 290s（给 delete 批量 ~200s 余量），_timeoutMs 参数可覆盖（最小 1s）。
@@ -250,17 +245,52 @@ export async function executeCommand(req: ICommandRequest, ctx?: ICommandContext
 		if (cmd === 'macro')
 			data = await def.handler(params, context)
 		else {
-			const fuseMs = params._timeoutMs != null ? Math.max(1000, Number(params._timeoutMs)) : 290_000
 			let resetFuse: () => void = () => {}
-			const hbContext: ICommandContext = context.onProgress
-				? { ...context, onProgress: (patch) => { resetFuse(); context.onProgress?.(patch) } }
+			let lastDrawWireProgress: { diagnostic: Record<string, unknown>, receivedAt: string } | undefined
+			const onHeartbeatProgress = (patch: Record<string, any>) => {
+				if (cmd === 'schematic.drawWire') {
+					try {
+						const diagnostic = patch?.drawWireDiagnostic
+						if (diagnostic && typeof diagnostic === 'object' && !Array.isArray(diagnostic)) {
+							const serialized = JSON.stringify(diagnostic)
+							if (serialized !== undefined) {
+								lastDrawWireProgress = { diagnostic: JSON.parse(serialized), receivedAt: new Date().toISOString() }
+							}
+						}
+					}
+					catch { /* Diagnostic capture is advisory and must not interrupt the command. */ }
+				}
+				if (context.onProgress) {
+					resetFuse()
+					context.onProgress(patch)
+				}
+			}
+			const hbContext: ICommandContext = cmd === 'schematic.drawWire' || context.onProgress
+				? { ...context, onProgress: onHeartbeatProgress }
 				: context
-			data = await withHeartbeatFuse(
-				def.handler(params, hbContext),
-				fuseMs,
-				`指令 ${cmd} 执行超时（${fuseMs}ms 无进度心跳）——官方调用可能仍在后台执行，重发前先用只读指令确认现场`,
-				(r) => { resetFuse = r },
-			)
+			try {
+				data = await withHeartbeatFuse(
+					def.handler(params, hbContext),
+					handlerFuseMs,
+					`指令 ${cmd} 执行超时（${handlerFuseMs}ms 无进度心跳）——官方调用可能仍在后台执行，重发前先用只读指令确认现场`,
+					(r) => { resetFuse = r },
+					fuseMs,
+				)
+			}
+			catch (error) {
+				const cause = (error as any)?.cause
+				if (cmd === 'schematic.drawWire' && cause?.source === 'heartbeat-fuse' && lastDrawWireProgress) {
+					throw new Error(error instanceof Error ? error.message : String(error), {
+						cause: {
+							...cause,
+							drawWireDiagnostic: lastDrawWireProgress.diagnostic,
+							drawWireDiagnosticReceivedAt: lastDrawWireProgress.receivedAt,
+							drawWireDiagnosticSemantics: 'last-reported snapshot; may not represent current state',
+						},
+					})
+				}
+				throw error
+			}
 		}
 		return { ok: true, cmd, data: data ?? null, durationMs: Date.now() - started }
 	}
@@ -316,7 +346,7 @@ async function executeMacro(
 			ctx.vars[step.id] = result.data
 		const partialCause = (result as any)?.error?.cause
 		// partial 表示包装层已停止等待，但官方调用可能还在后台改工程。即使 stopOnError=false
-		// 也必须停宏，避免后续写入与未确认的旧写交错；保留 cause 供代理写保护识别。
+		// 也必须停宏，避免后续写入与未确认的旧写交错；保留 cause 供调用方核对本次不确定结果。
 		if (partialCause?.partial === true) {
 			const failed = results.filter(r => !r.ok).length
 			const unexecutedSteps = steps.length - index - 1
@@ -327,7 +357,7 @@ async function executeMacro(
 				cmd: 'macro',
 				error: {
 					message: `宏在第 ${index + 1} 步（${step.cmd}）结果不确定：官方操作可能仍在后台执行；已停止并跳过后续 ${unexecutedSteps} 步。不要直接重发该宏。`,
-					suggestion: '先用只读指令核对现场并确认原操作已结束，再决定如何处理写保护。',
+					suggestion: '先用只读指令核对现场和原操作状态，不要盲目重发本宏；后续独立请求无需手动解锁。',
 					cause: partialCause,
 				},
 				data: { total: results.length, failed, steps: results, stoppedAtStep: index + 1, stoppedReason: 'partial', unexecutedSteps, taskId: task.id },
