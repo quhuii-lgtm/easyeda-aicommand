@@ -1,6 +1,6 @@
 # 嘉立创 EDA AI 指令引擎
 
-> **AI 技能下载：**[技能发布 v2026.10.28.1](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.10.28.1) · [下载完整 ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.10.28.1/ai-command-engine-skill_v2026.10.28.1_en-zh.zip)。解压并把完整 `ai-command-engine/` 目录放入 AI 工具的技能目录，保留英文入口 `SKILL.md`、中文备用入口 `SKILL_ZH.md`、`references/`、`scripts/` 和 `VERSION`；重载 AI 工具后让它读取 `SKILL.md` 并确认技能版本。技能独立于插件发布，版本号无需相同。
+> **AI 技能下载：**[技能发布 v2026.10.28.2](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.10.28.2) · [下载完整 ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.10.28.2/ai-command-engine-skill_v2026.10.28.2_en-zh.zip)。解压并把完整 `ai-command-engine/` 目录放入 AI 工具的技能目录，保留英文入口 `SKILL.md`、中文备用入口 `SKILL_ZH.md`、`references/`、`scripts/` 和 `VERSION`；重载 AI 工具后让它读取 `SKILL.md` 并确认技能版本。技能独立于插件发布，版本号无需相同。
 
 **English:** [README.md](README.md) | 简体中文
 
@@ -10,17 +10,17 @@
 
 ## 相比市场0.20.51的累计更新（0.20.124）
 
-市场当前公开版本为 0.20.51（2026-10-20 上架）；v0.20.124 市场包交给用户上传，本次尚未提交市场审核。GitHub 上一公开版为 v0.20.50。以下是本次相对市场 0.20.51、也相对 GitHub v0.20.50 的累计新增和修正，已验功能仍按对应版本记录为准：位号属性修改；独立焊盘和安装孔；丝印与制造几何检查；制造资料核对；差分、补长和焊盘分支布线；DSN 导出、外部布线服务及 SES 显式导入；分层宽度规则及混合规则处理；代理稳定性改进，移除旧结果导致后续独立请求持续锁定；106–108 版属性修改、画线和网表通道；以及 0.20.124 的数组保序、自动布线同 ID 终态任务槽处理、PCB 层名一致映射和帮助文字修正。辅助布线不保证任意整板全部布通，生产验收仍须使用具体板级资料。
+市场当前公开版本为 0.20.51（2026-10-20 上架）；v0.20.124 已提交市场审核；实际上架版本以市场页面为准。GitHub 上一公开版为 v0.20.50。以下是本次相对市场 0.20.51、也相对 GitHub v0.20.50 的累计新增和修正，已验功能仍按对应版本记录为准：位号属性修改；独立焊盘和安装孔；丝印与制造几何检查；制造资料核对；差分、补长和焊盘分支布线；DSN 导出、外部布线服务及 SES 显式导入；分层宽度规则及混合规则处理；代理稳定性改进，移除旧结果导致后续独立请求持续锁定；106–108 版属性修改、画线和网表通道；以及 0.20.124 的数组保序、自动布线同 ID 终态任务槽处理、PCB 层名一致映射和帮助文字修正。辅助布线不保证任意整板全部布通，生产验收仍须使用具体板级资料。
 
 v0.20.124 版本说明（2026-10-28）还包含三项本地修正和一项帮助文字更正：任务指纹保留数组顺序；自动布线终态释放匹配任务槽并对旧槽做一次只读确认；PCB 命令统一层名映射；修正旧 `autoRouteStart` 帮助文字。三项修正和帮助更正尚未在 EDA 宿主安装验收。主要功能验收依据为已安装并验收的 v0.20.123 及对应历史记录。
 
-发布状态：GitHub 发布信息见 [v0.20.124 发布页](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.20.124)，以该页实际状态为准；[嘉立创 EDA 扩展市场页面](https://jlc-ext.com/item/eda_gdqnxffl/ai-command-engine)当前公开版本为 0.20.51，v0.20.124 市场包交给用户上传，本次尚未提交市场审核。配套技能另行发布为 v2026.10.28.1；插件和技能版本号独立，按功能及版本帮助核对适配。
+发布状态：GitHub 发布信息见 [v0.20.124 发布页](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.20.124)，以该页实际状态为准；[嘉立创 EDA 扩展市场页面](https://jlc-ext.com/item/eda_gdqnxffl/ai-command-engine)当前公开版本为 0.20.51，v0.20.124 已提交市场审核；实际上架版本以市场页面为准。配套技能另行发布为 v2026.10.28.2；插件和技能版本号独立，按功能及版本帮助核对适配。
 
 插件包：`ai-command-engine_v0.20.124_zh-CN.eext`、`ai-command-engine_v0.20.124_en.eext`；源码归档：`easyeda-aicommand-plugin-source_v0.20.124.zip`。扩展不自动安装 Node.js、代理依赖或 AI 技能。首次安装提示词请先下载独立技能，再安装完整目录。
 
 ## 独立 AI 技能
 
-从[技能发布页](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.10.28.1)下载[完整技能 ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.10.28.1/ai-command-engine-skill_v2026.10.28.1_en-zh.zip)。解压后把 `ai-command-engine/` 整个目录放到 AI 工具的技能目录，保留 `SKILL.md`、备用中文入口 `SKILL_ZH.md`、`references/`、`scripts/` 和 `VERSION`。重载 AI 工具，让它读取 `SKILL.md` 并报告识别到的版本。技能版本独立于插件版本；根据对应功能和帮助内容核对，不按数字相同判断。
+从[技能发布页](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.10.28.2)下载[完整技能 ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.10.28.2/ai-command-engine-skill_v2026.10.28.2_en-zh.zip)。解压后把 `ai-command-engine/` 整个目录放到 AI 工具的技能目录，保留 `SKILL.md`、备用中文入口 `SKILL_ZH.md`、`references/`、`scripts/` 和 `VERSION`。重载 AI 工具，让它读取 `SKILL.md` 并报告识别到的版本。技能版本独立于插件版本；根据对应功能和帮助内容核对，不按数字相同判断。
 
 ## 功能演示
 
@@ -60,7 +60,7 @@ GitHub 正式版 **v0.20.124**（2026-10-28）包含任务数组保序、自动�
 | --- | --- |
 | `src/`、`extension.json` | EDA 插件源码；安装包从 Releases 下载 |
 | `bridge/` | Node.js HTTP/WebSocket 代理及 Windows 启动器 |
-| [独立技能发布页](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.10.28.1) | 单独下载完整 `ai-command-engine/`，插件包不含技能 |
+| [独立技能发布页](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.10.28.2) | 单独下载完整 `ai-command-engine/`，插件包不含技能 |
 | `test/`、`bridge/mock-host-test.mjs` | 守卫与代理模拟回归，不代替真实 EDA 验收 |
 | [安装指南](docs/QUICKSTART_ZH.md) | 安装、首次调用、常见报错、升级和卸载 |
 
@@ -78,7 +78,7 @@ GitHub 正式版 **v0.20.124**（2026-10-28）包含任务数组保序、自动�
 请先检查现状，再执行；每一步告诉我检查结果、当前阻点和下一步。不要一次给我一长串命令后就宣称安装完成。
 
 1. 检查你能否访问本机文件和终端，并确认操作系统、Node.js 和 npm。按项目 package.json 检查版本要求，当前要求 Node.js >=20.17.0。缺少工具时指导我从官方来源安装，安装后重新检查；Git可选，Python不是直接HTTP连接的必需项。
-2. 确认我安装或准备安装的插件版本，获取对应的完整源码仓库。读取 README.md、docs/QUICKSTART.md、package.json 和 package-lock.json。插件与代理源码从插件仓库获取；AI技能从 https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.10.28.1 或 https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.10.28.1/ai-command-engine-skill_v2026.10.28.1_en-zh.zip 单独获取。说明三部分分开安装且版本号独立；按相关功能及帮助核对适配，不要求技能和插件版本号相同。
+2. 确认我安装或准备安装的插件版本，获取对应的完整源码仓库。读取 README.md、docs/QUICKSTART.md、package.json 和 package-lock.json。插件与代理源码从插件仓库获取；AI技能从 https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.10.28.2 或 https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.10.28.2/ai-command-engine-skill_v2026.10.28.2_en-zh.zip 单独获取。说明三部分分开安装且版本号独立；按相关功能及帮助核对适配，不要求技能和插件版本号相同。
 3. 把源码保存在固定目录。发现已有仓库、技能或配置时先检查并保留个人改动，不覆盖旧目录或密钥。确认源码目录同时有 package.json、package-lock.json 和 bridge/command-proxy.mjs。
 4. 在源码目录执行 npm ci，确认代理依赖安装成功。不要添加 --omit=dev；使用已下载的插件包不需要运行构建。解压独立技能 ZIP，并将完整 ai-command-engine/ 安装到当前AI工具的技能目录，保留 SKILL.md、备用中文入口 SKILL_ZH.md、references/、scripts/ 和 VERSION。重载AI工具，让它读取 SKILL.md 并报告技能版本；不要把插件仓库根目录的 SKILL.md 当作技能入口。
 5. 检查 http://127.0.0.1:49720/health。如果没有代理，运行 node bridge/command-proxy.mjs，并保持进程可用；若端口已占用，先识别服务，不结束未知进程，不擅自改端口。检查健康响应和代理版本；失败时停在本步排查。Windows自动启动注册是可选项，不是首次连接的必需项。
