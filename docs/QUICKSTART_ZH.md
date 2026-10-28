@@ -22,7 +22,7 @@ v0.20.125 相较 v0.20.124 限定 ARC 额外重复/拆分候选的匹配范围�
 请先检查现状，再执行；每一步告诉我检查结果、当前阻点和下一步。不要一次给我一长串命令后就宣称安装完成。
 
 1. 检查你能否访问本机文件和终端，并确认操作系统、Node.js 和 npm。按项目 package.json 检查版本要求，当前要求 Node.js >=20.17.0。缺少工具时指导我从官方来源安装，安装后重新检查；Git可选，Python不是直接HTTP连接的必需项。
-2. 确认我安装或准备安装的插件版本，获取对应的完整源码仓库。读取 README.md、docs/QUICKSTART.md、package.json 和 package-lock.json。插件与代理源码从插件仓库获取；AI技能从 https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.10.28.3 单独获取。说明三部分分开安装且版本号独立；按相关功能及帮助核对适配，不要求技能和插件版本号相同。
+2. 确认我安装或准备安装的插件版本，获取对应的完整源码仓库。读取 README.md、docs/QUICKSTART.md、package.json 和 package-lock.json。插件与代理源码从插件仓库获取；AI技能从 https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.10.28.4 单独获取。说明三部分分开安装且版本号独立；按相关功能及帮助核对适配，不要求技能和插件版本号相同。
 3. 把源码保存在固定目录。发现已有仓库、技能或配置时先检查并保留个人改动，不覆盖旧目录或密钥。确认源码目录同时有 package.json、package-lock.json 和 bridge/command-proxy.mjs。
 4. 在源码目录执行 npm ci，确认代理依赖安装成功。不要添加 --omit=dev；使用已下载的插件包不需要运行构建。解压独立技能 ZIP，并将完整 ai-command-engine/ 安装到当前AI工具的技能目录，保留 SKILL.md、备用中文入口 SKILL_ZH.md、references/、scripts/ 和 VERSION。重载AI工具，让它读取 SKILL.md 并确认技能版本；不要把仓库根目录的 SKILL.md 当作技能入口。
 5. 检查 http://127.0.0.1:49720/health。如果没有代理，运行 node bridge/command-proxy.mjs，并保持进程可用；若端口已占用，先识别服务，不结束未知进程，不擅自改端口。检查健康响应和代理版本；失败时停在本步排查。Windows自动启动注册是可选项，不是首次连接的必需项。
@@ -124,7 +124,7 @@ $result | ConvertTo-Json -Depth 12
 
 ## 4. 安装 AI 技能
 
-从[独立技能发布页 v2026.10.28.3](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.10.28.3)下载[完整 ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.10.28.3/ai-command-engine-skill_v2026.10.28.3_en-zh.zip)。解压后把完整 `ai-command-engine/` 目录放入 AI 工具的技能目录，保留英文入口 `SKILL.md`、备用中文入口 `SKILL_ZH.md`、`references/`、`scripts/` 和 `VERSION`。不要只复制一个文件，也不要把插件仓库根目录当成技能安装。
+从[独立技能发布页 v2026.10.28.4](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.10.28.4)下载[完整 ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.10.28.4/ai-command-engine-skill_v2026.10.28.4_en-zh.zip)。解压后把完整 `ai-command-engine/` 目录放入 AI 工具的技能目录，保留英文入口 `SKILL.md`、备用中文入口 `SKILL_ZH.md`、`references/`、`scripts/` 和 `VERSION`。不要只复制一个文件，也不要把插件仓库根目录当成技能安装。
 
 Codex 本地安装位置通常是 `~/.codex/skills/ai-command-engine/`（Windows 为 `%USERPROFILE%\.codex\skills\ai-command-engine\`）。已有同名技能时先备份并比较差异，避免覆盖个人规则。其他 AI 工具通过其技能管理功能导入该目录；不支持技能加载的工具可以读取该目录的 `SKILL.md` 及所引用手册。
 

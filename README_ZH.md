@@ -28,7 +28,7 @@ EDA 扩展、完整代理源码及依赖、AI 技能需分别安装。安装扩�
 
 1. **代理：**下载完整插件源码仓库并安装 Node.js >=20.17.0。在仓库目录运行 `npm ci`，再运行 `node bridge/command-proxy.mjs`。不能只复制代理脚本。
 2. **EDA 扩展：**从 [GitHub v0.20.125 发布页](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.20.125)下载 `.eext`，在嘉立创 EDA 专业版导入并启用，允许外部交互。
-3. **AI 技能：**从[技能发布页 v2026.10.28.3](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.10.28.3)或[完整双语 ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.10.28.3/ai-command-engine-skill_v2026.10.28.3_en-zh.zip)下载。把完整 `ai-command-engine/` 目录安装到 AI 工具的技能目录，保留 `SKILL.md`、`SKILL_ZH.md`、`references/`、`scripts/`、`VERSION` 和 `LICENSE`。重载 AI 工具，让它读取 `SKILL.md` 并报告技能版本。技能和插件分别编号。
+3. **AI 技能：**从[技能发布页 v2026.10.28.4](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.10.28.4)或[完整双语 ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.10.28.4/ai-command-engine-skill_v2026.10.28.4_en-zh.zip)下载。把完整 `ai-command-engine/` 目录安装到 AI 工具的技能目录，保留 `SKILL.md`、`SKILL_ZH.md`、`references/`、`scripts/`、`VERSION` 和 `LICENSE`。重载 AI 工具，让它读取 `SKILL.md` 并报告技能版本。技能和插件分别编号。
 
 按[首次安装指南](docs/QUICKSTART_ZH.md)完成连接。先在本机终端的完整源码目录启动代理，再在 EDA 导入并启用扩展、允许外部交互，选择“AI 指令引擎 → 启动桥接”。检查 `http://127.0.0.1:49720/health` 和 `http://127.0.0.1:49720/connections`，核对目标工程与 `instanceId`，先执行只读 `project.getInfo` 再修改文档。
 
