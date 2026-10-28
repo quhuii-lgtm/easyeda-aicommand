@@ -23,6 +23,8 @@ const moduleUrl = `data:text/javascript;base64,${Buffer.from(built.outputFiles[0
 const { schematicCommands, executeCommand, registerCommand } = await import(moduleUrl)
 const commandDef = schematicCommands.find(item => item.name === 'schematic.placeNetLabel')
 const placeNetLabel = commandDef.handler
+const batchWire = schematicCommands.find(item => item.name === 'schematic.batchWire').handler
+const labelWire = schematicCommands.find(item => item.name === 'schematic.labelWire').handler
 
 const makeAttr = ({ id = 'label-1', key = 'NET', value = 'SIG', parentId = 'wire-parent', x = 10, y = 20 } = {}) => ({
 	getState_PrimitiveId: () => id,
@@ -187,4 +189,66 @@ await withInstantTimers(async () => {
 	}
 })
 
-console.log('PASS ID-directed net-label attachment, unknown/partial stop, ghost adoption, and noVerify semantics')
+// batchWire forwards stubLen and labelWire rejects a candidate that only touches another net at its endpoint.
+{
+	let sourceRows = [
+		`{"type":"DOCHEAD"}||${JSON.stringify({ docType: 'SCH_PAGE', uuid: 'doc-A' })}`,
+		`{"type":"WIRE","id":"wire-other"}||${JSON.stringify({ line: [30, 0, 40, 0] })}`,
+		`{"type":"LINE","id":"line-other"}||${JSON.stringify({ lineGroup: 'wire-other', startX: 30, startY: 0, endX: 40, endY: 0, strokeColor: '#000000', strokeWidth: 6, strokeStyle: 'SOLID' })}`,
+	].join('\n')
+	const pin = {
+		getState_PinNumber: () => '1', getState_X: () => 0, getState_Y: () => 0,
+		getState_Rotation: () => 0, getState_PinLength: () => 10, getState_NoConnected: () => false,
+	}
+	const component = { getState_PrimitiveId: () => 'component-1', getState_Designator: () => 'U1', getState_X: () => 0, getState_Y: () => 0 }
+	const otherWire = { getState_PrimitiveId: () => 'wire-other', getState_Net: () => 'OTHER', getState_Line: () => [30, 0, 40, 0] }
+	let createdStub
+	let stubSourceReads = 0
+	let neverSync = false
+	let createCount = 0
+	const stubWire = { getState_PrimitiveId:()=>"stub-new",getState_Net:()=>"TARGET",getState_Line:()=>createdStub }
+	globalThis.eda = {
+		dmt_SelectControl: { getCurrentDocumentInfo: async () => ({ documentType: 1, uuid: 'doc-A' }) },
+		sys_FileManager: { getDocumentSource: async () => {
+ if (!createdStub || neverSync || ++stubSourceReads <= 2) return sourceRows
+ return sourceRows+'\n'+JSON.stringify({type:'WIRE',id:'stub-new'})+'||{}\n'+JSON.stringify({type:'LINE',id:'stub-line'})+'||'+JSON.stringify({lineGroup:'stub-new',startX:createdStub[0],startY:-createdStub[1],endX:createdStub[2],endY:-createdStub[3]})
+ } },
+		sch_PrimitiveComponent: { getAll: async () => [component], getAllPinsByPrimitiveId: async () => [pin] },
+		sch_PrimitiveWire: {
+			getAll: async () => createdStub ? [otherWire,stubWire] : [otherWire],
+			create: async line => { createCount++; createdStub = line; return { getState_PrimitiveId: () => 'stub-new' } },
+		},
+		sch_PrimitiveAttribute: {
+			createNetLabel: async () => ({ getState_PrimitiveId: () => 'label-new' }),
+		},
+	}
+	const result = await batchWire({ items: [{ type: 'label', pin: 'U1.1', net: 'TARGET', stubLen: 30 }], skipAudit: true })
+	assert.equal(result.items[0].ok, true, JSON.stringify(result))
+	assert.deepEqual(createdStub, [0, 0, 0, 30], 'the default +X route touches a different-net endpoint, so the next +Y candidate is selected')
+	assert.equal(result.items[0].data.stubReadbackVerified, true, 'batch item waits through two missing-source samples')
+	assert.ok(stubSourceReads >= 3)
+	assert.equal(result.items[0].data.stubLen, 30, 'batchWire passes explicit stubLen through to labelWire')
+	sourceRows = [
+ '{"type":"DOCHEAD"}||{"docType":"SCH_PAGE","uuid":"doc-A"}',
+ '{"type":"WIRE","id":"wire-other"}||{}',
+ ...[[-20,0,-10,0],[10,0,20,0]].map((p,i)=>JSON.stringify({type:'LINE',id:'gap-'+i})+'||'+JSON.stringify({lineGroup:'wire-other',startX:p[0],startY:-p[1],endX:p[2],endY:-p[3]}))
+ ].join('\n')
+ createdStub = undefined; stubSourceReads = 0
+ otherWire.getState_Line = () => [-20,0,-10,0,10,0,20,0]
+ const gapResult = await labelWire({ pin:'U1.1',net:'TARGET',stubLen:30 })
+ assert.equal(gapResult.alreadyConnected, undefined, 'disconnected LINE segments cannot create a phantom wire through the pin')
+ assert.deepEqual(createdStub,[0,0,0,30], 'real segments still reject crossing routes')
+ createdStub = undefined; stubSourceReads = 0; neverSync = true
+ const beforeCreates = createCount
+ let batchError
+ try { await batchWire({ items:[{type:'label',pin:'U1.1',net:'TARGET',stubLen:31},{type:'label',pin:'U1.1',net:'OTHER',stubLen:31}],skipAudit:true,continueOnError:true }) } catch(e) { batchError = e }
+ assert.equal(batchError?.cause?.partial,true,'unconfirmed previous item stops even continueOnError')
+ assert.equal(createCount,beforeCreates+1,'a missing-source stub must never start the following item')
+ createdStub=undefined; sourceRows=sourceRows.replace('doc-A','wrong-source')
+ const beforeIdentityCheck=createCount
+ await assert.rejects(()=>labelWire({pin:'U1.1',net:'TARGET',stubLen:30}),/源码不是当前原理图页/)
+ assert.equal(createCount,beforeIdentityCheck,'wrong-source UUID stops before any write')
+ assert.equal(await labelWire({ pin: 'U1.1', net: 'TARGET', stubLen: 0 }).then(() => false, () => true), true, 'invalid per-item length is rejected before creating a wire')
+}
+
+console.log('PASS ID-directed attachment, partial stop, batch stubLen=30 forwarding, and different-net endpoint collision avoidance')

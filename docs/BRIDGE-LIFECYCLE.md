@@ -1,10 +1,12 @@
-# Bridge lifecycle in v0.10.80
+# Bridge lifecycle in v0.20.57
+
+Historical partial/timeout results no longer lock later independent requests. The proxy keeps the existing per-window request FIFO, which advances after the current response or configured timeout. A timeout does not cancel SDK calls that may still run in the host; it does not certify recovery. Current macro dependency steps still stop on partial. `write.acknowledge` is a compatibility no-op and is not required. The matching proxy reports `writeProtection:false` in `/health`.
 
 ## Background heartbeat correction
 
 The proxy sends an application-level `ping` in its existing 20-second transport keepalive loop. The extension immediately replies with `pong`, so a background window does not depend on its 10-second timer running on schedule to receive evidence that the proxy is alive. Transport ping/pong alone does not update the extension's application-message timestamp.
 
-After 35 seconds without an application message, the client probes the current connection rather than immediately marking it disconnected. Accepted work keeps its current-generation result path. If the probe remains unanswered for another 35 seconds and no command is in flight, the client retires that connection; stale callbacks cannot execute commands or return results through a replacement connection. Stop/drain, resume, and uncertain-write protection remain in effect.
+After 35 seconds without an application message, the client probes the current connection rather than immediately marking it disconnected. Accepted work keeps its current-generation result path. If the probe remains unanswered for another 35 seconds and no command is in flight, the client retires that connection; stale callbacks cannot execute commands or return results through a replacement connection. Stop/drain and resume remain in effect; historical uncertain-write protection was removed in v0.20.57.
 
 Use the matching extension and proxy when upgrading. Do not replace a running proxy while operations are active. Fake-API regressions, real-host module checks, and installed-package checks are separate forms of evidence; a module check does not certify package installation or menu integration.
 
@@ -19,14 +21,14 @@ This release gives each EDA window explicit start, stop, and reconnect behavior.
 | Start | An active window start is idempotent. An inactive window checks `/health` and starts the registered local launcher if needed. | Startup scripts and client integration; isolated launcher checks are recorded by the maintainer. |
 | Stop | The client sends `stop` with a request ID and nonce. The proxy immediately pauses dispatch and responds `stop-accepted`; already-dispatched requests can still return. Queued writes drain from the proxy lane and are rejected when they reach dispatch. | `node bridge/lifecycle-mock-test.mjs` |
 | Multiple windows | The proxy only completes the stop for the owning instance/socket. Other active windows keep the shared process alive. | Lifecycle mock, multi-window case. |
-| Safe idle exit | The proxy exits only after the configured idle period with no unpaused connections, pending requests, queued writes, or write protection. Replayed paused hello frames do not restart the idle clock. | Lifecycle mock, short isolated idle threshold. |
-| Partial / uncertain result | A partial write enters `writeUncertain`; stop responds `stop-blocked` and keeps the connection. Only the existing explicit acknowledgement or trusted matching completion can clear protection. | Lifecycle mock, partial-result case. |
+| Safe idle exit | The proxy exits only after the configured idle period with no unpaused connections, pending requests or queued writes. Replayed paused hello frames do not restart the idle clock. | Lifecycle mock, short isolated idle threshold. |
+| Partial / uncertain result | Partial and timeout responses remain errors but do not retain a lock. Stop completes automatically after pending requests and accepted queues drain; no acknowledgement is required. | Lifecycle mock, partial-result case. |
 | Reconnect / stop-start race | Every stop and completion is matched by request ID. Resume cancels an outstanding stop without replacing the socket; a stale completion must be ignored by the client. | `node test/bridge-client-lifecycle.mjs`, 9/9 passed; type check and build. |
 | Existing proxy compatibility | `/health` reports `service: ai-command-proxy` and `lifecycleProtocol: 1`. The launcher refuses an occupied port serving an older or different service. | Isolated launcher checks; no real machine registration or service start performed. |
 
-Regression results: `node bridge/lifecycle-mock-test.mjs` passed 11/11; `node bridge/mock-host-test.mjs` passed 21/21; `node test/bridge-client-lifecycle.mjs` passed 9/9. TypeScript checking and packaging build passed.
+Earlier regression snapshot (before the v0.20.57 lock removal): `node bridge/lifecycle-mock-test.mjs` passed 11/11; `node bridge/mock-host-test.mjs` passed 21/21; `node test/bridge-client-lifecycle.mjs` passed 9/9. TypeScript checking and packaging build passed.
 
-The stop wire messages are `stop(requestId, nonce)`, `stop-accepted(requestId)`, then either `stop-ready(requestId)` or `stop-blocked(requestId)`. The client may send `bye(requestId)` only after a matching `stop-ready`. A valid `resume` cancels the pending stop and receives `resume-accepted`; a nonce mismatch receives `resume-rejected`. Result, progress, and late-result handling are tied to the WebSocket owner as well as the request ID.
+The stop wire messages are `stop(requestId, nonce)`, `stop-accepted(requestId)`, then `stop-ready(requestId)` after pending requests drain. Older proxies may send `stop-blocked`; the client retains compatibility handling. The client may send `bye(requestId)` only after a matching `stop-ready`. A valid `resume` cancels the pending stop and receives `resume-accepted`; a nonce mismatch receives `resume-rejected`. Result, progress, and late-result handling are tied to the WebSocket owner as well as the request ID.
 
 ## Windows setup
 

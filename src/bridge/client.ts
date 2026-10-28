@@ -158,7 +158,7 @@ async function handleMessage(event: MessageEvent<any>, id: string, gen: number):
 	if (eventType === 'close' || eventType === 'error') {
 		retireConnection(id, gen, false);
 		if (stopRequest)
-			setLifecycleStatus('停止尚未确认：连接已中断，未清除写保护');
+			setLifecycleStatus('停止尚未确认：连接已中断，原操作未必已结束');
 		else if (!manualStop)
 			setLifecycleStatus('连接已中断，等待重新连接');
 		return;
@@ -212,7 +212,7 @@ async function handleMessage(event: MessageEvent<any>, id: string, gen: number):
 			return;
 		}
 		if (msg.type === 'stop-blocked') {
-			setLifecycleStatus('停止尚未完成：写操作结果未知，连接和写保护继续保留');
+			setLifecycleStatus('停止尚未完成：代理报告原操作状态未知，连接继续保留');
 			return;
 		}
 		if (inflightCommands > 0) {
@@ -592,7 +592,7 @@ function requestBridgeStop(reconnect: boolean): void {
 	}
 	const id = currentConnectionId;
 	if (!id) {
-		setLifecycleStatus('停止请求失败：当前连接标识不存在，写保护继续保留');
+		setLifecycleStatus('停止请求失败：当前连接标识不存在，请核对连接状态');
 		return;
 	}
 	const previousNonce = resumeNonce;
@@ -613,7 +613,7 @@ export function stopBridgeClient(): void {
 	requestBridgeStop(false);
 }
 
-/** Reconnect uses the same drain handshake as Stop and never clears write protection. */
+/** Reconnect uses the same pending-request drain handshake as Stop. */
 export function reconnectBridgeClient(): void {
 	if (!connected && !stopRequest) {
 		startBridgeClient(currentPort);

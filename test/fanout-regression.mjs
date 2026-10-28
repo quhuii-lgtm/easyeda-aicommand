@@ -79,7 +79,7 @@ async function main() {
 		};
 	}
 
-	function install({ pads = [pad('P1')], vias = [], fills = [], arcs = [], holeLines = [], outlinePolylines = [], rules = emptyRules, focusUuid = 'pcb-A', outline = true, outlineLines, mergeCollinearLines = false } = {}) {
+	function install({ pads = [pad('P1')], vias = [], fills = [], pours = [], poured = [], arcs = [], holeLines = [], outlinePolylines = [], rules = emptyRules, focusUuid = 'pcb-A', outline = true, outlineLines, mergeCollinearLines = false, editorVersion = null } = {}) {
 		const state = { writes: [], reads: [], source: docHead(focusUuid), rules, pads: [...pads], vias: [...vias], fills: [...fills], arcs: [...arcs], holeLines: [...holeLines], lines: [], created: new Map(), nextId: 1, failCreate: undefined, mismatchReadback: false, mergeCollinearLines };
 		if (outlineLines)
 			state.lines = outlineLines;
@@ -89,6 +89,7 @@ async function main() {
 			state,
 			sdk: {
 				dmt_SelectControl: { getCurrentDocumentInfo: async () => ({ uuid: focusUuid, documentType: 3 }) },
+				sys_Environment: { getEditorCurrentVersion: () => editorVersion },
 				sys_FileManager: { getDocumentSource: async () => state.source },
 				pcb_Drc: { getCurrentRuleConfiguration: async () => state.rules },
 				pcb_Layer: { getAllLayers: async () => [{ id: 1, type: 'SIGNAL' }, { id: 2, type: 'SIGNAL' }, { id: 15, type: 'SIGNAL' }, { id: 16, type: 'PLANE' }] },
@@ -145,8 +146,8 @@ async function main() {
 					get: async id => state.created.get(id),
 				},
 				pcb_PrimitiveFill: { getAll: async () => [...state.fills] },
-				pcb_PrimitivePour: { getAll: async () => [] },
-				pcb_PrimitivePoured: { getAll: async () => [] },
+				pcb_PrimitivePour: { getAll: async () => pours },
+				pcb_PrimitivePoured: { getAll: async () => poured },
 				pcb_PrimitiveRegion: { getAll: async () => [] },
 				pcb_PrimitivePolyline: { getAll: async () => [...outlinePolylines] },
 			},
@@ -193,6 +194,48 @@ async function main() {
 		assert.equal(plan.plannedPrimitives[0].net, 'N1');
 		assert.equal(plan.plannedPrimitives[1].layer, 'all-copper');
 		assert.equal(f.state.writes.length, 0);
+	});
+
+	await test('native R bounds and zero-width poured copper keep coordinate coverage explicit', async () => {
+		const rectangle = ['R', 250, 450, 200, 100, 0, 0];
+		const equivalent = [250, 450, 'L', 450, 450, 450, 350, 250, 350, 250, 450];
+		const pour = path => ({ getState_PrimitiveId: () => 'pour-host', getState_Layer: () => 2, getState_LineWidth: () => 0.2, getState_ComplexPolygon: () => ({ getSource: () => path }) });
+		const region = (width, path, coordinateUnit = 'mil') => ({ getState_PrimitiveId: () => 'poured-host', getState_PourPrimitiveId: () => 'pour-host', getState_PourFills: () => [{ id: 'fill-host', fill: true, lineWidth: width, ...(coordinateUnit ? { coordinateUnit } : {}), path: { getSource: () => path } }] });
+		const inner = [446, 354, 'L', 254, 354, 254, 446, 446, 446, 446, 354];
+		const r = await runPlan(install({ pours: [pour(rectangle)], poured: [region(0, inner)] }));
+		const l = await runPlan(install({ pours: [pour(equivalent)], poured: [region(0, inner)] }));
+		assert.equal(r.coverage.complete, true, r.warnings.join('; '));
+		assert.equal(r.coverage.obstacles, l.coverage.obstacles);
+		assert.deepEqual(r.plannedPrimitives, l.plannedPrimitives, 'native R and equivalent L must produce the same obstacle location');
+		assert.equal(r.coverage.obstacles, (await runPlan(install())).coverage.obstacles + 2, 'width zero retains the filled polygon as an obstacle');
+		assert.equal((await runPlan(install({ pours: [pour(rectangle)], poured: [region(0, equivalent)] }))).coverage.complete, true, 'points on the parent boundary remain readable');
+		const outside = [249, 450, 'L', 450, 450, 450, 350, 249, 350, 249, 450];
+		assert.equal((await runPlan(install({ pours: [pour(rectangle)], poured: [region(0, outside)] }))).coverage.complete, false, 'clearly outside points must not be accepted');
+		for (const width of [-1, undefined, '0', NaN, Infinity]) {
+			const invalid = await runPlan(install({ pours: [pour(rectangle)], poured: [region(width, inner)] }));
+			assert.equal(invalid.coverage.complete, false);
+		}
+		const observedScale = [44.6, 35.4, 'L', 25.4, 35.4, 25.4, 44.6, 44.6, 44.6, 44.6, 35.4];
+		const unverified = await runPlan(install({ pours: [pour(rectangle)], poured: [region(0, observedScale)] }));
+		assert.equal(unverified.coverage.complete, false);
+		assert.equal(unverified.executable, false);
+		assert.match(unverified.warnings.join('; '), /归一化后与父边框坐标不一致/);
+		for (const path of [['R', 250, 450, 200, 100, 90, 0], ['R', 250, 450, 200, 100, 0, 5]]) {
+			assert.equal((await runPlan(install({ pours: [pour(path)] }))).coverage.complete, false, 'unverified rotation or rounding must not be approximated as a rectangle');
+		}
+		const rawFirst = [29.6, 10.4, 'L', 10.399999999999995, 10.4, 10.4, 19.6, 29.60000000000001, 19.6, 29.6, 10.4];
+		const first10Mil = await runPlan(install({ editorVersion: '4.1.78', pours: [pour(['R', 100, 200, 200, 100, 0, 0])], poured: [region(0, rawFirst, null)] }));
+		assert.equal(first10Mil.coverage.complete, true, first10Mil.warnings.join('; '));
+		const rawSecond = [89.6, 10.4, 'L', 60.4, 10.4, 60.4, 24.6, 89.6, 24.6, 89.6, 10.4];
+		const second10Mil = await runPlan(install({ editorVersion: '4.1.78', pours: [pour(['R', 600, 250, 300, 150, 0, 0])], poured: [region(0, rawSecond, null)] }));
+		assert.equal(second10Mil.coverage.complete, true, second10Mil.warnings.join('; '));
+		const oldTranslated10Mil = await runPlan(install({ editorVersion: '4.1.78', pours: [pour(rectangle)], poured: [region(0, [44.6, 35.4, 'L', 25.4, 35.4, 25.4, 44.6, 44.6, 44.6, 44.6, 35.4], null)] }));
+		assert.equal(oldTranslated10Mil.coverage.complete, true, oldTranslated10Mil.warnings.join('; '));
+		const unverifiedVersion = await runPlan(install({ editorVersion: '4.2.0', pours: [pour(['R', 100, 200, 200, 100, 0, 0])], poured: [region(0, rawFirst, null)] }));
+		assert.equal(unverifiedVersion.coverage.complete, false, 'EDA 4.2 path units are not guessed');
+		assert.match(unverifiedVersion.warnings.join('; '), /host-version-unverified-for-conversion/);
+		const unverifiedStroke = await runPlan(install({ editorVersion: '4.1.78', pours: [pour(['R', 100, 200, 200, 100, 0, 0])], poured: [region(0.1, rawFirst, null)] }));
+		assert.equal(unverifiedStroke.coverage.complete, false, 'nonzero fill stroke remains unsupported');
 	});
 
 	await test('polygon-only rectangular outline is normalized into the closed board boundary', async () => {

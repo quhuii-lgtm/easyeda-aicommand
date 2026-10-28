@@ -577,20 +577,26 @@ await withTestTimers(async () => {
 		assert.equal(markerWrites, 0, 'macro must not execute a later write after cascade uncertainty')
 		assert.equal(state.deleteCalls, 1)
 	}
-	// getNetlist defaults to Protel2 and passes every SDK enum format through without a static blacklist.
+	// getNetlist defaults to Protel2; JLCEDA uses the file route while other enum formats pass through the SDK string API.
 	{
 		const received = []
-		globalThis.eda = { sch_Netlist: { getNetlist: async (...args) => { received.push(args); return 'net' } } }
+		const fileCalls = []
+		globalThis.eda = {
+			sch_Netlist: { getNetlist: async (...args) => { received.push(args); return 'net' } },
+			sch_ManufactureData: { getNetlistFile: async (...args) => { fileCalls.push(args); return { text: async () => 'file-net' } } },
+		}
 		const defaultResult = await getNetlist({}, {})
 		const explicitResult = await getNetlist({ netlistType: 'PADS' }, {})
-		await getNetlist({ netlistType: 'JLCEDA' }, {})
-		await getNetlist({ netlistType: 'EasyEDA' }, {})
+		const jlcResult = await getNetlist({ netlistType: 'JLCEDA' }, {})
+		const easyResult = await getNetlist({ netlistType: 'EasyEDA' }, {})
 		assert.equal(received[0][0], 'Protel2')
 		assert.equal(received[1][0], 'PADS')
-		assert.equal(received[2][0], 'JLCEDA')
-		assert.equal(received[3][0], 'EasyEDA')
+		assert.equal(received[2][0], 'EasyEDA')
+		assert.deepEqual(fileCalls, [[undefined, 'JLCEDA']])
 		assert.equal(defaultResult.netlistType, 'Protel2')
 		assert.equal(explicitResult.netlistType, 'PADS')
+		assert.equal(jlcResult.netlist, 'file-net')
+		assert.equal(easyResult.netlist, 'net')
 	}
 	// Unknown post-delete readback locks every later write, including an explicitly enabled source rewrite.
 	{
@@ -699,6 +705,8 @@ await withTestTimers(async () => {
 		}))
 		const created = []
 		globalThis.eda = {
+			dmt_SelectControl: { getCurrentDocumentInfo: async () => ({ documentType: 1, uuid: 'page-1' }) },
+			sys_FileManager: { getDocumentSource: async () => '{"type":"DOCHEAD","ticket":1}||{"docType":"SCH_PAGE","uuid":"page-1"}' },
 			sch_PrimitiveComponent: {
 				getAll: async () => components,
 				getAllPinsByPrimitiveId: async id => pinsById[id] ?? [],
@@ -709,8 +717,35 @@ await withTestTimers(async () => {
 			},
 		}
 		const result = await linkWire({ pins: ['U1.1', 'U2.1'] }, {})
-		assert.equal(result.route[1][1], -150, 'the ninth candidate clears all eight occupied layers')
-		assert.equal(created.length, 3)
+		assert.deepEqual(result.route[1], [30, 0], 'the first link segment exits the first pin along its outward rotation')
+		assert.deepEqual(result.route.at(-2), [130, 0], 'the final link segment approaches the second pin from its outward side')
+		assert.equal(created.length, 5, 'outward pin escape adds two bends around the pin tips')
+	}
+	// Two pins facing upward at different heights must bridge beyond both pin tips instead of
+	// trying an L route that backtracks over the second pin's escape segment.
+	{
+		const pinsById = {
+			U1: [{ getState_PinNumber: () => '1', getState_X: () => 0, getState_Y: () => 0, getState_Rotation: () => 90, getState_PinLength: () => 10, getState_NoConnected: () => false }],
+			U2: [{ getState_PinNumber: () => '1', getState_X: () => 100, getState_Y: () => 100, getState_Rotation: () => 90, getState_PinLength: () => 10, getState_NoConnected: () => false }],
+		}
+		const components = Object.keys(pinsById).map(designator => ({
+			getState_PrimitiveId: () => designator,
+			getState_Designator: () => designator,
+			getState_X: () => designator === 'U1' ? 0 : 100,
+			getState_Y: () => designator === 'U1' ? -50 : 50,
+		}))
+		globalThis.eda = {
+			dmt_SelectControl: { getCurrentDocumentInfo: async () => ({ documentType: 1, uuid: 'page-1' }) },
+			sys_FileManager: { getDocumentSource: async () => '{"type":"DOCHEAD","ticket":1}||{"docType":"SCH_PAGE","uuid":"page-1"}' },
+			sch_PrimitiveComponent: {
+				getAll: async () => components,
+				getAllPinsByPrimitiveId: async id => pinsById[id] ?? [],
+			},
+			sch_PrimitiveWire: { getAll: async () => [], create: async () => ({ getState_PrimitiveId: () => 'new-wire' }) },
+		}
+		const result = await linkWire({ pins: ['U1.1', 'U2.1'] }, {})
+		assert.deepEqual(result.route.slice(1, 4), [[0, 30], [0, 160], [100, 160]], 'default path rises beyond both upward pin tips before bridging')
+		assert.deepEqual(result.route.at(-2), [100, 130], 'the final leg approaches the second upward pin from outside')
 	}
 })
 

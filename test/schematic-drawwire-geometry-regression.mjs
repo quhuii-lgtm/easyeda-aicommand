@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { installVirtualClock } from './virtual-clock.mjs'
 import { buildSync } from 'esbuild'
 import { resolve } from 'node:path'
 
@@ -9,12 +10,15 @@ const built = buildSync({
 })
 const { schematicCommands, registerCommand } = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`)
 for (const command of schematicCommands) registerCommand(command)
-const drawWire = schematicCommands.find(item => item.name === 'schematic.drawWire').handler
+const drawWireHandler = schematicCommands.find(item => item.name === 'schematic.drawWire').handler
+const clock = installVirtualClock()
+try {
+const drawWire = params => drawWireHandler({ _timeoutMs: 1000, ...params })
 
 const props = { color: '#000000', width: 6, type: 0, net: 'SIG' }
 const attrsDefault = (wireId = 'wire-old') => [
-	{ id: 'attr-net', parentId: wireId, key: 'NET', value: 'SIG', visible: true, x: 1, y: 2, zIndex: 20 },
-	{ id: 'attr-relevance', parentId: wireId, key: 'Relevance', value: '1', visible: true, x: 3, y: 4, zIndex: 21 },
+	{ id: `attr-net-${wireId}`, parentId: wireId, key: 'NET', value: 'SIG', visible: true, x: 1, y: 2, zIndex: 20 },
+	{ id: `attr-relevance-${wireId}`, parentId: wireId, key: 'Relevance', value: '1', visible: true, x: 3, y: 4, zIndex: 21 },
 ]
 // Exact NET ATTR data fields read from audit-20261016/v034-a08-unnamed-same-net-request.json (identity is header-only).
 const sdkNetAttr = (id, parentId, value) => ({ id, x: 450, y: -600, rotation: null, color: null, fontFamily: null, fontSize: null, fontWeight: null, italic: null, underline: null, align: null, value, keyVisible: false, valueVisible: true, key: 'NET', fillColor: null, parentId, zIndex: 4 })
@@ -30,7 +34,7 @@ function makeHarness({ initialWire, initialWires, onCreate, attrMutation, nonTar
 		getState_Line: () => item.rawLine,
 		getState_Color: () => item.color ?? props.color,
 		getState_LineWidth: () => item.lineWidth ?? props.width,
-		getState_LineType: () => item.lineType ?? props.type,
+		getState_LineType: () => item.throwLineTypeGetter ? (() => { throw new Error('getter unavailable') })() : Object.hasOwn(item, 'lineType') ? item.lineType : props.type,
 		getState_Net: () => Object.hasOwn(item, 'net') ? item.net : props.net,
 	})
 	const source = () => {
@@ -39,7 +43,7 @@ function makeHarness({ initialWire, initialWires, onCreate, attrMutation, nonTar
 		for (const item of wires.values()) {
 			rows.push(`${JSON.stringify({ type: 'WIRE', id: item.id, ticket: ticket++ })}||${JSON.stringify({ zIndex: 0, ...(item.sourceDataLine ? { line: item.sourceDataLine } : {}) })}`)
 			for (const line of item.sourceLines ?? []) {
-				rows.push(`${JSON.stringify({ type: 'LINE', id: line.id, ticket: ticket++ })}||${JSON.stringify({ lineGroup: item.id, startX: line.points[0], startY: -line.points[1], endX: line.points[2], endY: -line.points[3], strokeColor: line.color ?? item.color ?? props.color, strokeWidth: line.width ?? item.lineWidth ?? props.width, strokeStyle: line.style ?? 'SOLID' })}`)
+			rows.push(`${JSON.stringify({ type: 'LINE', id: line.id, ticket: ticket++ })}||${JSON.stringify({ lineGroup: item.id, startX: line.points[0], startY: -line.points[1], endX: line.points[2], endY: -line.points[3], strokeColor: Object.hasOwn(line, 'color') ? line.color : item.color ?? props.color, strokeWidth: Object.hasOwn(line, 'width') ? line.width : item.lineWidth ?? props.width, strokeStyle: Object.hasOwn(line, 'style') ? line.style : 'SOLID' })}`)
 			}
 		}
 		for (const attr of attrs) {
@@ -81,6 +85,28 @@ function makeHarness({ initialWire, initialWires, onCreate, attrMutation, nonTar
 }
 
 {
+	const harness = makeHarness({ onCreate: ({ wires, createWire }) => {
+		const item = { id: 'wire-default-null-style', rawLine: [0, 0, 10, 0], sourceLines: [{ id: 'line-null-style', points: [0, 0, 10, 0], style: null }], color: '#000000', lineWidth: 6, lineType: null, net: '' }
+		wires.set(item.id, item)
+		return createWire(item)
+	} })
+	const result = await drawWire({ points: [[0, 0], [10, 0]] })
+	assert.deepEqual(result.primitiveIds, ['wire-default-null-style'], 'a successful null lineType getter and null source style are a valid default style')
+	assert.equal(harness.calls, 1)
+}
+
+{
+	const harness = makeHarness({ onCreate: ({ wires, createWire }) => {
+		const item = { id: 'wire-failed-style-getter', rawLine: [0, 0, 10, 0], sourceLines: [{ id: 'line-failed-style', points: [0, 0, 10, 0], style: null }], color: '#000000', lineWidth: 6, lineType: null, throwLineTypeGetter: true, net: '' }
+		wires.set(item.id, item)
+		return createWire(item)
+	} })
+	const error = await captureError(() => drawWire({ points: [[0, 0], [10, 0]] }))
+	assert.equal(harness.calls, 1)
+	assert.equal(error.cause?.partial, true, 'a throwing getter must not be confused with a valid null style')
+}
+
+{
 	const noNet = { ...props, net: undefined }
 	const harness = makeHarness({ onCreate: ({ wires, createWire }) => {
 		const item = { id: 'wire-auto-relevance', rawLine: [0, 0, 10, 0], sourceLines: [{ id: 'line-auto-relevance', points: [0, 0, 10, 0] }], ...noNet }
@@ -93,6 +119,46 @@ function makeHarness({ initialWire, initialWires, onCreate, attrMutation, nonTar
 	} })
 	const result = await drawWire({ points: [[0, 0], [10, 0]] })
 	assert.deepEqual(result.primitiveIds, ['wire-auto-relevance'], 'new WIRE automatic Relevance ATTR is allowed with no net')
+}
+
+{
+	const existingPoint = { id: 'wire-existing-point', rawLine: [5, 5, 5, 5], sourceLines: [{ id: 'line-existing-point', points: [5, 5, 5, 5] }], ...props }
+	const harness = makeHarness({ initialWire: existingPoint, onCreate: ({ wires, createWire }) => {
+		const item = { id: 'wire-separate-from-point', rawLine: [20, 20, 30, 20], sourceLines: [{ id: 'line-separate-from-point', points: [20, 20, 30, 20] }], ...props }
+		wires.set(item.id, item)
+		return createWire(item)
+	} })
+	const result = await drawWire({ points: [[20, 20], [30, 20]] })
+	assert.deepEqual(result.primitiveIds, ['wire-separate-from-point'], 'an unrelated existing zero-length point must be preserved exactly')
+}
+
+{
+	const existing = { id: 'wire-index-normalization', rawLine: [100, 100, 110, 100], sourceLines: [{ id: 'line-index-normalization', points: [100, 100, 110, 100] }], ...props }
+	const harness = makeHarness({ initialWire: existing, attrMutation: attrs => attrs.map(attr => attr.parentId === existing.id ? { ...attr, zIndex: attr.zIndex + 2 } : attr), onCreate: ({ wires, createWire }) => {
+		const item = { id: 'wire-index-trigger', rawLine: [200, 200, 210, 200], sourceLines: [{ id: 'line-index-trigger', points: [200, 200, 210, 200] }], ...props }
+		wires.set(item.id, item)
+		return createWire(item)
+	} })
+	const result = await drawWire({ points: [[200, 200], [210, 200]] })
+	assert.deepEqual(result.primitiveIds, ['wire-index-trigger'], 'a valid unrelated display-index shift is not an electrical mismatch')
+	assert.deepEqual(result.drawingOrderChanges.map(change => [change.before, change.after]), [[20, 22], [21, 23]])
+}
+
+{
+	const existing = { id: 'wire-label-recreated', rawLine: [100, 100, 110, 100], sourceLines: [{ id: 'line-label-recreated-old', points: [100, 100, 110, 100] }], ...props }
+	const harness = makeHarness({ initialWire: existing, onCreate: ({ wires, attrs, createWire }) => {
+		const item = wires.get(existing.id)
+		item.rawLine = [100, 100, 110, 100, 120, 100]
+		item.sourceLines = [
+			{ id: 'line-label-recreated-old', points: [100, 100, 110, 100] },
+			{ id: 'line-label-recreated-new', points: [110, 100, 120, 100] },
+		]
+		const oldIndex = attrs.findIndex(attr => attr.parentId === existing.id && attr.key === 'NET')
+		if (oldIndex >= 0) attrs.splice(oldIndex, 1, { id: 'attr-net-recreated-old', x: 105, y: -100, rotation: null, color: null, fontFamily: null, fontSize: null, fontWeight: null, italic: null, underline: null, align: null, value: 'SIG', keyVisible: false, valueVisible: true, key: 'NET', fillColor: null, parentId: existing.id, zIndex: 24 })
+		return createWire(item)
+	} })
+	const result = await drawWire({ points: [[110, 100], [120, 100]] })
+	assert.deepEqual(result.primitiveIds, [existing.id], 'an unchanged inherited NET may be recreated on the affected wire')
 }
 
 {
@@ -204,7 +270,51 @@ for (const scenario of [
 	}, attrMutation: attrs => attrs.map(attr => ({ ...attr, zIndex: attr.zIndex + (attr.parentId === 'wire-old' ? 2 : 1) })) })
 	const result = await drawWire({ points: [[0, 0], [10, 0]] })
 	assert.equal(result.primitiveIds.length, 2, 'both existing WIREs should retain their requested portions')
-	assert.deepEqual(result.drawingOrderChanges.map(change => [change.wireId, change.after - change.before]), [['wire-second', 1], ['wire-second', 1]], 'WIRE with one added LINE advances by one even when the page has more added LINEs')
+	assert.deepEqual(result.drawingOrderChanges.map(change => [change.wireId, change.after - change.before]), [['wire-old', 2], ['wire-old', 2], ['wire-second', 1], ['wire-second', 1]], 'drawing order follows each wire\'s final per-ATTR zIndex regardless of page-wide LINE count')
+}
+
+{
+	const harness = makeHarness({ initialWire: { id: 'wire-old', rawLine: [400, 600, 500, 600], sourceLines: [{ id: 'line-old', points: [400, 600, 500, 600] }], ...props }, onCreate: ({ wires, attrs, createWire }) => {
+		const item = wires.get('wire-old')
+		item.rawLine = [400, 600, 500, 600, 500, 700, 500, 600]
+		item.sourceLines.push({ id: 'line-added', points: [500, 600, 500, 700] })
+		attrs.push({ id: 'attr-net-duplicate', parentId: 'wire-old', key: 'NET', value: 'SIG', zIndex: 24 })
+		return createWire(item)
+	} })
+	const result = await drawWire({ points: [[500, 600], [500, 700]], net: 'SIG' })
+	assert.equal(result.primitiveIds.includes('wire-old'), true, 'duplicate same-parent NET value remains a legal repeated record')
+}
+
+{
+	const harness = makeHarness({ initialWire: { id: 'wire-old', rawLine: [400, 600, 500, 600], sourceLines: [{ id: 'line-old', points: [400, 600, 500, 600] }], ...props }, onCreate: ({ wires, createWire }) => { const item = wires.get('wire-old'); item.rawLine = [400, 600, 500, 600, 500, 700, 500, 600]; item.sourceLines.push({ id: 'line-added', points: [500, 600, 500, 700] }); return createWire(item) }, attrMutation: attrs => attrs.map(attr => attr.key === 'NET' ? { ...attr, zIndex: attr.zIndex + 2 } : attr) })
+	const result = await drawWire({ points: [[500, 600], [500, 700]] })
+	assert.deepEqual(result.drawingOrderChanges.map(change => [change.id, change.before, change.after]), [['attr-net-wire-old', 20, 22]], 'one ATTR zIndex may move while sibling ATTR remains unchanged')
+	assert.equal(harness.calls, 1)
+}
+
+for (const damage of ['delete', 'value', 'parentId', 'added']) {
+	const harness = makeHarness({ initialWires: [{ id: 'wire-old', rawLine: [400, 600, 500, 600], sourceLines: [{ id: 'line-old', points: [400, 600, 500, 600] }], ...props }, { id: 'wire-dummy', rawLine: [700, 0, 800, 0], sourceLines: [{ id: 'line-dummy', points: [700, 0, 800, 0] }], ...props }],
+		extraInitialAttrs: [{ id: 'attr-custom', parentId: 'wire-dummy', key: 'Custom', value: 'keep-me', visible: true, x: 8, y: 9, zIndex: 30 }],
+		onCreate: ({ wires, attrs, createWire }) => {
+			const item = wires.get('wire-old')
+			item.rawLine = [400, 600, 500, 600, 500, 700, 500, 600]
+			item.sourceLines.push({ id: 'line-added', points: [500, 600, 500, 700] })
+			wires.delete('wire-dummy')
+			const carrier = { id: 'wire-carrier', rawLine: [700, 0, 800, 0], sourceLines: [{ id: 'line-carrier', points: [700, 0, 800, 0] }], ...props }
+			wires.set(carrier.id, carrier)
+			for (const attr of attrs.filter(record => record.parentId === 'wire-dummy' && ['NET', 'Relevance'].includes(record.key))) attr.parentId = carrier.id
+			const custom = attrs.find(attr => attr.id === 'attr-custom')
+			if (damage === 'parentId') custom.parentId = carrier.id
+			else if (damage === 'value') custom.value = 'corrupted'
+			else if (damage === 'delete') attrs.splice(attrs.indexOf(custom), 1)
+			else attrs.push({ id: 'attr-custom-new', parentId: carrier.id, key: 'Custom', value: 'unexpected', visible: true, x: 1, y: 2, zIndex: 31 })
+			return createWire(item)
+		},
+	})
+	const error = await drawWire({ points: [[500, 600], [500, 700]] }).then(() => undefined, caught => caught)
+	assert.ok(error, 'deleting a WIRE must not silently accept custom ATTR damage')
+	assert.ok(/普通导线ATTR/.test(error.cause?.result?.partial?.reason ?? ''), 'the dedicated ordinary WIRE ATTR guard rejects the corruption despite a geometrically preserved carrier')
+	assert.equal(harness.calls, 1)
 }
 
 async function captureError(fn) {
@@ -241,13 +351,74 @@ const appendToOld = ({ wires, attrs, line, createWire, rawLine }) => {
 	return createWire(item)
 }
 
+const appendPolylineToOld = ({ wires, line, createWire, calls }) => {
+	const item = wires.get('wire-old')
+	if (!Array.isArray(line) || !Array.isArray(item.rawLine)) throw new Error(`bad polyline test input at ${calls}: line=${JSON.stringify(line)} raw=${JSON.stringify(item.rawLine)}`)
+	item.rawLine = [...item.rawLine, ...line]
+	item.sourceLines.push({ id: `line-added-${calls}`, points: line })
+	return createWire(item)
+}
+
+{
+	const harness = makeHarness({ initialWire: initial(), onCreate: appendPolylineToOld, attrMutation: attrs => attrs.map(attr => attr.parentId === 'wire-old' ? { ...attr, zIndex: attr.zIndex + 1 } : attr) })
+	const result = await drawWire({ points: [[500, 600], [510, 600], [520, 600]] })
+	assert.deepEqual(result.drawingOrderChanges.map(change => [change.id, change.before, change.after]), [
+		['attr-net-wire-old', 20, 22], ['attr-relevance-wire-old', 21, 23],
+	], 'the report uses the net change from the initial ATTR snapshot after repeated reindexing')
+	assert.equal(harness.calls, 2)
+}
+
+{
+	let mutationCount = 0
+	const harness = makeHarness({ initialWire: initial(), onCreate: appendPolylineToOld, attrMutation: attrs => { mutationCount++; return attrs.map(attr => attr.parentId === 'wire-old' ? { ...attr, zIndex: attr.zIndex + (mutationCount === 1 ? 1 : -1) } : attr) } })
+	const result = await drawWire({ points: [[500, 600], [510, 600], [520, 600]] })
+	assert.equal(Object.hasOwn(result, 'drawingOrderChanges'), false, 'reindexing back to the initial values produces no report')
+}
+
+{
+	let mutationCount = 0
+	const harness = makeHarness({ onCreate: ({ wires, line, createWire }) => {
+		let item = wires.get('wire-created-for-order')
+		if (!item) {
+			item = { id: 'wire-created-for-order', rawLine: line, sourceLines: [{ id: 'line-created-1', points: line }], net: '' }
+			wires.set(item.id, item)
+		}
+		else {
+			item.rawLine = [...item.rawLine, ...line]
+			item.sourceLines.push({ id: 'line-created-2', points: line })
+		}
+		return createWire(item)
+	}, autoAttrs: ({ attrs, wires }) => {
+		const item = wires.get('wire-created-for-order')
+		if (!item || attrs.some(attr => attr.parentId === item.id)) return attrs
+		return [...attrs, sdkNetAttr('attr-net-created-for-order', item.id, ''), sdkRelevanceAttr('attr-relevance-created-for-order', item.id)]
+	}, attrMutation: attrs => { mutationCount++; return mutationCount === 2 ? attrs.map(attr => attr.parentId === 'wire-created-for-order' ? { ...attr, zIndex: attr.zIndex + 1 } : attr) : attrs } })
+	const result = await drawWire({ points: [[0, 0], [10, 0], [20, 0]] })
+	assert.equal(Object.hasOwn(result, 'drawingOrderChanges'), false, 'ATTRs created during this command are not initial-to-final changes')
+	assert.equal(harness.calls, 2)
+}
+
+{
+	let mutationCount = 0
+	const harness = makeHarness({ initialWire: initial(), onCreate: ({ wires, attrs, line, createWire, calls }) => {
+		const result = appendPolylineToOld({ wires, line, createWire, calls })
+		if (calls === 2) {
+			const index = attrs.findIndex(attr => attr.parentId === 'wire-old' && attr.key === 'NET')
+			attrs.splice(index, 1, { ...sdkNetAttr('attr-net-rebuilt-after-write', 'wire-old', 'SIG'), zIndex: attrs[index].zIndex + 1 })
+		}
+		return result
+	}, attrMutation: attrs => { mutationCount++; return mutationCount === 1 ? attrs.map(attr => attr.parentId === 'wire-old' && attr.key === 'NET' ? { ...attr, zIndex: attr.zIndex + 1 } : attr) : attrs } })
+	const result = await drawWire({ points: [[500, 600], [510, 600], [520, 600]] })
+	assert.equal(Object.hasOwn(result, 'drawingOrderChanges'), false, 'a removed or recreated ATTR ID is not reported as a surviving initial-to-final change')
+}
+
 {
 	const harness = makeHarness({ initialWire: initial(), onCreate: args => appendToOld({ ...args, rawLine: [500, 600, 400, 600, 500, 700, 500, 600] }), attrMutation: attrs => attrs.map(attr => ({ ...attr, zIndex: attr.zIndex + 1 })) })
 	const result = await drawWire({ points: [[500, 600], [500, 700]] })
 	assert.deepEqual(result.primitiveIds, ['wire-old'], 'the real eight-number SDK representation must resolve as independent four-tuples')
 	assert.deepEqual(result.drawingOrderChanges, [
-		{ id: 'attr-net', before: 20, after: 21, wireId: 'wire-old' },
-		{ id: 'attr-relevance', before: 21, after: 22, wireId: 'wire-old' },
+		{ id: 'attr-net-wire-old', before: 20, after: 21, wireId: 'wire-old' },
+		{ id: 'attr-relevance-wire-old', before: 21, after: 22, wireId: 'wire-old' },
 	])
 }
 
@@ -321,9 +492,15 @@ for (const change of [
 		}
 		return createWire(item)
 	}, attrMutation: attrs => attrs.map(attr => ({ ...attr, zIndex: attr.zIndex + change.delta })) })
-	const error = await captureError(() => drawWire({ points: [[500, 600], [500, 700]] }))
+	if (change.newLine) {
+		const result = await drawWire({ points: [[500, 600], [500, 700]] })
+		assert.equal(result.primitiveIds.length, 1, 'pure legal display reindexing is independent of added LINE count')
+	}
+	else {
+		const error = await captureError(() => drawWire({ points: [[500, 600], [500, 700]] }))
+		assert.equal(error.cause?.partial, true, 'zIndex drift cannot substitute for the requested geometry')
+	}
 	assert.equal(harness.calls, 1)
-	assert.equal(error.cause?.partial, true, 'zIndex changes without the exact appended-line count must fail')
 }
 
 {
@@ -349,4 +526,20 @@ for (const change of [
 	assert.equal(result.primitiveIds[0], 'wire-old', 'source log record ordering alone must not alter ATTR validation')
 }
 
+{
+ const harness = makeHarness({
+  initialWire: {id:'old-owner',rawLine:[0,0,10,0],sourceLines:[{id:'old-line',points:[0,0,10,0]}],...props},
+  extraInitialAttrs:[{id:'ordinary-attr',parentId:'old-owner',key:'Custom',value:'keep'}],
+  onCreate:({wires,createWire})=>{ wires.clear();const item={id:'new-owner',rawLine:[0,0,20,0],sourceLines:[{id:'new-line',points:[0,0,20,0]}],...props};wires.set(item.id,item);return createWire(item) },
+  nonTargetAttrMutation:attrs=>attrs.map(a=>({...a,parentId:a.id==='ordinary-attr'?'component-foreign':'new-owner'}))
+ })
+ let error
+ try { await drawWire({points:[[10,0],[20,0]]}) } catch(e) {error=e}
+ assert.equal(error?.cause?.partial,true,'a merge must reject an old WIRE attribute reparented onto a non-wire object')
+ assert.equal(harness.calls,1)
+ assert.match(error.cause.result.partial.reason,/改归属|非导线/)
+}
 console.log('schematic-drawwire-geometry-regression: PASS')
+
+} finally { clock.restore() }
+

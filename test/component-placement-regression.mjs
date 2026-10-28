@@ -28,6 +28,8 @@ function fixture(options = {}) {
 	let projectExportCalls = 0;
 	let projectLibraryUuidCalls = 0;
 	let writeCalls = 0;
+	const lookupCalls = [];
+	let deviceGetCalls = 0;
 	let instanceFootprintUuid = options.instanceFootprint === undefined ? projectUuid : options.instanceFootprint?.uuid ?? null;
 	const created = {
 		getState_PrimitiveId: () => 'component-1',
@@ -41,6 +43,7 @@ function fixture(options = {}) {
 		libraryUuid,
 		association: { footprintUuid: libraryFootprintUuid, footprint: { uuid: libraryFootprintUuid, libraryUuid } },
 	};
+	let currentDevice = device;
 	const api = {
 		dmt_SelectControl: { getCurrentDocumentInfo: async () => options.initialFocusError ? Promise.reject(new Error('focus unavailable')) : focus },
 		lib_LibrariesList: { getProjectLibraryUuid: async () => {
@@ -50,8 +53,22 @@ function fixture(options = {}) {
 			return options.projectLibraryUuid ?? 'project-library-1';
 		} },
 		lib_Device: {
-			getByLcscIds: async () => [{ uuid: 'device-1', libraryUuid }],
-			get: async () => device,
+			getByLcscIds: async (...args) => {
+				lookupCalls.push(args);
+				const item = options.lookupSequence?.[lookupCalls.length - 1] ?? options.lookupResult ?? { uuid: 'device-1', libraryUuid };
+				return item ? [item] : [];
+			},
+			get: async (uuid, selectedLibraryUuid) => {
+				deviceGetCalls++;
+				currentDevice = options.devicesByIdentity?.[`${selectedLibraryUuid}:${uuid}`] ?? device;
+				if (options.deviceSequence?.length)
+					currentDevice = options.deviceSequence[Math.min(deviceGetCalls - 1, options.deviceSequence.length - 1)];
+				if (options.deviceSequence?.length) {
+					const fp = currentDevice?.association?.footprint?.uuid ?? currentDevice?.association?.footprintUuid;
+					instanceFootprintUuid = fp ? (currentDevice.projectFootprintUuid ?? projectUuid) : null;
+				}
+				return currentDevice;
+			},
 		},
 		sys_FileManager: {
 			getDocumentFootprintSources: async () => {
@@ -71,7 +88,12 @@ function fixture(options = {}) {
 				const entryUuid = instanceFootprintUuid ?? projectUuid;
 				const zip = new JSZip();
 				if (!options.projectEntryMissing)
-					zip.file(`FOOTPRINT/${entryUuid}.efoo`, options.projectSource ?? footprintSource(options.footprintOptions));
+					zip.file(`FOOTPRINT/${entryUuid}.efoo`, options.projectSource ?? footprintSource({
+						...options.footprintOptions,
+						...(options.deviceSequence?.length && currentDevice?.association?.footprint
+							? { source: `${currentDevice.association.footprint.uuid}|${currentDevice.association.footprint.libraryUuid}` }
+							: {}),
+					}));
 				const data = options.projectBadZip ? new Uint8Array([1, 2, 3, 4]) : await zip.generateAsync({ type: 'uint8array' });
 				if (options.changeInstanceAfterExport)
 					instanceFootprintUuid = 'changed-footprint';
@@ -127,6 +149,7 @@ function fixture(options = {}) {
 		get createCalls() { return createCalls; },
 		get resourceCalls() { return resourceCalls; },
 		get projectExportCalls() { return projectExportCalls; },
+		lookupCalls,
 	get projectLibraryUuidCalls() { return projectLibraryUuidCalls; },
 		get writeCalls() { return writeCalls; },
 	};
@@ -250,6 +273,17 @@ async function main() {
 			assert.deepEqual(f.api.createArgs, [{ libraryUuid, uuid: 'device-1' }, 10, 20, undefined, undefined, undefined, false, true], 'create reference and BOM/PCB arguments are preserved');
 			assert.equal(result.primitiveId, 'component-1');
 			assert.equal(result.designator, 'TP1');
+			assert.deepEqual(result.device, {
+				requestedLcscId: 'C123', requestedLibraryUuid: null,
+				selectedDeviceUuid: 'device-1', selectedLibraryUuid: libraryUuid,
+			}, 'reports requested and selected device identity');
+			assert.equal(result.placementVerified, true, 'instance placement and readback are explicitly verified');
+			assert.equal(result.footprintVerified, true, 'library footprint and source are independently verified');
+			assert.equal(result.footprintStatus, 'verified');
+			assert.equal(result.pcbReady, true, 'verified footprint and pin-to-pad map are scoped as PCB readiness');
+			assert.equal(result.pcbReadyScope, 'footprint-and-instance-pin-pad-map-only');
+			assert.equal(f.lookupCalls[0].length, 1, 'unspecified library preserves the original one-argument SDK call');
+			assert.deepEqual(f.lookupCalls[0][0], ['C123']);
 			assert.deepEqual(result.readback.pinPadMap, { 1: ['pad-a', 'pad-b'], 2: ['pad-c'] }, 'pin numbers map to all matching footprint PAD ids');
 			assert.equal(result.readback.pinMapScope, 'placed-instance-only');
 			assert.equal(result.readback.footprint.projectUuid, projectUuid, 'project resource UUID stays distinct from library footprint UUID');
@@ -272,6 +306,9 @@ async function main() {
 		{
 			const f = fixture({ device: { uuid: 'device-1', libraryUuid, association: { footprintUuid: libraryFootprintUuid } } });
 			const result = await mod.placeDeviceSafely(f.api, { deviceUuid: 'device-1', libraryUuid, x: 1, y: 2 });
+			assert.equal(result.device.requestedLibraryUuid, libraryUuid, 'explicit device lookup records requested library identity');
+			assert.equal(result.device.selectedDeviceUuid, 'device-1');
+			assert.equal(result.device.selectedLibraryUuid, libraryUuid);
 			assert.equal(result.readback.footprint.resourceVerified, true, 'flat footprintUuid uses the full device libraryUuid');
 		}
 
@@ -346,6 +383,62 @@ async function main() {
 			const result = await mod.placeDeviceSafely(f.api, { deviceUuid: 'device-1', libraryUuid, x: 1, y: 2 });
 			assert.equal(result.readback.footprint.libraryFootprint, 'none', 'library device without footprint remains placeable');
 			assert.equal(result.readback.footprint.resourceVerified, false, 'no footprint resource is not claimed as verified');
+			assert.equal(result.placementVerified, true, 'placing a symbol without a footprint is still a verified placement');
+			assert.equal(result.footprintVerified, false);
+			assert.equal(result.footprintStatus, 'missing');
+			assert.equal(result.pcbReady, false, 'missing footprint cannot be reported PCB ready');
+			assert.match(result.warnings[0], /明确选择带封装的库器件/);
+		}
+
+		{
+			const deviceWithoutFootprint = { uuid: 'device-no-fp', libraryUuid: 'library-no-fp', association: {} };
+			const deviceWithFootprint = {
+				uuid: 'device-with-fp', libraryUuid: 'library-with-fp',
+				association: { footprintUuid: 'footprint-with-fp', footprint: { uuid: 'footprint-with-fp', libraryUuid: 'library-with-fp' } },
+			};
+			const f = fixture({
+				lookupSequence: [
+					{ uuid: deviceWithoutFootprint.uuid, libraryUuid: deviceWithoutFootprint.libraryUuid },
+					{ uuid: deviceWithFootprint.uuid, libraryUuid: deviceWithFootprint.libraryUuid },
+				],
+				deviceSequence: [deviceWithoutFootprint, deviceWithFootprint],
+			});
+			const without = await mod.placeDeviceSafely(f.api, { lcscId: 'C123', x: 1, y: 2 });
+			const withFootprint = await mod.placeDeviceSafely(f.api, { lcscId: 'C123', x: 3, y: 4 });
+			assert.equal(without.device.selectedDeviceUuid, deviceWithoutFootprint.uuid, 'first same-C result identity is explicit');
+			assert.equal(without.footprintStatus, 'missing', 'first same-C result remains a placeable symbol with no footprint');
+			assert.equal(without.footprintVerified, false);
+			assert.equal(without.pcbReady, false);
+			assert.equal(withFootprint.device.selectedDeviceUuid, deviceWithFootprint.uuid, 'second same-C result uses its own selected device identity');
+			assert.equal(withFootprint.footprintStatus, 'verified', 'second same-C result independently verifies its footprint');
+			assert.equal(withFootprint.footprintVerified, true);
+			assert.equal(withFootprint.pcbReady, true, 'later footprint-bearing selection is not tainted by the earlier result');
+		}
+
+		{
+			const f = fixture({
+				lookupResult: { uuid: 'device-explicit', libraryUuid: 'library-explicit' },
+				device: {
+					uuid: 'device-explicit', libraryUuid: 'library-explicit',
+					association: { footprintUuid: libraryFootprintUuid, footprint: { uuid: libraryFootprintUuid, libraryUuid: 'library-explicit' } },
+				},
+				footprintOptions: { source: `${libraryFootprintUuid}|library-explicit` },
+			});
+			const result = await mod.placeDeviceSafely(f.api, { lcscId: 'C123', libraryUuid: 'library-explicit', x: 1, y: 2 });
+			assert.equal(f.lookupCalls[0].length, 2, 'explicit library uses the two-argument SDK overload');
+			assert.deepEqual(f.lookupCalls[0], [['C123'], 'library-explicit'], 'explicit library is forwarded to the SDK lookup');
+			assert.equal(result.device.requestedLibraryUuid, 'library-explicit');
+			assert.equal(result.device.selectedLibraryUuid, 'library-explicit');
+		}
+
+		{
+			const f = fixture({ lookupResult: { uuid: 'device-wrong-library', libraryUuid: 'library-other' } });
+			await assert.rejects(mod.placeDeviceSafely(f.api, { lcscId: 'C123', libraryUuid: 'library-requested', x: 1, y: 2 }), error => {
+				assert.equal(error.partial, false, 'wrong-library lookup is rejected before placement');
+				assert.match(error.message, /非请求库的结果/);
+				return true;
+			});
+			assert.equal(f.createCalls, 0, 'wrong library causes zero create calls');
 		}
 
 		{

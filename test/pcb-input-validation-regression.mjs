@@ -263,4 +263,15 @@ function installFreerouting({ jobState = 'READY_TO_START', jobStates, failJobSta
 	assert.equal(calls.some(call => call.method === 'PUT'), false)
 }
 
-console.log('PASS PCB input validation, conversions, export options, and confirmed auto-route cancellation')
+{
+	globalThis.eda = { pcb_PrimitiveComponent: {
+		getAll: async () => [{ getState_Designator: () => 'USB1', getState_PrimitiveId: () => 'usb-polygon', getState_Layer: () => 1 }],
+		getAllPinsByPrimitiveId: async () => [{ getState_X: () => 100, getState_Y: () => 200, getState_Rotation: () => 0, getState_Pad: () => ['POLYGON', [0, 0, 20, 0, 20, 10, 0, 10]] }],
+	} }
+	assert.match(command('pcb.checkPlacement').returns, /skippedUnsupported\?: \[\{ designator, primitiveId, padIndex, reason \}\]/)
+	const result = await command('pcb.checkPlacement').handler({})
+	assert.equal(result.complete, false)
+	assert.deepEqual(result.skippedUnsupported.map(x => ({ designator: x.designator, primitiveId: x.primitiveId, padIndex: x.padIndex })), [{ designator: 'USB1', primitiveId: 'usb-polygon', padIndex: 1 }])
+	assert.deepEqual(result.skippedUnsupported[0], { designator: 'USB1', primitiveId: 'usb-polygon', padIndex: 1, reason: 'pad 1 形状 POLYGON 当前未支持；未纳入间距检查' })
+}
+console.log('PASS PCB input validation, conversions, export options, polygon skip identity, and confirmed auto-route cancellation')

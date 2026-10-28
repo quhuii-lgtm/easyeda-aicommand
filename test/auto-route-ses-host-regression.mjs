@@ -52,6 +52,20 @@ const unknownHoleSnapshot = await readRouteSnapshot({
 }, async () => {})
 assert.equal('holeDiameterMil' in unknownHoleSnapshot.vias[0], false, 'an unavailable baseline hole diameter remains unknown')
 assert.deepEqual(snapshot.layers, [{ id: 1, name: 'TopLayer', type: 'SIGNAL' }])
+const layerStatusSnapshot = await readRouteSnapshot({
+	...api,
+	pcb_Layer: { getAllLayers: async () => [
+		{ id: 1, name: 'Top Layer', type: 'SIGNAL', layerStatus: 1 },
+		{ id: 15, name: 'Inner1', type: 'SIGNAL', layerStatus: 1 },
+		{ id: 16, name: 'Inner2', type: 'SIGNAL', layerStatus: 1 },
+		{ id: 17, name: 'Inner3', type: 'SIGNAL', layerStatus: 0 },
+	] },
+}, async () => {})
+assert.deepEqual(layerStatusSnapshot.layers.slice(1), [
+	{ id: 15, name: 'Inner1', type: 'SIGNAL', layerStatus: 1 },
+	{ id: 16, name: 'Inner2', type: 'SIGNAL', layerStatus: 1 },
+	{ id: 17, name: 'Inner3', type: 'SIGNAL', layerStatus: 0 },
+], 'snapshot carries enabled-layer state without converting visibility')
 assert.equal(focusChecks.length, 12, 'focus is asserted before and after each SDK/source read')
 
 const artHeader = JSON.stringify({ type: 'DOCHEAD', ticket: 1, data: { docType: 'PCB', uuid: 'pcb-A' } })

@@ -21,9 +21,19 @@ let checks = 0
 async function check(name, fn) { await fn(); checks++; console.log(`ok ${checks} - ${name}`) }
 
 function physSource(ids = [1, 2, 15, 16], thicknesses = {}) {
-  return ids.map((id) => `${JSON.stringify({ type: 'LAYER_PHYS', id: JSON.stringify(['LAYER_PHYS', id]) })}||${JSON.stringify({ material: 'Copper', thickness: thicknesses[id] ?? (id < 15 ? 2.756 : 1.378) })}|`).join('\n')
+  const head = `${JSON.stringify({ type: 'DOCHEAD' })}||${JSON.stringify({ docType: 'PCB', uuid: 'dfm-test' })}|`
+  return [head, ...ids.map((id) => `${JSON.stringify({ type: 'LAYER_PHYS', ticket: id + 10, id: JSON.stringify(['LAYER_PHYS', id]) })}||${JSON.stringify({ material: 'Copper', thickness: thicknesses[id] ?? (id < 15 ? 2.756 : 1.378) })}|`)].join('\n')
 }
 const defaultPhys = physSource()
+// Exact copper-layer source rows captured from the real host baseline
+// b-development-20261021/evidence/b8-host-pcb-before-source.json.
+const hostCopperPhys = [
+  '{"type":"DOCHEAD"}||{"docType":"PCB","uuid":"3883ab720d203769"}|',
+  '{"type":"LAYER_PHYS","ticket":67,"id":"[\\"LAYER_PHYS\\",1]"}||{"material":null,"thickness":1.379,"permittivity":0,"lossTangent":0,"isKeepIsland":true,"zIndex":1000}|',
+  '{"type":"LAYER_PHYS","ticket":69,"id":"[\\"LAYER_PHYS\\",15]"}||{"material":null,"thickness":1.378,"permittivity":0,"lossTangent":0,"isKeepIsland":true,"zIndex":1001}|',
+  '{"type":"LAYER_PHYS","ticket":71,"id":"[\\"LAYER_PHYS\\",16]"}||{"material":null,"thickness":1.378,"permittivity":0,"lossTangent":0,"isKeepIsland":true,"zIndex":1003}|',
+  '{"type":"LAYER_PHYS","ticket":73,"id":"[\\"LAYER_PHYS\\",2]"}||{"material":null,"thickness":1.378,"permittivity":0,"lossTangent":0,"isKeepIsland":true,"zIndex":9000}|',
+].join('\n')
 function makeSdk({ source = defaultPhys, sourceError, sourceErrorAfterReads, layerCount = 4, layerRows, nets = [], netRead, pads = [], lines = [], lineIds, padIds, outline = false, primitiveGetAllResult } = {}) {
   let sourceReads = 0
   const base = {
@@ -143,7 +153,8 @@ await check('完整板框下，未用铜层不计入设计层数且 SHOW/HIDDEN 
   const result = await runPcb(makeSdk({ layerRows, layerCount: 4, outline: true }))
   assert.ok(!result.issues.some(issue => issue.code === 'design_copper_layer_count_mismatch'))
   assert.equal(result.reportedCopper.status, 'available')
-  assert.equal(result.reportedCopper.matchesTarget, true)
+  assert.equal(result.reportedCopper.matchesTarget, null)
+  assert.deepEqual(result.reportedCopper.differences, [])
 })
 
 await check('完整板框下，外层底铜旁证缺失只在reportedCopper说明', async () => {
@@ -168,6 +179,84 @@ await check('完整板框下，图纸铜厚旁证无效只在reportedCopper说�
   assert.ok(result.reportedCopper.messages.some(message => message.includes('2')))
   assert.ok(result.reportedCopper.messages.some(message => message.includes('15')))
   assert.ok(!result.issues.some(issue => issue.code.includes('layer_phys')))
+})
+
+await check('真实主机基线仅保留 LAYER_PHYS 原值及来源，不猜单位或换算铜厚', async () => {
+  const result = await runPcb(makeSdk({ source: hostCopperPhys, outline: true }))
+  assert.equal(result.reportedCopper.status, 'available')
+  assert.equal(result.reportedCopper.matchesTarget, null)
+  assert.deepEqual(result.reportedCopper.differences, [])
+  assert.deepEqual(result.reportedCopper.layers.map(({ layerId, rawThickness, sourceType, sourceTicket, unitStatus, thicknessMil, copperOz }) => ({ layerId, rawThickness, sourceType, sourceTicket, unitStatus, thicknessMil, copperOz })), [
+    { layerId: 1, rawThickness: 1.379, sourceType: 'LAYER_PHYS', sourceTicket: 67, unitStatus: 'unconfirmed', thicknessMil: null, copperOz: null },
+    { layerId: 15, rawThickness: 1.378, sourceType: 'LAYER_PHYS', sourceTicket: 69, unitStatus: 'unconfirmed', thicknessMil: null, copperOz: null },
+    { layerId: 16, rawThickness: 1.378, sourceType: 'LAYER_PHYS', sourceTicket: 71, unitStatus: 'unconfirmed', thicknessMil: null, copperOz: null },
+    { layerId: 2, rawThickness: 1.378, sourceType: 'LAYER_PHYS', sourceTicket: 73, unitStatus: 'unconfirmed', thicknessMil: null, copperOz: null },
+  ])
+})
+
+await check('LAYER_PHYS 重复日志采用 resolveRecords 的最高 ticket 记录', async () => {
+  const source = [
+    `${JSON.stringify({ type: 'DOCHEAD' })}||${JSON.stringify({ docType: 'PCB', uuid: 'repeat-test' })}|`,
+    `${JSON.stringify({ type: 'LAYER_PHYS', ticket: 10, id: JSON.stringify(['LAYER_PHYS', 1]) })}||${JSON.stringify({ thickness: 1.0 })}|`,
+    `${JSON.stringify({ type: 'LAYER_PHYS', ticket: 20, id: JSON.stringify(['LAYER_PHYS', 1]) })}||${JSON.stringify({ thickness: 2.125 })}|`,
+    ...[2, 15, 16].map(id => `${JSON.stringify({ type: 'LAYER_PHYS', ticket: 30 + id, id: JSON.stringify(['LAYER_PHYS', id]) })}||${JSON.stringify({ thickness: 1.378 })}|`),
+  ].join('\n')
+  const result = await runPcb(makeSdk({ source, outline: true }))
+  assert.equal(result.reportedCopper.status, 'available')
+  assert.equal(result.reportedCopper.layers.find(layer => layer.layerId === 1).rawThickness, 2.125)
+  assert.equal(result.reportedCopper.layers.find(layer => layer.layerId === 1).sourceTicket, 20)
+})
+
+await check('缺失或非法 LAYER_PHYS 只标记部分原始旁证，不生成铜厚结论', async () => {
+  const missing = await runPcb(makeSdk({ source: physSource([1, 2, 15]), outline: true }))
+  assert.equal(missing.reportedCopper.status, 'partial')
+  assert.equal(missing.reportedCopper.layers.find(layer => layer.layerId === 16).rawThickness, null)
+  assert.equal(missing.reportedCopper.layers.find(layer => layer.layerId === 16).sourceId, null)
+  const invalid = await runPcb(makeSdk({ source: physSource([1, 2, 15, 16], { 15: 'bad' }), outline: true }))
+  assert.equal(invalid.reportedCopper.status, 'partial')
+  assert.equal(invalid.reportedCopper.layers.find(layer => layer.layerId === 15).rawThickness, 'bad')
+  assert.equal(invalid.reportedCopper.layers.find(layer => layer.layerId === 15).unitStatus, 'unconfirmed')
+  const malformed = await runPcb(makeSdk({ source: `${physSource()}\n${JSON.stringify({ type: 'LAYER_PHYS', ticket: 99, id: 'bad-id' })}||${JSON.stringify({ thickness: 5 })}|`, outline: true }))
+  assert.equal(malformed.reportedCopper.status, 'partial')
+  assert.ok(malformed.reportedCopper.messages.some(message => message.includes('层ID无法解析')))
+  for (const result of [missing, invalid, malformed]) {
+    assert.equal(result.reportedCopper.matchesTarget, null)
+    assert.deepEqual(result.reportedCopper.differences, [])
+    assert.ok(!result.issues.some(issue => issue.code.startsWith('layer_phys')))
+  }
+  const unavailable = await runPcb(makeSdk({ source: `${JSON.stringify({ type: 'DOCHEAD' })}||${JSON.stringify({ docType: 'PCB', uuid: 'none' })}|`, outline: true }))
+  assert.equal(unavailable.reportedCopper.status, 'unavailable')
+})
+
+await check('身份、ticket、记录冲突、墓碑与非 PCB 源不会产生可信覆盖', async () => {
+  const head = `${JSON.stringify({ type: 'DOCHEAD' })}||${JSON.stringify({ docType: 'PCB', uuid: 'strict-phys' })}|`
+  const row = (id, ticket, data) => `${JSON.stringify({ type: 'LAYER_PHYS', ticket, id })}||${JSON.stringify(data)}|`
+  const baseRows = [1, 2, 15, 16].map(id => row(JSON.stringify(['LAYER_PHYS', id]), 20 + id, { thickness: 1.378 }))
+  const run = async extra => runPcb(makeSdk({ source: [head, ...baseRows, ...extra].join('\n'), outline: true }))
+  for (const invalidId of [JSON.stringify(['LAYER_PHYS', '1']), JSON.stringify(['LAYER_PHYS', 1, 'extra'])]) {
+    const result = await run([row(invalidId, 90, { thickness: 9 })])
+    assert.equal(result.reportedCopper.status, 'partial')
+    assert.equal(result.reportedCopper.matchesTarget, null)
+  }
+  const badTicket = await run([row(JSON.stringify(['LAYER_PHYS', 1]), 'bad-ticket', { thickness: 9 })])
+  assert.equal(badTicket.reportedCopper.status, 'partial')
+  assert.ok(badTicket.reportedCopper.messages.some(message => message.includes('ticket 无效')))
+  const alternateEncoding = await run([row('["LAYER_PHYS", 1]', 90, { thickness: 9 })])
+  assert.equal(alternateEncoding.reportedCopper.status, 'partial')
+  assert.ok(alternateEncoding.reportedCopper.messages.some(message => message.includes('不同编码')))
+  const equalTicketConflict = await run([row(JSON.stringify(['LAYER_PHYS', 1]), 21, { thickness: 9 })])
+  assert.equal(equalTicketConflict.reportedCopper.status, 'partial')
+  assert.ok(equalTicketConflict.reportedCopper.messages.some(message => message.includes('相同 ticket 但数据不同')))
+  const tombstone = await run([
+    row(JSON.stringify(['LAYER_PHYS', 1]), 1, { thickness: 1.378 }),
+    `${JSON.stringify({ type: 'LAYER_PHYS', ticket: 99, id: JSON.stringify(['LAYER_PHYS', 1]) })}|||`,
+  ])
+  assert.equal(tombstone.reportedCopper.status, 'partial')
+  assert.equal(tombstone.reportedCopper.layers.find(layer => layer.layerId === 1).rawThickness, null)
+  assert.ok(tombstone.reportedCopper.messages.some(message => message.includes('最高 ticket')))
+  const otherDocType = await runPcb(makeSdk({ source: [head.replace('"PCB"', '"SCH"'), ...baseRows].join('\n'), outline: true }))
+  assert.equal(otherDocType.reportedCopper.status, 'unavailable')
+  assert.ok(otherDocType.reportedCopper.messages.some(message => message.includes('不是 PCB')))
 })
 
 await check('四层板0.12mm线宽按逐层下单铜厚与设计层数分档', async () => {
@@ -234,7 +323,8 @@ await check('图纸铜厚全0.5oz或无LAYER_PHYS不改变同一线图的项12/1
     assert.deepEqual(result.issues, baseline.issues)
     assert.equal(result.complete, baseline.complete)
   }
-  assert.equal(halfOz.reportedCopper.matchesTarget, false)
+  assert.equal(halfOz.reportedCopper.matchesTarget, null)
+  assert.deepEqual(halfOz.reportedCopper.differences, [])
   assert.equal(noPhys.reportedCopper.status, 'unavailable')
 })
 
@@ -283,12 +373,12 @@ await check('非铜层 Line 被跳过，缺失或未启用铜层身份则记 iss
   assert.ok(unsupported.issues.some(issue => issue.code === 'line_layer_identity_unknown' && issue.message.includes('999')))
 })
 
-await check('HDI 的2oz外层不受支持会由项5报告，图纸目标差异只进reportedCopper', async () => {
+await check('HDI 的2oz外层不受支持由项5报告，图纸单位未知不生成目标差异', async () => {
   const source = physSource([1, 2, 15, 16], { 1: 1.378, 2: 1.378, 15: 0.689, 16: 0.689 })
   const result = await runPcb(makeSdk({ source, outline: true }), { material: 'HDI板' })
   assert.equal(result.results[4].result, 'error')
-  assert.equal(result.reportedCopper.matchesTarget, false)
-  assert.equal(result.reportedCopper.differences.length, 4)
+  assert.equal(result.reportedCopper.matchesTarget, null)
+  assert.deepEqual(result.reportedCopper.differences, [])
   const baseline = await runPcb(makeSdk({ outline: true }))
   assert.equal(result.complete, baseline.complete)
   assert.deepEqual(result.issues, baseline.issues)

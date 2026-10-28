@@ -27,9 +27,13 @@ debug.log
 __pycache__/
 *.tsbuildinfo
 /images/logo.png
+/docs/SDK-CHANGELOG.md
+
+/AGENTS.md
+
+/docs/验证记录/
+/feedback-fix-*/
 
 /skills/
 
 /SKILL.md
-
-/AGENTS.md

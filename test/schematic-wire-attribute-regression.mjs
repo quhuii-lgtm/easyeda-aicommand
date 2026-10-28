@@ -5,7 +5,7 @@ import { resolve } from 'node:path'
 const root = resolve(import.meta.dirname, '..')
 const built = buildSync({
 	stdin: {
-		contents: `export { schematicCommands } from '../src/commands/schematic.ts'`,
+		contents: `export { schematicCommands } from '../src/commands/schematic.ts'; export { setDiagSink } from '../src/engine/diag.ts'`,
 		resolveDir: resolve(root, 'test'),
 		sourcefile: 'schematic-wire-attribute-regression-entry.ts',
 	},
@@ -15,15 +15,17 @@ const built = buildSync({
 	write: false,
 	target: 'node24',
 })
-const { schematicCommands } = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`)
+const { schematicCommands, setDiagSink } = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`)
 const command = name => schematicCommands.find(item => item.name === name).handler
 const modifyWire = command('schematic.modifyWire')
+const setWireNet = command('schematic.setWireNet')
 const setAttribute = command('schematic.setAttribute')
 const listComponents = command('schematic.listComponents')
 const structuralAudit = command('schematic.structuralAudit')
 const pruneFloatingLabels = command('schematic.pruneFloatingLabels')
 const fixNetLabels = command('schematic.fixNetLabels')
 const exportPng = command('schematic.exportPng')
+const getNetlist = command('schematic.getNetlist')
 const sourceLineTypeByGetter = { 0: 'SOLID', 1: 'SHORT_DASH', 2: 'DOT' }
 const getterLineTypeBySource = Object.fromEntries(Object.entries(sourceLineTypeByGetter).map(([getter, source]) => [source, Number(getter)]))
 
@@ -51,7 +53,7 @@ function wire(id, state = {}) {
 	}
 }
 
-function makeWireEda({ result = {}, apply = true, ids = ['wire-1'], nets = {}, styles = {}, onModify, nameOnlyIds = [], apiNameIds = [], apiNameValueOverrides = {}, sourceNetStale = false, sourceStyleStale = [], sourceLineTypeOverrides = {}, churnAttrIdOnModify = [], churnLineIdOnModify = [], nullOmittedStyles = false, emptyNetAttrs = [], sourceAttrFailure = null, displayDriftOnModify = [], endpointDriftOnModify = [], malformedSourceEndpoints = {}, damageEarlierOnSecondModify = false, restoreObjects = true } = {}) {
+function makeWireEda({ sourceDocType = 'SCH', result = {}, apply = true, ids = ['wire-1'], nets = {}, styles = {}, onModify, nameOnlyIds = [], apiNameIds = [], apiNameValueOverrides = {}, sourceNetStale = false, sourceStyleStale = [], sourceLineTypeOverrides = {}, churnAttrIdOnModify = [], churnLineIdOnModify = [], nullOmittedStyles = false, emptyNetAttrs = [], sourceAttrFailure = null, displayDriftOnModify = [], endpointDriftOnModify = [], malformedSourceEndpoints = {}, damageEarlierOnSecondModify = false, restoreObjects = true } = {}) {
 	const objects = new Map(ids.map(id => [id, wire(id, { ...styles[id], net: Object.hasOwn(nets, id) ? nets[id] : 'SIG' })]))
 	const sourceNets = new Map([...objects].map(([id, object]) => [id, object.current.net]))
 	const netAttrPresent = new Map([...objects].map(([id, object]) => [id, (typeof object.current.net === 'string' && object.current.net !== '') || emptyNetAttrs.includes(id)]))
@@ -72,7 +74,7 @@ function makeWireEda({ result = {}, apply = true, ids = ['wire-1'], nets = {}, s
 	const sourceFor = () => {
 		if (sourceOverride != null) return sourceOverride
 		sourceReads++
-		const records = [`{"type":"DOCHEAD"}||${JSON.stringify({ docType: 'SCH', uuid: 'doc-1', client: `client-${sourceReads}`, updateTime: sourceReads, version: sourceReads })}`]
+		const records = [`{"type":"DOCHEAD"}||${JSON.stringify({ docType: sourceDocType, uuid: 'doc-1', client: `client-${sourceReads}`, updateTime: sourceReads, version: sourceReads })}`]
 		let ticket = 1
 		for (const [id, object] of objects) {
 			records.push(`${JSON.stringify({ type: 'WIRE', id, ticket: ticket++ })}||${JSON.stringify({ line: object.current.line ?? [0, 0, 10, 0] })}`)
@@ -245,6 +247,105 @@ function sourceRecords(source) {
 	assert.equal(result.readback[0].fields.lineType.actual, null)
 	assert.equal(result.readback[0].fields.lineType.verified, true)
 	assert.equal(eda.modifyCalls, 1)
+}
+
+{
+	// Net-only verification uses a real page identity; legacy recovery fixtures above retain their SCH cases.
+	const eda = makeWireEda({ sourceDocType: 'SCH_PAGE', styles: { 'wire-1': { color: null, lineWidth: null, lineType: null } } })
+	const result = await setWireNet({ primitiveId: 'wire-1', net: 'NEXT' })
+	assert.equal(result.readback.verified, true, 'setWireNet preserves and verifies explicit null style values')
+	assert.deepEqual(eda.calls[0], { id: 'wire-1', props: { color: null, lineWidth: null, lineType: null, net: 'NEXT' } })
+	assert.equal(eda.objects.get('wire-1').current.net, 'NEXT')
+}
+
+{
+	const eda = makeWireEda({ sourceDocType: 'SCH_PAGE', styles: { 'wire-1': { color: '#FF0000', lineWidth: 3, lineType: 0 } } })
+	const result = await setWireNet({ primitiveId: 'wire-1', net: 'NEXT' })
+	assert.equal(result.readback.sourceGeometryVerified, true)
+	assert.deepEqual(eda.calls[0].props, { color: '#FF0000', lineWidth: 3, lineType: 0, net: 'NEXT' })
+	assert.equal(eda.modifyCalls, 1)
+}
+
+{
+	const eda = makeWireEda({ sourceDocType: 'SCH_PAGE', nets: { 'wire-1': '' }, styles: { 'wire-1': { color: '#FF0000', lineWidth: 3, lineType: 0 } } })
+	globalThis.eda.sys_FileManager.getDocumentSource = async () => sourceRecords(eda.sourceFor()).map(row => {
+		if (row.header.type === 'ATTR') delete row.data.display // Actual SDK NET structure has no mock-only display field.
+		return `${JSON.stringify(row.header)}||${JSON.stringify(row.data)}`
+	}).join('\n')
+	const result = await setWireNet({ primitiveId: 'wire-1', net: 'NEXT' })
+	assert.equal(result.readback.verified, true, 'an unnamed wire may gain a new valid NET attribute without changing style')
+	assert.equal(eda.modifyCalls, 1)
+}
+
+for (const options of [{ endpointDriftOnModify: ['wire-1'] }, { displayDriftOnModify: ['wire-1'] }, { churnAttrIdOnModify: ['wire-1'] }]) {
+	const eda = makeWireEda({ sourceDocType: 'SCH_PAGE', ...options })
+	await assert.rejects(setWireNet({ primitiveId: 'wire-1', net: 'NEXT' }), error => error.cause?.partial === true)
+	assert.equal(eda.modifyCalls, 1, 'a failed postcondition never replays modify')
+}
+
+{
+	const eda = makeWireEda({ sourceDocType: 'SCH_PAGE' })
+	globalThis.eda.sys_FileManager.getDocumentSource = async () => {
+		const rows = sourceRecords(eda.sourceFor())
+		rows.push({ header: { type: 'ATTR', id: 'same-net-moved', ticket: 100 }, data: { parentId: eda.modifyCalls ? 'other-wire' : 'wire-1', key: 'NET', value: 'SIG' } })
+		return rows.map(row => `${JSON.stringify(row.header)}||${JSON.stringify(row.data)}`).join('\n')
+	}
+	await assert.rejects(setWireNet({ primitiveId: 'wire-1', net: 'NEXT' }), error => error.cause?.partial === true)
+	assert.equal(eda.modifyCalls, 1, 'duplicate cleanup cannot move an old attribute onto another object')
+}
+
+for (const cleanup of [false, true]) {
+	const eda = makeWireEda({ sourceDocType: 'SCH_PAGE' })
+	globalThis.eda.sys_FileManager.getDocumentSource = async () => {
+		const rows = sourceRecords(eda.sourceFor())
+		const attr = rows.find(row => row.header.type === 'ATTR')
+		if (!(cleanup && eda.modifyCalls)) rows.push({ header: { type: 'ATTR', id: 'same-net-duplicate', ticket: 100 }, data: { ...attr.data } })
+		return rows.map(row => `${JSON.stringify(row.header)}||${JSON.stringify(row.data)}`).join('\n')
+	}
+	const result = await setWireNet({ primitiveId: 'wire-1', net: 'NEXT' })
+	assert.equal(result.duplicateRemaining, cleanup ? 0 : 1, 'existing equal NET attributes may remain or converge to their original survivor')
+	assert.equal(eda.modifyCalls, 1)
+}
+
+{
+	const eda = makeWireEda({ sourceDocType: 'SCH_PAGE', nets: { 'wire-1': '' } })
+	globalThis.eda.sys_FileManager.getDocumentSource = async () => {
+		const rows = sourceRecords(eda.sourceFor()).filter(row => !(row.header.type === 'ATTR' && row.data.parentId === 'wire-1'))
+		rows.push({ header: { type: 'ATTR', id: 'unrelated-attr', ticket: 100 }, data: eda.modifyCalls
+			? { parentId: 'wire-1', key: 'NET', value: 'NEXT' }
+			: { parentId: 'other-object', key: 'Description', value: 'keep' } })
+		return rows.map(row => `${JSON.stringify(row.header)}||${JSON.stringify(row.data)}`).join('\n')
+	}
+	await assert.rejects(setWireNet({ primitiveId: 'wire-1', net: 'NEXT' }), error => error.cause?.partial === true)
+	assert.equal(eda.modifyCalls, 1, 'old non-target attributes cannot be hijacked as new NET')
+}
+
+{
+	const eda = makeWireEda({ sourceDocType: 'SCH_PAGE' })
+	globalThis.eda.sys_FileManager.getDocumentSource = async () => `${eda.sourceFor()}\n${JSON.stringify({ type: 'UNKEYED_SETTING' })}||${JSON.stringify({ value: eda.modifyCalls ? 2 : 1 })}`
+	await assert.rejects(setWireNet({ primitiveId: 'wire-1', net: 'NEXT' }), error => error.cause?.partial === true)
+	assert.equal(eda.modifyCalls, 1, 'non-target records without an ID remain protected')
+}
+
+{
+	const eda = makeWireEda({ sourceDocType: 'SCH_PAGE' })
+	let postReads = 0
+	globalThis.eda.sys_FileManager.getDocumentSource = async () => {
+		if (eda.modifyCalls) { postReads++; return eda.sourceFor().replace('"uuid":"doc-1"', '"uuid":"other-page"') }
+		return eda.sourceFor()
+	}
+	await assert.rejects(setWireNet({ primitiveId: 'wire-1', net: 'NEXT' }), error => error.cause?.partial === true)
+	assert.equal(postReads, 1, 'a source identity change stops immediately instead of waiting for a later matching page')
+}
+
+{
+	const eda = makeWireEda({ sourceDocType: 'SCH_PAGE', ids: ['wire-1', 'wire-2'], nets: { 'wire-1': '', 'wire-2': '' }, endpointDriftOnModify: ['wire-1'] })
+	let labels = 0
+	globalThis.eda.sch_ManufactureData = { getNetlistFile: async () => ({ text: async () => JSON.stringify({ components: {} }) }) }
+	globalThis.eda.sch_PrimitiveAttribute.createNetLabel = async () => { labels++; return {} }
+	await assert.rejects(command('schematic.repairNet')({ net: 'NEXT', adoptWireIds: ['wire-1', 'wire-2'] }), error => error.cause?.partial === true)
+	assert.equal(eda.modifyCalls, 1, 'adoption stops before the second wire after an uncertain write')
+	assert.equal(labels, 0, 'adoption failure stops dependent label writes')
 }
 
 {
@@ -482,11 +583,66 @@ for (const malformed of ['missing', 'nonfinite']) {
 			},
 			modify: async (_id, props) => { value = props.value; return true },
 		},
+		sys_Timer: { setTimeoutTimer: (_id, ms, callback) => { assert.equal(ms, 300); queueMicrotask(callback); return true }, clearTimeoutTimer: () => true },
 	}
 	const result = await setAttribute({ primitiveId: 'comp-1', key: 'Value', value: '' })
 	assert.equal(result.key, 'Value')
 	assert.equal(result.value, '')
 	assert.equal(result.readback.verified, true)
+}
+
+for (const failure of ['modify-rejected', 'modify-afterapply-rejected', 'timer-rejected', 'readback-mismatch', 'readback-throws', 'readback-empty']) {
+	let value = 'old', modifyCalls = 0
+	globalThis.eda = {
+		sch_PrimitiveAttribute: {
+			getAllPrimitiveId: async () => ['attr-1'],
+			get: async ids => {
+				if (Array.isArray(ids)) return [{ getState_Key: () => 'Value', getState_PrimitiveId: () => 'attr-1', getState_Value: () => value }]
+				if (failure === 'readback-throws') throw new Error('host get rejected')
+				return failure === 'readback-empty' ? undefined : { getState_Value: () => value }
+			},
+			modify: async (_id, props) => {
+				modifyCalls++
+				if (failure === 'modify-rejected') throw new Error('host rejected modify')
+				value = props.value
+				if (failure === 'readback-mismatch') value = 'host-value'
+				if (failure === 'modify-afterapply-rejected') throw new Error('host rejected after apply')
+				return true
+			},
+		},
+		sys_Timer: { setTimeoutTimer: (_id, ms, callback) => { assert.equal(ms, 300); if (failure === 'timer-rejected') return false; queueMicrotask(callback); return true } },
+	}
+	await assert.rejects(setAttribute({ primitiveId: 'comp-1', key: 'Value', value: 'secret-request' }), error => {
+		assert.equal(error.cause?.partial, true)
+		assert.equal(error.cause?.retryable, false)
+		assert.match(error.message, /先检查实际值/)
+		return true
+	})
+	assert.equal(modifyCalls, 1, `${failure} must not issue a second host write`)
+}
+
+{
+	let value = 'old', timerCallback, finishModify, modifyCalls = 0, readCalls = 0
+	globalThis.eda = {
+		sch_PrimitiveAttribute: {
+			getAllPrimitiveId: async () => ['attr-1'],
+			get: async ids => {
+				if (Array.isArray(ids)) return [{ getState_Key: () => 'Value', getState_PrimitiveId: () => 'attr-1', getState_Value: () => value }]
+				readCalls++
+				return { getState_Value: () => value }
+			},
+			modify: async (_id, props) => { modifyCalls++; value = props.value },
+		},
+		sys_Timer: { setTimeoutTimer: (_id, ms, callback) => { assert.equal(ms, 300); timerCallback = callback; return true } },
+	}
+	const pending = setAttribute({ primitiveId: 'comp-1', key: 'Value', value: 'confirmed-later' })
+	for (let i = 0; i < 8 && !timerCallback; i++) await Promise.resolve()
+	assert.equal(modifyCalls, 1)
+	assert.equal(readCalls, 0)
+	timerCallback()
+	const result = await pending
+	assert.equal(result.readback.value, 'confirmed-later')
+	assert.equal(modifyCalls, 1, 'late modify settlement must not issue another write')
 }
 
 {
@@ -552,6 +708,43 @@ for (const malformed of ['missing', 'nonfinite']) {
 	assert.equal(calls.length, 0)
 	await assert.rejects(exportPng({ width: 2048 }), /PNG 导出失败/)
 	assert.deepEqual(calls, [[undefined, { width: 2048 }]])
+}
+
+{
+	let calls = 0, finishHostCall, timeoutCallback
+	const events = []
+	setDiagSink(event => events.push(event))
+	const savedSetTimeout = globalThis.setTimeout, savedClearTimeout = globalThis.clearTimeout
+	globalThis.setTimeout = (callback, ms) => { assert.equal(ms, 45000); timeoutCallback = callback; return 17 }
+	globalThis.clearTimeout = () => true
+	globalThis.eda = { sch_Netlist: { getNetlist: async () => { calls++; return await new Promise(resolve => { finishHostCall = () => resolve('LATE_SECRET_NETLIST') }) } } }
+	try {
+		const pending = getNetlist({ netlistType: 'Protel2' })
+		for (let i = 0; i < 20 && (!timeoutCallback || !finishHostCall); i++) await Promise.resolve()
+		assert.equal(calls, 1)
+		timeoutCallback()
+		await assert.rejects(pending, error => {
+			assert.match(error.message, /超时不表示宿主操作已取消/)
+			assert.equal(error.cause?.partial, true, 'a failed wait after starting the host call must be classified as partial')
+			assert.equal(error.cause?.retryable, false, 'an unknown host outcome must not be retried automatically')
+			assert.equal(error.cause?.operation, 'schematic.getNetlist')
+			assert.equal(error.cause?.phase, 'wait-timeout-host-state-unknown')
+			assert.equal(error.cause?.result?.hostOperationState, 'timed-out-unsettled-or-unknown')
+			assert.equal(calls, 1, 'the wait timeout must not cause another host call')
+			assert.doesNotMatch(error.message, /retry|重试/i)
+			return true
+		})
+		finishHostCall()
+		for (let i = 0; i < 6; i++) await Promise.resolve()
+		assert.equal(calls, 1, 'a late host result must not trigger a second getNetlist')
+		assert.equal(events.some(event => event.stage === 'hostCall.late-settled'), true)
+		assert.equal(events.some(event => String(event.detail ?? '').includes('LATE_SECRET_NETLIST')), false, 'diagnostics must not expose netlist content')
+	}
+	finally {
+		globalThis.setTimeout = savedSetTimeout
+		globalThis.clearTimeout = savedClearTimeout
+		setDiagSink(undefined)
+	}
 }
 
 globalThis.setTimeout = originalTimeout

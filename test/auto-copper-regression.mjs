@@ -78,7 +78,7 @@ async function main() {
 			getState_ComplexPolygon: () => ({ getSource: () => source }),
 		};
 	}
-	function install({ pads = [pad('LONG-PAD-1')], components = [], vias = [], pours = [], existingPoured = [], traces = [], outline = true, outlineOffset = { x: 0, y: 0 }, outlinePolylines = [], rulesValue = rules, badPadCollection = false, fillReadbackNet = undefined, pourReadbackSource = undefined, pourReadbackNet = undefined, pourReadbackLayer = undefined, parentReadbackId = undefined, parentReadbackNet = undefined, parentReadbackLayer = undefined, parentReadbackSource = undefined, pouredConfig = {}, rebuildResult = true, rebuildResultUndefined = false, rebuildReturnValue = undefined, rebuildThrows = false, createDelayMs = 0 } = {}) {
+	function install({ pads = [pad('LONG-PAD-1')], components = [], vias = [], pours = [], existingPoured = [], traces = [], outline = true, outlineOffset = { x: 0, y: 0 }, outlinePolylines = [], rulesValue = rules, badPadCollection = false, fillReadbackNet = undefined, pourReadbackSource = undefined, pourReadbackNet = undefined, pourReadbackLayer = undefined, parentReadbackId = undefined, parentReadbackNet = undefined, parentReadbackLayer = undefined, parentReadbackSource = undefined, pouredConfig = {}, rebuildResult = true, rebuildResultUndefined = false, rebuildReturnValue = undefined, rebuildThrows = false, createDelayMs = 0, editorVersion = '4.1.78' } = {}) {
 		const state = { writes: [], deletions: 0, pads: [...pads], components: [...components], vias: [...vias], source: docHead('pcb-A'), rules: rulesValue, nextId: 1, pourGetCalls: new Map(), pours: new Map(pours.map(item => [item.getState_PrimitiveId(), item])), fills: new Map(), poured: [...existingPoured], rebuildResult, rebuildResultUndefined, rebuildReturnValue, rebuildThrows, pouredGetAllCalls: 0, fillReadbackNet, pourReadbackSource, pourReadbackNet, pourReadbackLayer, parentReadbackId, parentReadbackNet, parentReadbackLayer, parentReadbackSource, pouredConfig, createDelayMs };
 		const x0 = outlineOffset.x;
 		const y0 = outlineOffset.y;
@@ -86,6 +86,7 @@ async function main() {
 		const polygon = source => ({ getSource: () => source });
 		const sdk = {
 			dmt_SelectControl: { getCurrentDocumentInfo: async () => ({ uuid: 'pcb-A', documentType: 3 }) },
+			sys_Environment: { getEditorCurrentVersion: () => editorVersion },
 			sys_FileManager: { getDocumentSource: async () => state.source },
 			pcb_Drc: {
 				getCurrentRuleConfiguration: async () => state.rules,
@@ -1072,7 +1073,7 @@ async function main() {
 		f.state.poured.push({
 			getState_PrimitiveId: () => 'EXISTING-POURED',
 			getState_PourPrimitiveId: () => 'EXISTING-POUR',
-			getState_PourFills: () => [{ id: 'R1', fill: true, lineWidth: 12, path: { getSource: () => borderSource } }],
+			getState_PourFills: () => [{ id: 'R1', fill: true, lineWidth: 0, path: { getSource: () => [9, 9, 'L', 1, 9, 1, 1, 9, 1, 9, 9] } }],
 		});
 		const result = await command('pcb.getPourFillReadback').handler({ __docUuid: 'pcb-A', primitiveId: 'EXISTING-POUR', net: 'N1', layer: 'top' });
 		assert.equal(result.parent.net, 'N1');
@@ -1081,6 +1082,10 @@ async function main() {
 		assert.deepEqual(result.pouredNetLayerGetters, [{ pouredId: 'EXISTING-POURED', net: 'missing', layer: 'missing' }]);
 		assert.deepEqual(result.association.matchedPouredIds, ['EXISTING-POURED']);
 		assert.equal(result.filledRegions[0].pathGetter, 'function');
+		assert.deepEqual(result.filledRegions[0].pathSource, [9, 9, 'L', 1, 9, 1, 1, 9, 1, 9, 9], 'raw SDK path is retained');
+		assert.deepEqual(result.filledRegions[0].normalizedPathMil, [90, 90, 'L', 10, 90, 10, 10, 90, 10, 90, 90]);
+		assert.equal(result.filledRegions[0].coordinateUnit, 'mil');
+		assert.deepEqual(result.filledRegions[0].normalization, { status: 'normalized', reason: 'eda-4.1.78-zero-width-fill-path-10mil-to-mil', editorVersion: '4.1.78', conversionFactor: 10 });
 		assert.deepEqual(f.state.writes, []);
 	});
 
@@ -1272,7 +1277,7 @@ async function main() {
 		assert.deepEqual(error.cause.verifiedIds, []);
 		assert.deepEqual(f.state.writes, ['pour.create', 'pour.rebuild']);
 		assert.equal(error.cause.fillReadback.association.count, 1);
-		assert.deepEqual(error.cause.fillReadback.filledRegions, [{ pouredId: 'POURED-POUR-1', id: 'BROKEN-REGION', fill: true, lineWidth: 12, pathGetter: 'missing' }]);
+		assert.deepEqual(error.cause.fillReadback.filledRegions, [{ pouredId: 'POURED-POUR-1', id: 'BROKEN-REGION', fill: true, lineWidth: 12, pathGetter: 'missing', coordinateUnit: 'unknown', normalization: { status: 'unsupported', reason: 'path-not-read', editorVersion: '4.1.78', conversionFactor: null } }]);
 	});
 
 	await test('independent pour readback accepts reversed order and cyclic start with one-ring wrapper', async () => {

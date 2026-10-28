@@ -4,7 +4,7 @@
 
 The [plugin repository](https://github.com/quhuii-lgtm/easyeda-aicommand) contains extension source, the Node.js proxy, build inputs, tests, and plugin documentation. The [skill repository](https://github.com/quhuii-lgtm/easyeda-aicommand-skill) contains the installable `ai-command-engine/` directory, its English instructions, Chinese fallback, references and helper scripts. The skill does not include the EDA extension or proxy.
 
-Plugin versions continue to use their extension version, such as `0.20.50`. Skill versions use an independent documentation date, starting with `2026.10.28`. Updating documentation does not imply a new plugin build, new runtime capabilities, or host acceptance. The skill documentation includes scoped v0.20.123 evidence and v0.20.124 prepared changes; v0.20.124 is not publicly released or host-accepted. Always inspect the connected instance and its help.
+Plugin versions continue to use their extension version, such as `0.20.50`. Skill versions use an independent documentation date, starting with `2026.10.28`. Updating documentation does not imply a new plugin build, new runtime capabilities, or host acceptance. The skill documentation includes scoped v0.20.123 evidence and v0.20.124 prepared changes; v0.20.124 has not been installed or host-accepted; its publication status is shown on the [release page](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.20.124). Always inspect the connected instance and its help.
 
 Download plugin `.eext` and plugin-source ZIP files from this repository. Download skill ZIP files from the skill repository. Install the entire `ai-command-engine/` directory. Installing a skill does not install Node.js, start the proxy, install the EDA extension, or modify a design.
 

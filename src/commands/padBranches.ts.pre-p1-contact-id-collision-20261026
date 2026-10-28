@@ -1,0 +1,533 @@
+import type { SesRouteLine } from '../engine/autoRouteSes';
+import type { ICommandDef } from '../engine/types';
+import type { TuneContact, TuneLine } from '../pcb/lengthTuneTargets';
+import type { BranchArcContact, BranchContact, BranchCapsuleContact } from '../pcb/branchContactGeometry';
+import type { PadBranchesRequest } from '../pcb/padBranchGeometry';
+import { planSesImport, verifySesImport } from '../engine/autoRouteSes';
+import { comparePcbSourceSnapshots } from '../pcb/dsnSourceSnapshot';
+import { createGeometryHost } from '../pcb/geometryHost';
+import { assertArcReadback, inspectArcReadback } from '../pcb/arcReadback';
+import { curveFromEndpoints } from '../pcb/arcTuneGeometry';
+import { readEditorVersion } from '../pcb/pouredUnits';
+import { readTuneContacts, tunePadContact } from '../pcb/lengthTuneContacts';
+import { planPadBranches } from '../pcb/padBranchGeometry';
+import { parseSourceLog, resolveRecords } from '../pcb/sourcelog';
+import { executeRouteTrack } from './pcb';
+
+function stable(value: unknown): unknown {
+	if (Array.isArray(value))
+		return value.map(stable);
+	if (value && typeof value === 'object')
+		return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => [k, stable(v)]));
+	return value;
+}
+function canonical(value: unknown): string {
+	return JSON.stringify(stable(value));
+}
+function boardLayer(value: unknown): number {
+	if (value === undefined || value === 'top')
+		return 1;
+	if (value === 'bottom')
+		return 2;
+	if (typeof value === 'string' && /^\d+$/.test(value))
+		value = Number(value);
+	if (typeof value !== 'number' || !Number.isInteger(value) || !(value === 1 || value === 2 || (value >= 15 && value <= 44)))
+		throw new Error('layer必须是top、bottom或有效信号铜层ID');
+	return value;
+}
+function sourceTuneLine(row: any): TuneLine {
+	const d = row.data;
+	if (row.header.type !== 'LINE' || typeof row.header.id !== 'string' || !d || typeof d.netName !== 'string' || !Number.isInteger(d.layerId)
+		|| ![d.startX, d.startY, d.endX, d.endY, d.width].every((x: unknown) => typeof x === 'number' && Number.isFinite(x)) || d.width <= 0) {
+		throw new Error(`LINE ${row.header.id ?? 'unknown'} 源码无法完整读取`);
+	}
+	return { id: row.header.id, net: d.netName, layer: d.layerId, width: d.width, a: [d.startX, d.startY], b: [d.endX, d.endY] };
+}
+function sesLine(line: TuneLine): SesRouteLine {
+	return { id: line.id, net: line.net, layer: line.layer!, widthMil: line.width, a: { x: line.a[0], y: line.a[1] }, b: { x: line.b[0], y: line.b[1] } };
+}
+function sourceAttributes(row: any): string {
+	const data = { ...row.data };
+	for (const key of ['startX', 'startY', 'endX', 'endY']) delete data[key];
+	return canonical(data);
+}
+function oldLinesRemain(oldRows: any[], newRows: any[]): boolean {
+	const actual = newRows.filter(r => r.header.type === 'LINE' && r.data && typeof r.data === 'object');
+	for (const old of oldRows.filter(r => r.header.type === 'LINE' && r.data && typeof r.data === 'object')) {
+		const d = old.data;
+		const dx = d.endX - d.startX;
+		const dy = d.endY - d.startY;
+		const length = Math.hypot(dx, dy);
+		if (!(length > 0))
+			return false;
+		const ux = dx / length;
+		const uy = dy / length;
+		const candidates = actual.filter(r => sourceAttributes(r) === sourceAttributes(old));
+		const spans: Array<[number, number]> = [];
+		for (const row of candidates) {
+			const q = row.data;
+			const project = (x: number, y: number) => (x - d.startX) * ux + (y - d.startY) * uy;
+			const normal = (x: number, y: number) => Math.abs((x - d.startX) * uy - (y - d.startY) * ux);
+			if (normal(q.startX, q.startY) > 0.001 || normal(q.endX, q.endY) > 0.001)
+				continue;
+			const lo = Math.max(0, Math.min(project(q.startX, q.startY), project(q.endX, q.endY)));
+			const hi = Math.min(length, Math.max(project(q.startX, q.startY), project(q.endX, q.endY)));
+			if (hi > lo)
+				spans.push([lo, hi]);
+		}
+		spans.sort((a, b) => a[0] - b[0]);
+		let cursor = 0;
+		for (const [lo, hi] of spans) {
+			if (lo > cursor + 0.001)
+				break;
+			cursor = Math.max(cursor, hi);
+		}
+		if (cursor < length - 0.001)
+			return false;
+	}
+	return true;
+}
+function state(object: any, name: string): any {
+	const getter = object?.[`getState_${name}`];
+	if (typeof getter !== 'function')
+		throw new Error(`PAD缺少${name}读取接口`);
+	return getter.call(object);
+}
+function validId(value: unknown, label: string): string {
+	if (typeof value !== 'string' || !value.trim() || value === 'undefined' || value === 'null')
+		throw new Error(`${label}缺少真实图元ID`);
+	return value;
+}
+function getterMatchesSourceProjection(value: unknown, source: number, allowTenth: boolean): boolean {
+	return typeof value === 'number' && Number.isFinite(value)
+		&& (value === source || (allowTenth && value === Math.round(source * 10) / 10));
+}
+function ovalDimensionMatches(value: unknown, source: number, editorVersion: string | null): boolean {
+	if (typeof value !== 'number' || !Number.isFinite(value))
+		return false;
+	if (value === source)
+		return true;
+	return editorVersion === '4.1.78' && value === Math.round(source * 10) / 10;
+}
+function branchPadContact(pad: any, targetLayer: number): BranchContact {
+	const base = tunePadContact(pad, targetLayer);
+	let shape: unknown;
+	let special: unknown;
+	try {
+		shape = state(pad, 'Pad');
+		special = state(pad, 'SpecialPad');
+	}
+	catch {
+		return base;
+	}
+	if (!Array.isArray(shape) || shape[0] !== 'OVAL' || shape.length < 3 || shape.length > 4
+		|| (shape[3] !== undefined && shape[3] !== 0) || !Array.isArray(special) && special !== null && special !== undefined
+		|| Array.isArray(special) && special.length !== 0) {
+		return base;
+	}
+	try {
+		const id = validId(state(pad, 'PrimitiveId'), 'PAD');
+		const net = state(pad, 'Net');
+		const layer = state(pad, 'Layer');
+		const x = state(pad, 'X');
+		const y = state(pad, 'Y');
+		const width = shape[1];
+		const height = shape[2];
+		const rotation = state(pad, 'Rotation');
+		const hole = state(pad, 'Hole');
+		const offsetX = state(pad, 'HoleOffsetX');
+		const offsetY = state(pad, 'HoleOffsetY');
+		if (typeof net !== 'string' || ![1, 2].includes(layer) || layer !== targetLayer
+			|| ![x, y, width, height, rotation].every(v => typeof v === 'number' && Number.isFinite(v))
+			|| width <= 0 || height <= 0 || hole !== null && hole !== undefined || offsetX !== 0 || offsetY !== 0)
+			return base;
+		if (width === height)
+			return { id, net, layers: [layer], kind: 'circle', center: [x, y], radius: width / 2 };
+		const capsule: BranchCapsuleContact = { id, net, layers: [layer], kind: 'capsule', center: [x, y], width, height, rotation };
+		return capsule;
+	}
+	catch {
+		return base;
+	}
+}
+
+function sourcePadContact(row: any, id: string, targetLayer: number): BranchContact | undefined {
+	const d = row?.data;
+	if (!d || typeof d !== 'object' || row.header.type !== 'PAD' || row.header.id !== id
+		|| ![d.centerX, d.centerY, d.layerId, d.padAngle].every((value: unknown) => typeof value === 'number' && Number.isFinite(value))
+		|| typeof d.netName !== 'string' || !d.defaultPad || typeof d.defaultPad !== 'object') {
+		return undefined;
+	}
+	const shape = d.defaultPad;
+	let sdkShape: unknown[] | undefined;
+	if (shape.padType === 'ELLIPSE' && typeof shape.width === 'number' && typeof shape.height === 'number')
+		sdkShape = ['ELLIPSE', shape.width, shape.height, 0];
+	else if (shape.padType === 'RECT' && typeof shape.width === 'number' && typeof shape.height === 'number' && typeof shape.radius === 'number')
+		sdkShape = ['RECT', shape.width, shape.height, shape.radius];
+	else if (shape.padType === 'OVAL' && typeof shape.width === 'number' && Number.isFinite(shape.width) && shape.width > 0
+		&& typeof shape.height === 'number' && Number.isFinite(shape.height) && shape.height > 0
+		&& (shape.radius === undefined || shape.radius === 0)
+		&& (d.specialPad == null || Array.isArray(d.specialPad) && d.specialPad.length === 0)
+		&& d.hole == null && (d.padOffsetX ?? 0) === 0 && (d.padOffsetY ?? 0) === 0
+		&& [1, 2].includes(d.layerId) && d.layerId === targetLayer)
+		sdkShape = ['OVAL', shape.width, shape.height, 0];
+	if (!sdkShape)
+		return undefined;
+	let hole: unknown = null;
+	if (d.hole != null) {
+		if (d.hole.holeType !== 'ROUND' || typeof d.hole.width !== 'number' || !Number.isFinite(d.hole.width)
+			|| d.hole.width !== d.hole.height || d.padOffsetX !== 0 || d.padOffsetY !== 0) {
+			return undefined;
+		}
+		hole = ['ROUND', d.hole.width];
+	}
+	else if ((d.padOffsetX ?? 0) !== 0 || (d.padOffsetY ?? 0) !== 0) {
+		return undefined;
+	}
+	const sourceObject = {
+		getState_PrimitiveId: () => id,
+		getState_Net: () => d.netName,
+		getState_X: () => d.centerX,
+		getState_Y: () => d.centerY,
+		getState_Layer: () => d.layerId,
+		getState_Hole: () => hole,
+		getState_Metallization: () => d.plated,
+		getState_Pad: () => sdkShape,
+		getState_SpecialPad: () => d.specialPad ?? null,
+		getState_Rotation: () => d.padAngle,
+		getState_HoleOffsetX: () => d.padOffsetX ?? 0,
+		getState_HoleOffsetY: () => d.padOffsetY ?? 0,
+	};
+	return shape.padType === 'OVAL' ? branchPadContact(sourceObject, targetLayer) : tunePadContact(sourceObject, targetLayer);
+}
+
+async function resolveBranchArcContacts(host: Awaited<ReturnType<typeof createGeometryHost>>, layer: number, rows: any[], sourceContacts: TuneContact[]): Promise<{ contacts: BranchContact[]; arcs: BranchArcContact[]; reports: Array<Record<string, unknown>> }> {
+	const contacts: BranchContact[] = [...sourceContacts];
+	const candidates = sourceContacts.filter(contact => contact.kind === 'unknown');
+	const arcs: BranchArcContact[] = [];
+	const reports: Array<Record<string, unknown>> = [];
+	for (const contact of candidates) {
+		const sameId = rows.filter(row => row.header.id === contact.id);
+		if (!sameId.some(row => row.header.type === 'ARC'))
+			continue;
+		const failClosed = (reason: string, evidence?: Record<string, unknown>) => {
+			const index = contacts.findIndex(item => item.id === contact.id && item.kind === 'unknown');
+			if (index >= 0)
+				contacts[index] = { ...contact, reason: `ARC源码/读回未完成精确验证：${reason}` };
+			reports.push({ id: contact.id, status: 'unknown', reason, ...(evidence ? { evidence } : {}) });
+		};
+		if (sameId.length !== 1 || sameId[0].header.type !== 'ARC') {
+			failClosed(`来源ID类型冲突或重复：${sameId.map(row => row.header.type).join(',')}`);
+			continue;
+		}
+		if (sourceContacts.filter(item => item.id === contact.id).length !== 1) {
+			failClosed('当前SDK对象集合中的ARC ID重复/跨类型冲突');
+			continue;
+		}
+		const row = sameId[0];
+		const data = row.data;
+		if (!data || data.arcType !== 'DOT' || data.layerId !== layer || typeof data.netName !== 'string'
+			|| ![data.width, data.startX, data.startY, data.endX, data.endY, data.angle].every((n: unknown) => typeof n === 'number' && Number.isFinite(n)) || data.width <= 0) {
+			failClosed('ARC必须为同层、DOT类型且来源字段完整');
+			continue;
+		}
+		let curve;
+		try {
+			curve = curveFromEndpoints([data.startX, data.startY], [data.endX, data.endY], data.angle);
+		}
+		catch (error) {
+			failClosed(error instanceof Error ? error.message : String(error));
+			continue;
+		}
+		let sdkArc: unknown;
+		try {
+			sdkArc = await host.read(`fresh读取分支候选ARC ${contact.id}`, () => eda.pcb_PrimitiveArc.get(contact.id));
+		}
+		catch (error) {
+			failClosed(error instanceof Error ? error.message : String(error));
+			continue;
+		}
+		const expected = { id: contact.id, net: data.netName, layer, width: data.width, curve };
+		const evidence = inspectArcReadback(sdkArc, row, expected, 'fresh-getter');
+		if (evidence.differences.length || !evidence.actualCurve) {
+			failClosed(evidence.differences.join('；') || '无法取得可确认曲线', { endpointMode: evidence.endpointMode, differences: evidence.differences });
+			continue;
+		}
+		const verified: BranchArcContact = { id: contact.id, net: data.netName, layers: [layer], kind: 'arc', curve: evidence.actualCurve, width: data.width };
+		const index = contacts.findIndex(item => item.id === contact.id && item.kind === 'unknown');
+		if (index < 0) {
+			failClosed('无法唯一替换unknown ARC contact');
+			continue;
+		}
+		contacts[index] = verified;
+		arcs.push(verified);
+		reports.push({ id: contact.id, status: 'verified', method: 'source-arc-plus-fresh-getter', sourceGeometry: 'effective-ARC-source-exact', sdkEndpointMode: evidence.endpointMode, sourceSweepDegrees: data.angle, width: data.width });
+	}
+	return { contacts, arcs, reports };
+}
+
+async function routePadBranches(params: Record<string, any>): Promise<unknown> {
+	const host = await createGeometryHost(eda, params);
+	const started = performance.now();
+	const budget = params._timeoutMs == null ? 290_000 : Number(params._timeoutMs);
+	if (!Number.isFinite(budget) || budget <= 0 || budget > 2_147_483_647)
+		throw new Error('_timeoutMs必须是有效正数');
+	const deadline = started + Math.max(1000, budget);
+	const check = () => {
+		host.checkBudget();
+		if (performance.now() >= deadline)
+			throw new Error('重复焊盘分支共享时间预算已耗尽');
+	};
+	const created: Array<{ net: string; segmentIds: string[] }> = [];
+	const writerRows: any[] = [];
+	let active: TuneLine | undefined;
+	let writeStarted = false;
+	let phase = 'preflight';
+	try {
+		check();
+		const layer = boardLayer(params.layer);
+		if (params.dryRun !== undefined && typeof params.dryRun !== 'boolean')
+			throw new Error('dryRun必须是boolean');
+		const baseline = await host.getBaseline();
+		const beforeSource = await host.read('读取分支前完整源码', () => eda.sys_FileManager.getDocumentSource()) as string;
+		const before = parseSourceLog(beforeSource);
+		if (before.uuid !== host.documentUuid || before.docType.toUpperCase() !== 'PCB')
+			throw new Error('目标源码不是当前PCB');
+		const strippedBefore = before.records.filter(record => record.header.type !== 'DOCHEAD').map(record => record.raw).join('\n');
+		if (strippedBefore !== baseline.source)
+			throw new Error('完整源码与几何操作源码基线不一致');
+		const oldRows = [...resolveRecords(before).values()];
+		const lineRows = oldRows.filter(row => row.header.type === 'LINE');
+		const oldLines = lineRows.map(sourceTuneLine);
+		const layerRows = await host.read('核对分支目标层', () => eda.pcb_Layer.getAllLayers());
+		if (!Array.isArray(layerRows))
+			throw new Error('图层列表读取无效');
+		const selected = (layerRows as any[]).filter((item: any) => (item.id ?? item.layerId) === layer);
+		if (selected.length !== 1 || String(selected[0].type).toUpperCase() !== 'SIGNAL'
+			|| ![1, 2].includes(selected[0].layerStatus ?? selected[0].status)
+			|| (selected[0].layerStatus !== undefined && selected[0].status !== undefined && selected[0].layerStatus !== selected[0].status)) {
+			throw new Error('目标层不是已启用的SIGNAL铜层');
+		}
+		const ruleRows = await host.read('读取分支前规则', () => eda.pcb_Drc.getCurrentRuleConfiguration());
+		if (!ruleRows || typeof ruleRows !== 'object' || Array.isArray(ruleRows) || !Object.keys(ruleRows).length)
+			throw new Error('设计规则读取无效');
+		const nets = await host.read('核对分支网络', () => eda.pcb_Net.getAllNetsName());
+		if (!Array.isArray(nets) || nets.some((net: unknown) => typeof net !== 'string'))
+			throw new Error('网络列表读取无效');
+		if (!params.pair || !nets.includes(params.pair.positiveNet) || !nets.includes(params.pair.negativeNet))
+			throw new Error('正负网络必须是当前PCB中已存在的网络');
+		const sdkPads = await host.read('读取重复分支PCB PAD对象', () => eda.pcb_PrimitivePad.getAll()) as any[];
+		const components = await host.read('读取重复分支器件', () => eda.pcb_PrimitiveComponent.getAll()) as any[];
+		if (!Array.isArray(sdkPads) || !Array.isArray(components))
+			throw new Error('PAD或器件枚举无效');
+		const objects = new Map<string, any>();
+		const independentPadIds = new Set<string>();
+		const componentPadIds = new Set<string>();
+		for (const pad of sdkPads) {
+			const id = validId(state(pad, 'PrimitiveId'), 'PCB PAD');
+			independentPadIds.add(id);
+			objects.set(id, pad);
+		}
+		for (const component of components) {
+			const componentId = validId(state(component, 'PrimitiveId'), '器件');
+			const pins = await host.read(`读取器件${componentId}焊盘`, () => component.getAllPins()) as any[];
+			if (!Array.isArray(pins))
+				throw new Error(`器件${componentId}焊盘枚举无效`);
+			for (const pad of pins) {
+				const padId = validId(state(pad, 'PrimitiveId'), `器件${componentId}焊盘`);
+				componentPadIds.add(padId);
+				objects.set(padId, pad);
+			}
+		}
+		for (const id of componentPadIds)
+			independentPadIds.delete(id);
+		const contactRead = await resolveBranchArcContacts(host, layer, oldRows, await readTuneContacts(host, layer, [...objects.values()]));
+		const contacts = contactRead.contacts;
+		const sourceContacts = new Map<string, BranchContact>();
+		const independentPadProjectionReports: Array<Record<string, unknown>> = [];
+		const editorVersion = readEditorVersion(eda);
+		for (const id of independentPadIds) {
+			const row = oldRows.find(record => record.header.type === 'PAD' && record.header.id === id);
+			const contact = row ? sourcePadContact(row, id, layer) : undefined;
+			if (contact && row) {
+				const d = row.data as any;
+				const sdkPad = objects.get(id);
+				const getterNet = state(sdkPad, 'Net');
+				const getterLayer = state(sdkPad, 'Layer');
+				const getterX = state(sdkPad, 'X');
+				const getterY = state(sdkPad, 'Y');
+				const getterRotation = state(sdkPad, 'Rotation');
+				const getterShape = state(sdkPad, 'Pad');
+				if (getterNet !== d.netName || getterLayer !== d.layerId || getterRotation !== d.padAngle)
+					throw new Error(`独立PAD ${id} 的源码网络/层/角度与当前SDK对象不一致`);
+				const ellipse = d.defaultPad.padType === 'ELLIPSE';
+				const oval = d.defaultPad.padType === 'OVAL';
+				const widthMatches = oval ? ovalDimensionMatches(getterShape?.[1], d.defaultPad.width, editorVersion) : getterMatchesSourceProjection(getterShape?.[1], d.defaultPad.width, ellipse);
+				const heightMatches = oval ? ovalDimensionMatches(getterShape?.[2], d.defaultPad.height, editorVersion) : getterMatchesSourceProjection(getterShape?.[2], d.defaultPad.height, ellipse);
+				if (!Array.isArray(getterShape) || getterShape[0] !== (ellipse ? 'ELLIPSE' : d.defaultPad.padType)
+					|| !getterMatchesSourceProjection(getterX, d.centerX, true) || !getterMatchesSourceProjection(getterY, d.centerY, true)
+					|| !widthMatches || !heightMatches
+					|| oval && getterShape[3] !== undefined && getterShape[3] !== 0) {
+					throw new Error(`独立PAD ${id} getter几何无法证明为精确值或已观察到的最近0.1mil表示`);
+				}
+				sourceContacts.set(id, contact);
+				independentPadProjectionReports.push({ padId: id, source: { x: d.centerX, y: d.centerY, shape: d.defaultPad, layer: d.layerId, net: d.netName }, getter: { x: getterX, y: getterY, shape: getterShape, layer: getterLayer, net: getterNet }, getterProjectionDifferences: { x: getterX === d.centerX ? 0 : (getterX as number) - d.centerX, y: getterY === d.centerY ? 0 : (getterY as number) - d.centerY, shapeWidth: getterShape[1] === d.defaultPad.width ? 0 : getterShape[1] - d.defaultPad.width, shapeHeight: getterShape[2] === d.defaultPad.height ? 0 : getterShape[2] - d.defaultPad.height }, ...(oval ? { ovalShapeProjection: { status: getterShape[1] === d.defaultPad.width && getterShape[2] === d.defaultPad.height ? 'exact' : 'sdk-0.1-projection', verifiedEditorVersion: editorVersion, sourceDimensions: [d.defaultPad.width, d.defaultPad.height], getterDimensions: [getterShape[1], getterShape[2]], sourceGeometryUsedForPlanning: true } } : {}) });
+			}
+		}
+		const exactIndependentPadIds = new Set(sourceContacts.keys());
+		const requestedPadIds = [params.positive, params.negative].flatMap((side: any) => Array.isArray(side?.branches) ? side.branches.map((branch: any) => branch?.padId) : []);
+		for (const id of requestedPadIds) {
+			const matches = oldRows.filter(record => record.header.id === id);
+			if (matches.some(record => record.header.type === 'ARC')) {
+				if (matches.length !== 1)
+					throw new Error(`目标ID ${id} 存在跨类型/重复源码身份冲突`);
+				throw new Error(`目标ID ${id} 解析为ARC，ARC不能作为目标PAD`);
+			}
+		}
+	for (const side of [params.positive, params.negative]) {
+		const id = side?.trunk?.primitiveId;
+		if (typeof id !== 'string')
+			continue;
+		const matches = oldRows.filter(record => record.header.id === id);
+		if (matches.some(record => record.header.type === 'ARC') && matches.length !== 1)
+			throw new Error(`主干ID ${id} 存在跨类型/重复源码身份冲突`);
+		if (matches.length === 1 && matches[0].header.type === 'ARC' && !contactRead.arcs.some(arc => arc.id === id))
+			throw new Error(`指定主干ARC ${id} 未通过唯一来源和fresh getter几何验证`);
+	}
+		for (const id of requestedPadIds) {
+			if (independentPadIds.has(id) && !exactIndependentPadIds.has(id))
+				throw new Error(`目标独立PAD ${id} 缺少可确认的源码锚点几何，拒绝按可能量化的getter坐标布线`);
+		}
+		const pads: BranchContact[] = [...objects.values()].map((pad) => {
+			const id = validId(state(pad, 'PrimitiveId'), 'PAD');
+			return sourceContacts.get(id) ?? branchPadContact(pad, layer);
+		});
+		const branchPadIds = new Set(pads.map(pad => pad.id));
+		for (let i = contacts.length - 1; i >= 0; i--) {
+			if (branchPadIds.has(contacts[i].id))
+				contacts.splice(i, 1);
+		}
+		contacts.push(...pads);
+		const request: PadBranchesRequest = {
+			pair: params.pair,
+			layer,
+			width: params.width,
+			clearanceMil: params.clearanceMil,
+			positive: params.positive,
+			negative: params.negative,
+		};
+		const plan = planPadBranches(request, pads, oldLines, contacts, check, contactRead.arcs);
+		const expectedLines = [...plan.positive.uniqueSegments, ...plan.negative.uniqueSegments].map(segment => sesLine({ ...segment, id: '' }));
+		const sourcePlan = planSesImport({ lines: expectedLines, vias: [], coordinateMapping: 'easyeda-pro-4.1.78-direct-xy', toleranceMil: 0.001, toleranceScope: 'current mil/1000 fixture', holeDiameterStatus: 'not-specified-by-ses' }, { documentUuid: host.documentUuid, lines: oldLines.map(sesLine), vias: [] }, 'append');
+		const base = { documentUuid: host.documentUuid, pair: request.pair, layer, width: params.width, clearanceMil: params.clearanceMil, positive: plan.positive, negative: plan.negative, geometrySource: '独立PAD优先使用有效源码中心/外形/层/网络；器件PAD使用本次getAllPins()返回的全局SDK模型锚点。普通无孔外层OVAL按精确源码几何规划；fresh getter尺寸须精确匹配，或仅在已验证的4.1.78版本按0.1尺寸投影并披露delta。圆弧接触限于唯一有效ARC源码与fresh getter的一致性检查。', precisionStatus: '器件嵌入封装焊盘的源码精度与误差界未确认；长度、间距和接触结论限于SDK模型。没有增加坐标网格或容差。', contactVerificationScope: '独立PAD基于有效源码几何，器件PAD和其他SDK导电对象基于当前SDK模型的局部检查；ARC接触仅覆盖已验证的有限弧几何及唯一源码/getter读回；不是原生电气连通、实际铜皮或全板DRC验证。', padAnchorResolution: [...new Set([...plan.positive.branches, ...plan.negative.branches].map(branch => branch.padId))].map(padId => ({ padId, source: independentPadIds.has(padId) && exactIndependentPadIds.has(padId) ? 'effective-PAD-source-exact' : 'component-getAllPins-SDK-global-anchor', precisionStatus: independentPadIds.has(padId) && exactIndependentPadIds.has(padId) ? 'effective-PAD-source-exact; see independentPadProjectionReports for SDK getter delta' : 'component SDK global pin model; embedded source precision/error bound not established' })), independentPadProjectionReports, arcContactResolution: contactRead.reports, nativeElectricalConnectivityVerified: false, actualCopperGeometryVerified: false, boardClearanceVerified: false, impedanceVerified: false, saved: false };
+		await host.assertBaseline(baseline);
+		if (canonical(ruleRows) !== canonical(await host.read('复核分支写入前规则', () => eda.pcb_Drc.getCurrentRuleConfiguration())))
+			throw new Error('分支规划期间设计规则变化');
+		if (params.dryRun === true) {
+			await host.finish();
+			return { ...base, dryRun: true, created: false, readbackVerified: false };
+		}
+		phase = 'write';
+		for (const side of [plan.positive, plan.negative]) {
+			for (const segment of side.uniqueSegments) {
+				check();
+				active = { id: '', net: segment.net, layer: segment.layer, width: segment.width, a: segment.a, b: segment.b };
+				writeStarted = true;
+				const remaining = Math.floor(deadline - performance.now());
+				const result = await host.write(`写入${segment.net}分支线段`, () => executeRouteTrack({ net: segment.net, points: [segment.a, segment.b], width: segment.width, layer: segment.layer, _timeoutMs: remaining }, { documentUuid: host.documentUuid, deadline }));
+				for (const id of result.segmentIds) {
+					host.recordCreated(id);
+					host.recordVerified(id);
+				}
+				created.push({ net: segment.net, segmentIds: result.segmentIds });
+				const segmentSource = await host.read('核对当前分支写入源码', () => eda.sys_FileManager.getDocumentSource()) as string;
+				const segmentRows = [...resolveRecords(parseSourceLog(segmentSource)).values()];
+				for (const id of result.segmentIds) {
+					const row = segmentRows.find(item => item.header.type === 'LINE' && item.header.id === id);
+					if (!row)
+						throw new Error(`writer返回线段 ${id} 尚未在源码中出现，停止后续写入`);
+					const actual = sourceTuneLine(row);
+					if (actual.net !== segment.net || actual.layer !== segment.layer || Math.abs(actual.width - segment.width) > 0.001)
+						throw new Error(`当前分支线段 ${id} 源码网络、层或线宽不符`);
+					writerRows.push(row);
+				}
+				const knownAttributes = new Set([...lineRows, ...writerRows].map(sourceAttributes));
+				for (const row of segmentRows.filter(item => item.header.type === 'LINE')) {
+					if (!knownAttributes.has(sourceAttributes(row)))
+						throw new Error(`写入后出现属性未预期的LINE ${row.header.id ?? 'unknown'}`);
+				}
+			}
+		}
+		phase = 'final-readback';
+		const afterSource = await host.read('读取分支后源码', () => eda.sys_FileManager.getDocumentSource());
+		if (typeof afterSource !== 'string')
+			throw new Error('写入后PCB源码无效');
+		const after = parseSourceLog(afterSource);
+		if (after.uuid !== before.uuid || after.docType !== before.docType)
+			throw new Error('写入后文档身份变化');
+		const newRows = [...resolveRecords(after).values()];
+		for (const old of oldRows) {
+			if (old.header.type === 'LINE')
+				continue;
+			const actual = newRows.find(row => row.header.type === old.header.type && row.header.id === old.header.id);
+			if (!actual || canonical(actual.data) !== canonical(old.data))
+				throw new Error(`原有${old.header.type} ${old.header.id}消失或属性变化`);
+		}
+		const oldKeys = new Set(oldRows.map(row => `${row.header.type}\0${String(row.header.id ?? '')}`));
+		for (const row of newRows) {
+			if (row.header.type !== 'DOCHEAD' && row.header.id != null && !oldKeys.has(`${row.header.type}\0${String(row.header.id)}`)
+				&& row.header.type !== 'LINE') {
+				throw new Error(`发现非预期新增记录 ${row.header.type} ${row.header.id}`);
+			}
+		}
+		const afterLineRows = newRows.filter(row => row.header.type === 'LINE');
+		if (!oldLinesRemain([...lineRows, ...writerRows], afterLineRows))
+			throw new Error('新增分支期间原LINE或writer线段的几何/完整非几何属性覆盖不完整');
+		if (!oldLinesRemain(afterLineRows, [...lineRows, ...writerRows]))
+			throw new Error('写入后出现未预期LINE：其几何/完整非几何属性不属于基线或writer记录');
+		const afterLines = afterLineRows.map(sourceTuneLine);
+		for (const row of afterLineRows) {
+			const old = lineRows.find(item => item.header.id === row.header.id);
+			if (old && sourceAttributes(old) !== sourceAttributes(row))
+				throw new Error(`原LINE ${row.header.id} 的非几何属性发生变化`);
+		}
+		const coverage = verifySesImport(sourcePlan, { documentUuid: host.documentUuid, lines: afterLines.map(sesLine), vias: [] });
+		if (!coverage.verified)
+			throw new Error(`分支实际源码几何覆盖不符：${JSON.stringify(coverage.differences)}`);
+		const headBefore = before.records.filter(r => r.header.type === 'DOCHEAD').map(r => r.raw).join('\n');
+		const headAfter = after.records.filter(r => r.header.type === 'DOCHEAD').map(r => r.raw).join('\n');
+		if (!comparePcbSourceSnapshots(headBefore, headAfter).matches)
+			throw new Error('分支写入期间DOCHEAD身份或非挥发属性变化');
+		if (canonical(ruleRows) !== canonical(await host.read('核对分支后规则', () => eda.pcb_Drc.getCurrentRuleConfiguration())))
+			throw new Error('分支写入期间设计规则变化');
+		await host.finish();
+		const baselineIds = new Set(lineRows.map(row => String(row.header.id)));
+		const finalIds = new Set(afterLineRows.map(row => String(row.header.id)));
+		const replacedOriginalIds = [...baselineIds].filter(id => !finalIds.has(id));
+		const finalAddedIds = [...finalIds].filter(id => !baselineIds.has(id));
+		const writerReportedIds = [...new Set(created.flatMap(item => item.segmentIds))];
+		return { ...base, dryRun: false, created: true, readbackVerified: true, sourceCoverage: coverage, writerReportedIds, hostLineIdentityChanges: { replacedOriginalIds, finalAddedIds, writerReportedIdsMissingAtFinal: writerReportedIds.filter(id => !finalIds.has(id)), reason: replacedOriginalIds.length || finalAddedIds.length || writerReportedIds.some(id => !finalIds.has(id)) ? '按最终LINE源码几何覆盖和完整非几何属性确认，未要求writer候选ID在末态继续存在' : 'no-identity-change' }, originalNonLineRecordsPreserved: true, originalLineGeometryAndAttributesPreserved: true, actualLengths: 'branches[].length为每个PAD锚点至join的独立中心线路径长度；并联支路长度不相加。器件PAD锚点是SDK模型值。', connectivityVerified: false, readbackToleranceMil: 0.001 };
+	}
+	catch (error) {
+		if (!writeStarted)
+			throw error;
+		return host.fail(error, { operation: 'pcb.routePadBranches', phase, activeSegment: active, completedSegments: created, unprocessedSegments: '未执行后续支路', failedStep: phase, failedStepAttempted: true, retryable: false, connectivityVerified: false });
+	}
+}
+
+export const padBranchCommands: ICommandDef[] = [{
+	name: 'pcb.routePadBranches',
+	summary: '按真实PAD ID将重复信号焊盘（含普通无孔外层OVAL）沿明确中间点连接到每侧汇合点；可选LINE/ARC主干须指定并核验真实端点。局部检查目标铜层和异网铜边间距，串行写入并验证源码覆盖，不自动避障或保存',
+	params: [
+		{ name: 'pair', type: 'object', required: true, description: '{positiveNet,negativeNet}两个不同且已存在网络名' },
+		{ name: 'positive', type: 'object', required: true, description: '{joinPoint:[x,y],branches:[{padId,waypoints?}],trunk?:{primitiveId,endpoint:"start"|"end"}}；坐标mil，中间点不含PAD中心和汇合点。trunk可选已验证LINE或ARC，joinPoint必须等于所选真实端点' },
+		{ name: 'negative', type: 'object', required: true, description: '与positive相同结构，供negativeNet使用；可选LINE或ARC主干同样必须连接指定真实端点' },
+		{ name: 'layer', type: 'string | number', description: 'top、bottom或数字SIGNAL铜层ID；默认top' },
+		{ name: 'width', type: 'number', required: true, description: '新支路线宽，mil；必须明确给出' },
+		{ name: 'clearanceMil', type: 'number', required: true, description: '与异网铜的最小铜边间距，mil；零也不允许异网铜接触，不代表恒定差分间隙或阻抗' },
+		{ name: 'dryRun', type: 'boolean', description: 'true只读预览；默认false执行串行写入' },
+	],
+	returns: '返回每侧各PAD锚点到join的独立路径与长度、去重后的分支线段、锚点来源/精度状态、局部模型间距检查、源码覆盖读回及arcContactResolution。普通无孔外层OVAL接触按精确源码几何计算；器件PAD仍使用fresh getAllPins()全局SDK模型。ARC接触仅覆盖有限弧几何，并要求唯一有效ARC源码与fresh getter一致；不表示原生连通或实际铜。旧补长功能范围未扩大。长度、接触和间距结论按对应模型计算，不代表全板DRC/阻抗验收；不保存。写入部分失败时保留已完成线段并停止，不自动重试、回滚或持续锁定。',
+	example: { cmd: 'pcb.routePadBranches', params: { pair: { positiveNet: 'NET_P', negativeNet: 'NET_N' }, positive: { joinPoint: [300, 200], branches: [{ padId: 'real-pad-id-1' }, { padId: 'real-pad-id-2', waypoints: [[260, 180]] }] }, negative: { joinPoint: [300, 220], branches: [{ padId: 'real-pad-id-3' }, { padId: 'real-pad-id-4' }] }, layer: 'top', width: 6, clearanceMil: 8, dryRun: true } },
+	handler: routePadBranches,
+}];
