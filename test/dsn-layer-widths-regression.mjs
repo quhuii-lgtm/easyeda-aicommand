@@ -78,6 +78,9 @@ assert.match(repaired.text, /\(class TopClass TopNet \(circuit \(use_via via0\)\
 assert.match(repaired.text, /; keep comments, quote delimiters, and original whitespace/)
 assert.match(repaired.text, /\(string_quote "\)/)
 assert.equal(repaired.text.replaceAll(' (layer_rule BottomLayer (rule (width 30)))', '').replace(' (rule (width 25))', ''), fixture, 'only layer-local insertions change the original DSN bytes')
+for (const editorVersion of ['4.1.93', '9.9.9', '']) {
+	assert.deepEqual(applyDsnLayerWidthRules({ ...snapshot(), editorVersion }, fixture), repaired, `DSN conversion is independent of diagnostic editorVersion ${JSON.stringify(editorVersion)}`)
+}
 const repeated = applyDsnLayerWidthRules(snapshot(), repaired.text)
 assert.equal(repeated.changed, false, 'an exact existing class layer_rule is idempotent')
 assert.equal(repeated.text, repaired.text)
@@ -144,7 +147,6 @@ rejected('wrong DSN resolution', text => text.replace('(resolution mil 1000)', '
 rejected('wrong DSN unit', text => text.replace('(resolution mil 1000)', '(resolution mm 1000)'))
 rejected('invalid structure base width', text => text.replace('(rule (width 15))', '(rule (width 0))'))
 rejected('multiple structure base widths', text => text.replace('(rule (width 15))', '(rule (width 15)) (rule (width 16))'))
-rejected('wrong editor version', text => text, value => ({ ...value, editorVersion: '4.1.79' }))
 rejected('wrong source unit', text => text, value => ({ ...value, sourceUnit: 'mm' }))
 rejected('unknown global evidence', text => text, value => ({ ...value, globalStatus: 'unknown' }))
 rejected('unknown target net', text => text, value => ({ ...value, nets: value.nets.map(net => net.net === 'TopNet' ? { ...net, status: 'unknown' } : net) }))

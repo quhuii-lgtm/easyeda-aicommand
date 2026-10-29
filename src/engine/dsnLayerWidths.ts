@@ -79,8 +79,8 @@ function snapshotLayerMap(snapshot: RoutingWidthSnapshot): Map<number, { name?: 
 /** Applies only fully evidenced class-scoped width overrides to an unchanged DSN string. */
 export function applyDsnLayerWidthRules(snapshot: RoutingWidthSnapshot, source: string): DsnRepairResult {
 	const unchanged = (messages: string[] = []): DsnRepairResult => ({ originalText: source, text: source, changed: false, changes: [], warnings: messages, limitations: [] })
-	if (snapshot.schemaVersion !== 1 || snapshot.editorVersion !== '4.1.78' || snapshot.sourceUnit !== 'mil' || snapshot.globalStatus !== 'known')
-		throw new Error('只支持 EDA 4.1.78、源码单位mil且globalStatus已知的线宽快照')
+	if (snapshot.schemaVersion !== 1 || snapshot.sourceUnit !== 'mil' || snapshot.globalStatus !== 'known')
+		throw new Error('只支持schemaVersion为1、源码单位mil且globalStatus已知的线宽快照')
 	const roots = tokenizeDsn(source).filter((node): node is DsnList => node.type === 'list')
 	if (roots.length !== 1 || head(roots[0]) !== 'pcb')
 		throw new Error('DSN必须只有一个PCB根节点')

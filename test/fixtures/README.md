@@ -8,6 +8,7 @@
 - `footprint-*`：封装丝印几何测试样本。源记录保留回归使用的源文本；几何预期仅保留实际比较的字段。
 - `silkscreen-source-*`：丝印源记录比较样本，保留 `result.data.source`。
 - `manifest.json`：记录样本来源、源文件 SHA-256、样本 SHA-256 和字段提取范围。运行日志中的请求、实例和时间信息已去除。
+- `routing-width-host-structure.json`：线宽规则的真实源码、SDK 层与规则返回、配对 DSN；其中单字段派生输入已单独标注，不作为新增实机结果。
 
 准备方式：从项目独立验收资料提取上述字段，DSN、SES 与 Gerber 几何样本保留原始几何；只将运行时 JSON 外层包装移除。各文件的来源与校验值见清单。
 

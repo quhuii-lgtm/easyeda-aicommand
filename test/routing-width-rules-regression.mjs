@@ -122,7 +122,7 @@ const assertClassUnknown = (input, net = '+5V') => {
 assert.equal(snapshot.defaultRule.status, 'known');
 assert.equal(snapshot.defaultRule.minMil, 5);
 assert.equal(snapshot.defaultRule.maxMil, 100);
-assert.equal(snapshot.defaultRule.layers.length, 2, 'single public row maps to all enabled signal layers under the 4.1.78 profile');
+assert.equal(snapshot.defaultRule.layers.length, 2, 'a supported single-row unit maps to all enabled signal layers');
 assert.equal(snapshot.globalStatus, 'known');
 assert.equal(snapshot.routingConstraintsComplete, false);
 assert.equal(snapshot.nets.find(n => n.net === '+5V').layers[0].preferredMil, 20);
@@ -214,7 +214,7 @@ assertSafeTrackUnknown({ safeRule: { ...safeTrackRule(), ruleContext: { ...safeT
 assertSafeTrackUnknown({ safeRule: { ...safeTrackRule(), ruleContext: { ...safeTrackRule().ruleContext, safeSpacing: [] } } }, 'missing SAFE spacing row remains unknown');
 assertSafeTrackUnknown({ safeRule: { ...safeTrackRule(), ruleContext: { ...safeTrackRule().ruleContext, safeSpacing: [{ ...safeTrackRule().ruleContext.safeSpacing[0], content: [[0], ...safeTrackRows().slice(1)] }] } } }, 'zero SAFE matrix value remains unknown');
 assertSafeTrackUnknown({ safeRule: { ...safeTrackRule(), ruleContext: { ...safeTrackRule().ruleContext, safeSpacing: [{ ...safeTrackRule().ruleContext.safeSpacing[0], content: safeTrackRows().map((row, index) => index === 0 ? [6, 6] : row) }] } } }, 'unsupported SAFE matrix shape remains unknown');
-assertSafeTrackUnknown({ editorVersion: '4.1.79' }, 'SAFE+TRACK profile remains version-gated');
+assert.equal(buildRoutingWidthSnapshot(safeTrackInput({ editorVersion: '4.1.79' })).nets.find(net => net.net === 'SAFE_TRACK_NET').status, 'known', 'SAFE+TRACK evidence is independent of diagnostic editorVersion');
 assertSafeTrackUnknown({ classSelector: { ruleOrder: 4, ruleKeyValue: { SAFE: 'SAFE_PROFILE', TRACK: 'ACE_CLASS30' }, copperValue: {}, innerPlaneValue: {}, parent: null } }, 'NET_CLASS SAFE+TRACK selector is not enabled');
 
 const mixedClassInput = safeClassTrackInput();
@@ -357,7 +357,7 @@ for (const mutation of [
 assertClassUnknown(explicitClassInput({ layers: fullLayers.map((layer, index) => index ? layer : { ...layer, id: 99 }), netTrack: 'ACE_CLASS30', sdkNetTrack: 'ACE_CLASS30', classRuleRows: classMultiRows, netRuleRows: classMultiRows }));
 assertClassUnknown(explicitClassInput({ layers: fullLayers, netTrack: 'ACE_CLASS30', sdkNetTrack: 'ACE_CLASS30', classRuleRows: classMultiRows, netRuleRows: classMultiRows, classSelector: { ...trackSelector('ACE_CLASS30'), parent: 'complex' } }));
 assertClassUnknown(explicitClassInput({ layers: fullLayers, netTrack: 'ACE_CLASS30', sdkNetTrack: 'ACE_CLASS30', sdkClassTrack: 'OTHER_CLASS', classRuleRows: classMultiRows, netRuleRows: classMultiRows }));
-assertClassUnknown(explicitClassInput({ layers: fullLayers, editorVersion: '4.1.79', netTrack: 'ACE_CLASS30', sdkNetTrack: 'ACE_CLASS30', classRuleRows: classMultiRows, netRuleRows: classMultiRows }));
+assert.equal(buildRoutingWidthSnapshot(explicitClassInput({ layers: fullLayers, editorVersion: '4.1.79', netTrack: 'ACE_CLASS30', sdkNetTrack: 'ACE_CLASS30', classRuleRows: classMultiRows, netRuleRows: classMultiRows })).nets.find(net => net.net === '+5V').status, 'known', 'single-row explicit class evidence is independent of diagnostic editorVersion');
 assertClassUnknown(explicitClassInput({ layers: fullLayers, netTrack: 'ACE_CLASS30', sdkNetTrack: 'ACE_CLASS30', classRuleUnit: 'mm', classRuleRows: classMultiRows, netRuleRows: classMultiRows }));
 
 const defaultMultiSource = [
@@ -380,7 +380,7 @@ const buildDefaultMulti = (rows = defaultRows, editorVersion = '4.1.78', unit = 
 assert.equal(buildDefaultMulti(defaultRows.slice(1)).defaultRule.status, 'unknown', 'DEFAULT rejects a missing enabled-layer row');
 assert.equal(buildDefaultMulti([...defaultRows, { ...defaultRows[0] }]).defaultRule.status, 'unknown', 'DEFAULT rejects duplicate rows');
 assert.equal(buildDefaultMulti([{ ...defaultRows[0], layerId: 1.5 }, ...defaultRows.slice(1)]).defaultRule.status, 'unknown', 'DEFAULT rejects noninteger layer IDs');
-assert.equal(buildDefaultMulti(defaultRows, '4.1.79').defaultRule.status, 'unknown', 'DEFAULT multilayer evidence is version-gated');
+assert.equal(buildDefaultMulti(defaultRows, '4.1.93').defaultRule.status, 'known', 'DEFAULT multilayer evidence is independent of diagnostic editorVersion');
 assert.equal(buildDefaultMulti(defaultRows, '4.1.78', 'mm').defaultRule.status, 'unknown', 'DEFAULT multilayer evidence is mil-only');
 assert.equal(buildDefaultMulti(defaultRows, '4.1.78', 'mil', fullLayers.map((layer, index) => index ? layer : { ...layer, id: 99 })).defaultRule.status, 'unknown', 'DEFAULT multilayer evidence rejects SDK ID alias conflicts');
 assert.equal(explicit20.routingConstraintsComplete, false);
@@ -468,7 +468,7 @@ multiUnknown({ netRules: [
 ] });
 const defaultNetMulti = buildRoutingWidthSnapshot(explicitClassInput({ defaultRuleRows: multiRows, layers: multiLayers }));
 assert.equal(defaultNetMulti.defaultRule.status, 'known', 'a complete exact DEFAULT multilayer row set is accepted');
-assertClassUnknown(explicitClassInput({ netRuleRows: multiRows, editorVersion: '4.1.79', layers: multiLayers }));
+assert.equal(buildRoutingWidthSnapshot(explicitClassInput({ netRuleRows: multiRows, editorVersion: '4.1.93', layers: multiLayers })).nets.find(net => net.net === '+5V').status, 'known', 'multi-row NET evidence is independent of diagnostic editorVersion');
 
 const emptyDefaultInput = emptyNetSelectorInput();
 const emptyDefaultSnapshot = buildRoutingWidthSnapshot(emptyDefaultInput);
@@ -497,7 +497,7 @@ assertClassUnknown(emptyNetSelectorInput({ classSelector: {} }), 'SYN_DEFAULT_NE
 assertClassUnknown(emptyNetSelectorInput({ classSelector: { ...trackSelector('ACE_CLASS30'), extra: true } }), 'SYN_DEFAULT_NET');
 assertClassUnknown(emptyNetSelectorInput({ classRuleRows: [] }), 'SYN_DEFAULT_NET');
 assertClassUnknown(emptyNetSelectorInput({ classRuleState: 'DEFAULT' }), 'SYN_DEFAULT_NET');
-assertClassUnknown(emptyNetSelectorInput({ editorVersion: '4.1.79' }), 'SYN_DEFAULT_NET');
+assert.equal(buildRoutingWidthSnapshot(emptyNetSelectorInput({ editorVersion: '4.1.93' })).nets.find(net => net.net === 'SYN_DEFAULT_NET').status, 'known', 'empty selector evidence is independent of diagnostic editorVersion');
 const missingEmptySelector = emptyNetSelectorInput();
 missingEmptySelector.source = missingEmptySelector.source.split('\n').filter(line => !line.includes('SYN_DEFAULT_NET') || !line.includes('RULE_SELECTOR')).join('\n');
 assertClassUnknown(missingEmptySelector, 'SYN_DEFAULT_NET');
@@ -614,9 +614,14 @@ assert.equal(upper.status, 'violation');
 assert.equal(upper.violations[0].maxMil, 100);
 const noVersion = buildRoutingWidthSnapshot({ source: src, editorVersion: '', layers });
 const noVersionCheck = checkSesWidthRules(noVersion, [{ net: '+5V', layer: 1, widthMil: 4.9 }]);
-assert.equal(noVersionCheck.status, 'unknown');
-assert.deepEqual(noVersionCheck.violations, []);
-assert.match(noVersionCheck.unknowns[0], /未验证editorVersion\/ruleContext\.unit组合/);
+assert.equal(noVersionCheck.status, 'violation', 'an absent diagnostic editorVersion does not change width interpretation');
+assert.equal(noVersion.editorVersion, '');
+assert.deepEqual(noVersionCheck.violations, [{ lineIndex: 0, net: '+5V', widthMil: 4.9, minMil: 5, maxMil: 100 }]);
+const versionBaseline = buildRoutingWidthSnapshot({ source: src, editorVersion: '4.1.78', layers });
+for (const editorVersion of ['4.1.93', '9.9.9', '']) {
+	const versionSnapshot = buildRoutingWidthSnapshot({ source: src, editorVersion, layers });
+	assert.deepEqual({ ...versionSnapshot, editorVersion: versionBaseline.editorVersion }, versionBaseline, `same source structure has identical width result for editorVersion ${JSON.stringify(editorVersion)}`);
+}
 const unknownLayer = checkSesWidthRules(snapshot, [{ net: '+5V', layer: 77, widthMil: 4.9 }]);
 assert.equal(unknownLayer.status, 'unknown');
 assert.deepEqual(unknownLayer.violations, []);
@@ -716,8 +721,8 @@ const deletedBlankSnapshot = buildRoutingWidthSnapshot({ source: `${src}\n${reco
 assert.equal(deletedBlankSnapshot.globalStatus, 'known', 'existing blank-selector deletion behavior is unchanged');
 assert.equal(deletedBlankSnapshot.unknowns.some(x => x.includes('网络名为空的TRACK选择器')), false);
 const wrongVersionBlankSnapshot = buildRoutingWidthSnapshot({ source: `${src}\n${blankLengthSelector}`, editorVersion: '4.1.79', layers });
-assert.equal(wrongVersionBlankSnapshot.globalStatus, 'unknown', 'selector exception is version-gated');
-assert.ok(wrongVersionBlankSnapshot.unknowns.some(x => x.includes('网络名为空的TRACK选择器')));
+assert.equal(wrongVersionBlankSnapshot.globalStatus, 'known', 'confirmed selector shape is independent of diagnostic editorVersion');
+assert.equal(wrongVersionBlankSnapshot.unknowns.some(x => x.includes('网络名为空的TRACK选择器')), false);
 const mixedLayerSnapshot = buildRoutingWidthSnapshot({ source: src, editorVersion: '4.1.78', layers: [
 	{ layerId: 1, type: 'SIGNAL', status: 1, layerName: 'Top Layer' },
 	{ layerId: 2, type: 'SIGNAL', status: 2, layerName: 'Bottom Layer' },
@@ -741,7 +746,7 @@ for (const invalidStatus of [undefined, null, -1, 3, '0', '1']) {
 	assert.ok(invalidLayerSnapshot.unknowns.some(x => x.includes('不是可确认的启用SIGNAL图层')), `status ${String(invalidStatus)} remains unknown`);
 }
 const unsupported = buildRoutingWidthSnapshot({ source: src, editorVersion: '5.0', layers });
-assert.ok(unsupported.unknowns.some(x => x.includes('unit')));
+assert.equal(unsupported.globalStatus, 'known', 'editorVersion is diagnostic and does not gate a supported source unit');
 const missing = buildRoutingWidthSnapshot({ source: src.replace('stroMax":100', 'missing":100'), editorVersion: '4.1.78', layers });
 assert.equal(missing.defaultRule.status, 'unknown');
 const conflictSrc = `${src}\n${record('RULE_SELECTOR', '["RULE_SELECTOR",["NET","+5V"]]', { ruleKeyValue: { TRACK: 'OTHER' } }, 5)}`;
