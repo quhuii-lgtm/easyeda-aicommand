@@ -357,6 +357,14 @@
       "fixtureSha256": "3f7344c98003d1c5aeb9ba2c8d534482d30fe6354750a79d96378d2127fbdf59",
       "bytes": 386576,
       "method": "copy baseline bytes unchanged; test only"
+    },
+    {
+      "fixture": "routing-width-host-structure.json",
+      "source": "independent PCB host readback, 2026-10-29",
+      "sourceSha256": "bdb2b3e0ecfaf87e0fadc261150ef3db1a5bc9300f68a23725d5db6ef920c37d",
+      "fixtureSha256": "4b9f4930bfcc9015afb9b9f2f4a7119dadab1abf0e3a7e8b3361a437aab33de7",
+      "bytes": 247735,
+      "method": "retain source and readback data; remove request, instance and timestamp envelopes; decode DSN base64; add explicitly labelled single-field derived COMBO input"
     }
   ]
 }

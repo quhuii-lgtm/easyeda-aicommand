@@ -220,8 +220,8 @@ function simpleTrackSelector(selector: Rec | undefined, scope: 'NET' | 'NET_CLAS
 	return isEmptyObject(data.copperValue) && isEmptyObject(data.innerPlaneValue) ? ruleKeyValue.TRACK : undefined;
 }
 
-function isConfirmedEmptyTrackNetSelector(selector: Rec | undefined, net: string, editorVersion: string): boolean {
-	if (editorVersion !== '4.1.78' || !selector || selector.idIsString !== true || !net)
+function isConfirmedEmptyTrackNetSelector(selector: Rec | undefined, net: string): boolean {
+	if (!selector || selector.idIsString !== true || !net)
 		return false;
 	const id = keyParts(selector.id);
 	if (id.length !== 2 || id[0] !== 'RULE_SELECTOR' || !Array.isArray(id[1]) || id[1].length !== 2 || id[1][0] !== 'NET' || id[1][1] !== net)
@@ -236,8 +236,8 @@ function isConfirmedEmptyTrackNetSelector(selector: Rec | undefined, net: string
 	return isEmptyObject(data.ruleKeyValue) && isEmptyObject(data.copperValue) && isEmptyObject(data.innerPlaneValue);
 }
 
-function safeSpacingRuleMatches(rule: Rec | undefined, ruleName: string, editorVersion: string): boolean {
-	if (!rule || editorVersion !== '4.1.78' || rule.idIsString !== true || rule.data?.ruleState !== 'NORMAL')
+function safeSpacingRuleMatches(rule: Rec | undefined, ruleName: string): boolean {
+	if (!rule || rule.idIsString !== true || rule.data?.ruleState !== 'NORMAL')
 		return false;
 	const id = keyParts(rule.id);
 	if (id.length !== 3 || id[0] !== 'RULE' || id[1] !== 'SAFE' || id[2] !== ruleName)
@@ -261,7 +261,7 @@ function safeSpacingRuleMatches(rule: Rec | undefined, ruleName: string, editorV
 
 interface SafeTrackSelection { safeName: string; trackName: string; resolvedHistoricalTombstones: Set<Rec> }
 
-function resolveSafeRuleHistory(records: Rec[], safeName: string, editorVersion: string): { rule?: Rec; resolvedHistoricalTombstones: Set<Rec> } {
+function resolveSafeRuleHistory(records: Rec[], safeName: string): { rule?: Rec; resolvedHistoricalTombstones: Set<Rec> } {
 	const matching = records.filter(record => record.type === 'RULE' && record.idIsString === true
 		&& (() => { const id = keyParts(record.id); return id.length === 3 && id[0] === 'RULE' && id[1] === 'SAFE' && id[2] === safeName; })());
 	const byRawId = new Map<string, Rec[]>();
@@ -280,13 +280,13 @@ function resolveSafeRuleHistory(records: Rec[], safeName: string, editorVersion:
 	}
 	const latestTicket = Math.max(...history.map(record => record.ticket!));
 	const latest = history.find(record => record.ticket === latestTicket)!;
-	if (latest.data === '' || !safeSpacingRuleMatches(latest, safeName, editorVersion))
+	if (latest.data === '' || !safeSpacingRuleMatches(latest, safeName))
 		return { resolvedHistoricalTombstones: new Set() };
 	return { rule: latest, resolvedHistoricalTombstones: new Set(history.filter(record => record.data === '' && record.ticket! < latestTicket)) };
 }
 
-function isConfirmedSafeTrackNetSelector(selector: Rec | undefined, net: string, editorVersion: string, safeRules: Rec[]): SafeTrackSelection | undefined {
-	if (editorVersion !== '4.1.78' || !selector || selector.idIsString !== true || !net)
+function isConfirmedSafeTrackNetSelector(selector: Rec | undefined, net: string, safeRules: Rec[]): SafeTrackSelection | undefined {
+	if (!selector || selector.idIsString !== true || !net)
 		return undefined;
 	const id = keyParts(selector.id);
 	if (id.length !== 2 || id[0] !== 'RULE_SELECTOR' || !Array.isArray(id[1]) || id[1].length !== 2 || id[1][0] !== 'NET' || id[1][1] !== net)
@@ -306,14 +306,14 @@ function isConfirmedSafeTrackNetSelector(selector: Rec | undefined, net: string,
 	const trackName = data.ruleKeyValue.TRACK;
 	if (typeof safeName !== 'string' || !safeName || typeof trackName !== 'string' || !trackName)
 		return undefined;
-	const safeHistory = resolveSafeRuleHistory(safeRules, safeName, editorVersion);
+	const safeHistory = resolveSafeRuleHistory(safeRules, safeName);
 	if (!safeHistory.rule)
 		return undefined;
 	return { safeName, trackName, resolvedHistoricalTombstones: safeHistory.resolvedHistoricalTombstones };
 }
 
-function isConfirmedSafeTrackClassSelector(selector: Rec | undefined, className: string, editorVersion: string, safeRules: Rec[]): SafeTrackSelection | undefined {
-	if (editorVersion !== '4.1.78' || !selector || selector.idIsString !== true || !className)
+function isConfirmedSafeTrackClassSelector(selector: Rec | undefined, className: string, safeRules: Rec[]): SafeTrackSelection | undefined {
+	if (!selector || selector.idIsString !== true || !className)
 		return undefined;
 	const id = keyParts(selector.id);
 	if (id.length !== 2 || id[0] !== 'RULE_SELECTOR' || !Array.isArray(id[1]) || id[1].length !== 2 || id[1][0] !== 'NET_CLASS' || id[1][1] !== className)
@@ -333,14 +333,14 @@ function isConfirmedSafeTrackClassSelector(selector: Rec | undefined, className:
 	const trackName = data.ruleKeyValue.TRACK;
 	if (typeof safeName !== 'string' || !safeName || typeof trackName !== 'string' || !trackName)
 		return undefined;
-	const safeHistory = resolveSafeRuleHistory(safeRules, safeName, editorVersion);
+	const safeHistory = resolveSafeRuleHistory(safeRules, safeName);
 	if (!safeHistory.rule)
 		return undefined;
 	return { safeName, trackName, resolvedHistoricalTombstones: safeHistory.resolvedHistoricalTombstones };
 }
 
-function isNormalSingleRowTrackRule(rule: Rec | undefined, editorVersion: string, enabledLayerIds: ReadonlySet<number>): boolean {
-	if (!rule || rule.data?.ruleState !== 'NORMAL' || editorVersion !== '4.1.78')
+function isNormalSingleRowTrackRule(rule: Rec | undefined, enabledLayerIds: ReadonlySet<number>): boolean {
+	if (!rule || rule.data?.ruleState !== 'NORMAL')
 		return false;
 	const unit = rule.data?.ruleContext?.unit;
 	const content = rule.data?.ruleContext?.track?.content;
@@ -348,8 +348,8 @@ function isNormalSingleRowTrackRule(rule: Rec | undefined, editorVersion: string
 	return (unit === 'mil' || unit === 'mm') && layerId !== undefined && Number.isInteger(layerId) && enabledLayerIds.has(layerId) && boundsFor(rule, layerId) !== undefined;
 }
 
-function normalMultiLayerTrack(rule: Rec | undefined, editorVersion: string, enabled: ReturnType<typeof getEnabledLayers>, state: 'NORMAL' | 'DEFAULT' = 'NORMAL'): RoutingLayerWidth[] | undefined {
-	if (!rule || editorVersion !== '4.1.78' || rule.data?.ruleState !== state || rule.data?.ruleContext?.unit !== 'mil')
+function normalMultiLayerTrack(rule: Rec | undefined, enabled: ReturnType<typeof getEnabledLayers>, state: 'NORMAL' | 'DEFAULT' = 'NORMAL'): RoutingLayerWidth[] | undefined {
+	if (!rule || rule.data?.ruleState !== state || rule.data?.ruleContext?.unit !== 'mil')
 		return undefined;
 	const track = rule.data?.ruleContext?.track;
 	const content = track?.content;
@@ -375,8 +375,8 @@ function normalMultiLayerTrack(rule: Rec | undefined, editorVersion: string, ena
 	return enabled.layers.map(layer => rows.get(layer.id)!);
 }
 
-function isConfirmedLengthOnlyNetSelector(selector: Rec, editorVersion: string): boolean {
-	if (editorVersion !== '4.1.78' || selector.idIsString !== true)
+function isConfirmedLengthOnlyNetSelector(selector: Rec): boolean {
+	if (selector.idIsString !== true)
 		return false;
 	const id = keyParts(selector.id);
 	const scope = id[1];
@@ -420,15 +420,15 @@ export function buildRoutingWidthSnapshot(input: BuildRoutingWidthSnapshotInput)
 	else
 		unknowns.push(defaults.length ? '存在多个DEFAULT TRACK规则' : '缺少DEFAULT TRACK规则');
 	const sourceUnit = defaultRec?.data?.ruleContext?.unit;
-	const profileKnown = input.editorVersion === '4.1.78' && (sourceUnit === 'mil' || sourceUnit === 'mm');
-	if (!profileKnown)
-		unknowns.push(`未验证editorVersion/ruleContext.unit组合: ${input.editorVersion}/${String(sourceUnit)}`);
+	const supportedSourceUnit = sourceUnit === 'mil' || sourceUnit === 'mm';
+	if (!supportedSourceUnit)
+		unknowns.push(`未验证ruleContext.unit: ${String(sourceUnit)}`);
 	const content = defaultRec?.data?.ruleContext?.track?.content;
 	if (!Array.isArray(content) || content.length === 0)
 		unknowns.push('TRACK规则缺少有效图层表单');
 	const defaultKey = String(keyParts(defaultRec?.id)[2] ?? '') || undefined;
 	const baseByLayer: RoutingLayerWidth[] = [];
-	if (profileKnown && Array.isArray(content) && content.length === 1) {
+	if (supportedSourceUnit && Array.isArray(content) && content.length === 1) {
 		const evidenceRow = content[0];
 		const evidenceBounds = boundsFor(defaultRec, evidenceRow?.layerId);
 		if (!evidenceBounds)
@@ -439,9 +439,9 @@ export function buildRoutingWidthSnapshot(input: BuildRoutingWidthSnapshotInput)
 		}
 	}
 	else if (defaultRec && content && content.length > 1) {
-		const layers = normalMultiLayerTrack(defaultRec, input.editorVersion, enabled, 'DEFAULT');
+		const layers = normalMultiLayerTrack(defaultRec, enabled, 'DEFAULT');
 		if (layers) baseByLayer.push(...layers);
-		else unknowns.push('DEFAULT TRACK多行表格与已验证的启用SIGNAL层集合不一致或字段无效');
+		else unknowns.push('DEFAULT TRACK多行表格与启用SIGNAL层集合不一致或字段无效');
 	}
 	const defaultStatus: WidthStatus = baseByLayer.length === enabled.layers.length && baseByLayer.length > 0 ? 'known' : 'unknown';
 	const base = baseByLayer[0];
@@ -493,7 +493,7 @@ export function buildRoutingWidthSnapshot(input: BuildRoutingWidthSnapshotInput)
 	const sourceEvidenceAmbiguousWithoutTombstones = parsed.unknowns.length > 0 || ruleRecords.unknowns.length > 0 || selectorRecords.unknowns.length > 0 || netRecords.unknowns.length > 0;
 	const sourceEvidenceAmbiguous = sourceEvidenceAmbiguousWithoutTombstones || hasTombstones;
 	for (const selector of selectors) {
-		if (isConfirmedLengthOnlyNetSelector(selector, input.editorVersion))
+		if (isConfirmedLengthOnlyNetSelector(selector))
 			continue;
 		const parts = keyParts(selector.id)[1];
 		const scope = Array.isArray(parts) ? parts[0] : undefined;
@@ -543,8 +543,8 @@ export function buildRoutingWidthSnapshot(input: BuildRoutingWidthSnapshotInput)
 		const netRec = netMap.get(net);
 		const selector = selectorByNet.get(net);
 		const selectorKey = selector?.data?.ruleKeyValue?.TRACK;
-		const emptyTrackNetSelector = isConfirmedEmptyTrackNetSelector(selector, net, input.editorVersion);
-		const safeTrackSelection = isConfirmedSafeTrackNetSelector(selector, net, input.editorVersion, safeRules);
+		const emptyTrackNetSelector = isConfirmedEmptyTrackNetSelector(selector, net);
+		const safeTrackSelection = isConfirmedSafeTrackNetSelector(selector, net, safeRules);
 		const unresolvedTombstone = parsed.records.some(record => record.data === '' && !safeTrackSelection?.resolvedHistoricalTombstones.has(record));
 		const mixedSafeSourceEvidenceAmbiguous = sourceEvidenceAmbiguousWithoutTombstones || unresolvedTombstone;
 		const apiKey = netApiRules.get(net);
@@ -571,7 +571,7 @@ export function buildRoutingWidthSnapshot(input: BuildRoutingWidthSnapshotInput)
 		if (selectedKey && chosen.length !== 1)
 			issues.push(`TRACK规则${selectedKey}缺失或重复`);
 		const ruleRec = chosen.length === 1 ? chosen[0] : selectedKey === defaultKey ? defaultRec : undefined;
-		const netMultiLayers = normalMultiLayerTrack(ruleRec, input.editorVersion, enabled);
+		const netMultiLayers = normalMultiLayerTrack(ruleRec, enabled);
 		if (ruleRec && !['DEFAULT', 'NORMAL'].includes(String(ruleRec.data?.ruleState)))
 			issues.push(`TRACK规则状态${String(ruleRec.data?.ruleState)}不受支持`);
 		const netClassName = netRec?.data?.netType;
@@ -581,13 +581,13 @@ export function buildRoutingWidthSnapshot(input: BuildRoutingWidthSnapshotInput)
 			const selectedNetTrack = netSelectorTrack ?? safeTrackSelection?.trackName;
 			const classSelector = selectorByClass.get(netClassName);
 			const classSelectorTrack = simpleTrackSelector(classSelector, 'NET_CLASS', netClassName);
-			const mixedClassSelection = isConfirmedSafeTrackClassSelector(classSelector, netClassName, input.editorVersion, safeRules);
+			const mixedClassSelection = isConfirmedSafeTrackClassSelector(classSelector, netClassName, safeRules);
 			const explicitClassTrack = classSelectorTrack ?? mixedClassSelection?.trackName;
 			const sdkNets = sdkRuleEvidence.nets.get(net) ?? [];
 			const sdkClasses = sdkRuleEvidence.classes.get(netClassName) ?? [];
 			const classRules = explicitClassTrack ? trackRules.filter(record => keyParts(record.id)[2] === explicitClassTrack) : [];
 			const defaultLayerId = asNum(defaultRec?.data?.ruleContext?.track?.content?.[0]?.layerId);
-			const classRuleConfirmed = classRules.length === 1 && (isNormalSingleRowTrackRule(classRules[0], input.editorVersion, enabledLayerIds) || normalMultiLayerTrack(classRules[0], input.editorVersion, enabled, 'NORMAL') !== undefined);
+			const classRuleConfirmed = classRules.length === 1 && (isNormalSingleRowTrackRule(classRules[0], enabledLayerIds) || normalMultiLayerTrack(classRules[0], enabled, 'NORMAL') !== undefined);
 			const mixedClassSdkBindingConfirmed = mixedClassSelection !== undefined && sdkClasses.length === 1
 				&& sdkClasses[0].track === mixedClassSelection.trackName && sdkClasses[0].safeSpacing === mixedClassSelection.safeName;
 			const defaultSingleRowConfirmed = sourceUnit === 'mil' && defaultStatus === 'known' && defaults.length === 1
@@ -597,7 +597,7 @@ export function buildRoutingWidthSnapshot(input: BuildRoutingWidthSnapshotInput)
 				&& Array.isArray(defaultRec?.data?.ruleContext?.track?.content) && defaultRec.data.ruleContext.track.content.length === 1
 				&& defaultLayerId !== undefined && Number.isInteger(defaultLayerId) && enabledLayerIds.has(defaultLayerId)
 				&& boundsFor(defaultRec, defaultLayerId) !== undefined;
-			const defaultRuleConfirmed = defaultSingleRowConfirmed || normalMultiLayerTrack(defaultRec, input.editorVersion, enabled, 'DEFAULT') !== undefined;
+			const defaultRuleConfirmed = defaultSingleRowConfirmed || normalMultiLayerTrack(defaultRec, enabled, 'DEFAULT') !== undefined;
 			const defaultRuleSelectedForNet = emptyTrackNetSelector && selectedKey === defaultKey && apiKey === 'default'
 				&& sdkNets.length === 1 && sdkClasses.length === 1
 				&& sdkNets[0].track === 'default' && sdkNets[0].className === netClassName
@@ -607,7 +607,7 @@ export function buildRoutingWidthSnapshot(input: BuildRoutingWidthSnapshotInput)
 				&& defaultRuleConfirmed;
 			const explicitClassSourceConfirmed = mixedClassSelection ? !sourceEvidenceAmbiguous : safeTrackSelection ? !mixedSafeSourceEvidenceAmbiguous : !sourceEvidenceAmbiguous;
 			const mixedNetTrackBindingConfirmed = safeTrackSelection !== undefined && safeSdkBindingConfirmed;
-			const explicitClassBindingConfirmed = profileKnown && defaultStatus === 'known' && explicitClassSourceConfirmed && netRecordCounts.get(net) === 1 && !duplicateNetSelectors.has(net) && !duplicateClassSelectors.has(netClassName)
+			const explicitClassBindingConfirmed = supportedSourceUnit && defaultStatus === 'known' && explicitClassSourceConfirmed && netRecordCounts.get(net) === 1 && !duplicateNetSelectors.has(net) && !duplicateClassSelectors.has(netClassName)
 				&& selectedNetTrack !== undefined && selectedNetTrack !== defaultKey && explicitClassTrack !== undefined
 				&& (!mixedClassSelection || netSelectorTrack !== undefined || mixedNetTrackBindingConfirmed)
 				&& sdkNets.length === 1 && sdkClasses.length === 1
@@ -615,7 +615,7 @@ export function buildRoutingWidthSnapshot(input: BuildRoutingWidthSnapshotInput)
 				&& sdkNets[0].track === selectedNetTrack && sdkClasses[0].track === explicitClassTrack
 				&& (!mixedClassSelection || mixedClassSdkBindingConfirmed)
 				&& (!safeTrackSelection || safeSdkBindingConfirmed)
-				&& (isNormalSingleRowTrackRule(ruleRec, input.editorVersion, enabledLayerIds) || (netMultiLayers !== undefined && selectedNetTrack !== undefined && selectedNetTrack !== defaultKey))
+				&& (isNormalSingleRowTrackRule(ruleRec, enabledLayerIds) || (netMultiLayers !== undefined && selectedNetTrack !== undefined && selectedNetTrack !== defaultKey))
 				&& classRuleConfirmed;
 			const defaultClassBindingConfirmed = defaultRuleSelectedForNet && !sourceEvidenceAmbiguous && netRecordCounts.get(net) === 1 && !duplicateNetSelectors.has(net) && !duplicateClassSelectors.has(netClassName);
 			classInheritanceConfirmed = explicitClassBindingConfirmed || defaultClassBindingConfirmed;
@@ -623,13 +623,13 @@ export function buildRoutingWidthSnapshot(input: BuildRoutingWidthSnapshotInput)
 		if (netClassName && !classInheritanceConfirmed)
 			issues.push(`网络类${String(netClassName)}的TRACK继承关系未确认`);
 		const selectedUnit = ruleRec?.data?.ruleContext?.unit;
-		if (ruleRec && !(input.editorVersion === '4.1.78' && (selectedUnit === 'mil' || selectedUnit === 'mm')))
-			issues.push(`所选TRACK规则单位未验证: ${input.editorVersion}/${String(selectedUnit)}`);
+		if (ruleRec && !(selectedUnit === 'mil' || selectedUnit === 'mm'))
+			issues.push(`所选TRACK规则单位未验证: ${String(selectedUnit)}`);
 		const selectedContent = ruleRec?.data?.ruleContext?.track?.content;
 		let netLayers: RoutingLayerWidth[] = [];
 		if (ruleRec === defaultRec && selectedKey === defaultKey && defaultStatus === 'known')
 			netLayers = defaultRule.layers.map(layer => ({ ...layer }));
-		else if (ruleRec && Array.isArray(selectedContent) && selectedContent.length === 1 && profileKnown) {
+		else if (ruleRec && Array.isArray(selectedContent) && selectedContent.length === 1 && supportedSourceUnit) {
 			const selectedBounds = boundsFor(ruleRec, selectedContent[0]?.layerId);
 			if (selectedBounds)
 				netLayers = enabled.layers.map(layer => ({ ...selectedBounds, layerId: layer.id, name: layer.name }));
@@ -662,7 +662,7 @@ export function buildRoutingWidthSnapshot(input: BuildRoutingWidthSnapshotInput)
 		schemaVersion: 1,
 		editorVersion: input.editorVersion,
 		sourceUnit: typeof sourceUnit === 'string' ? sourceUnit : undefined,
-		unitAssumption: 'Observed EasyEDA 4.1.78 TRACK numbers are mil; no conversion is applied.',
+		unitAssumption: 'TRACK stro* values are interpreted as mil with no conversion; ruleContext.unit is retained as source evidence.',
 		globalStatus,
 		defaultRule,
 		nets,

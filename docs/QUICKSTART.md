@@ -2,11 +2,11 @@
 
 English | [简体中文](QUICKSTART_ZH.md)
 
-Updated: 2026-10-28.
+Updated: 2026-10-29.
 
-Compared with v0.20.124, v0.20.125 narrows the extra ARC duplicate/split candidate check and completes the source regression fixtures. Seventeen focused regression groups, type checking, and the production build passed locally; no new EDA host installation was performed. Marketplace status is shown on the [marketplace page](https://jlc-ext.com/item/eda_gdqnxffl/ai-command-engine). See the [release notes](releases/v0.20.125-en.md).
+Compared with v0.20.125, v0.20.126 reads and decides width rules and converts DSN layer widths using actual TRACK fields, units, enabled copper layers, and source/SDK rule bindings instead of a fixed EDA 4.1.78 check. Scoped acceptance passed on JLCEDA Pro 4.1.93; the retained fixture still has 9 DRC errors, so whole-board and production acceptance are not established. Twelve repository suites, two local fixture helper suites, TypeScript checking, and a zero-warning build passed; the 2 helper suites are not independent repository suites. See the [release notes](releases/v0.20.126-en.md); marketplace status is shown on the [marketplace page](https://jlc-ext.com/item/eda_gdqnxffl/ai-command-engine).
 
-Install the EDA extension, the local Node.js proxy, and the complete AI skill separately. The extension does not install Node.js, proxy dependencies, or the AI skill. The proxy requires Node.js >=20.17.0 and the full source repository; run `npm ci` and `node bridge/command-proxy.mjs` from that source. Download skill v2026.10.28.4 from the [skill release page](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.10.28.4) or the [complete ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.10.28.4/ai-command-engine-skill_v2026.10.28.4_en-zh.zip). Plugin and skill have independent version numbers; compare the skill's relevant command help with the plugin functionality.
+Install the EDA extension, the local Node.js proxy, and the complete AI skill separately. The extension does not install Node.js, proxy dependencies, or the AI skill. The proxy requires Node.js >=20.17.0 and the full source repository; run `npm ci` and `node bridge/command-proxy.mjs` from that source. Download skill v2026.10.29 from the [skill release page](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.10.29) or the [complete ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.10.29/ai-command-engine-skill_v2026.10.29_en-zh.zip). Plugin and skill have independent version numbers; compare the skill's relevant command help with the plugin functionality.
 
 ## First-time setup prompt
 
@@ -27,7 +27,7 @@ Use Node.js >=20.17.0. For a ZIP download, run `npm ci` and the proxy command fr
 
 ## 2. Install and connect the EDA extension
 
-Download `ai-command-engine_v0.20.125_en.eext` or `ai-command-engine_v0.20.125_zh-CN.eext` from the [v0.20.125 GitHub Release](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.20.125), then import and enable it in JLCEDA Pro. Allow external interaction and open a trial project. Downloaded `.eext` files can be checked against `SHA256SUMS.txt` attached to the same GitHub release. In EDA, choose “AI Command Engine → Start bridge” (“AI 指令引擎 → 启动桥接” in Chinese).
+Download `ai-command-engine_v0.20.126_en.eext` or `ai-command-engine_v0.20.126_zh-CN.eext` from the [v0.20.126 GitHub Release](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.20.126), then import and enable it in JLCEDA Pro. Allow external interaction and open a trial project. Downloaded `.eext` files can be checked against `SHA256SUMS.txt` attached to the same GitHub release. In EDA, choose “AI Command Engine → Start bridge” (“AI 指令引擎 → 启动桥接” in Chinese).
 
 The extension does not install or start the proxy, and it does not install the AI skill.
 
@@ -41,7 +41,7 @@ Do not create or modify a circuit during this first connection check.
 
 ## 4. Install the AI skill
 
-Download [skill v2026.10.28.4](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.10.28.4) or its [complete ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.10.28.4/ai-command-engine-skill_v2026.10.28.4_en-zh.zip). Extract and install the complete `ai-command-engine/` folder in the AI tool's skill directory. Preserve English `SKILL.md`, alternate Chinese `SKILL_ZH.md`, `references/`, `scripts/`, and `VERSION`. Reload the AI tool, ask it to read `SKILL.md`, and confirm the skill version. Do not install only a repository-root `SKILL.md`; it is a navigation file. The skill version is independent of the plugin version, so check relevant functionality and help rather than matching version numbers.
+Download [skill v2026.10.29](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.10.29) or its [complete ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.10.29/ai-command-engine-skill_v2026.10.29_en-zh.zip). Extract and install the complete `ai-command-engine/` folder in the AI tool's skill directory. Preserve English `SKILL.md`, alternate Chinese `SKILL_ZH.md`, `references/`, `scripts/`, and `VERSION`. Reload the AI tool, ask it to read `SKILL.md`, and confirm the skill version. Do not install only a repository-root `SKILL.md`; it is a navigation file. The skill version is independent of the plugin version, so check relevant functionality and help rather than matching version numbers.
 
 Inspect an existing skill directory and preserve personal changes before updating it. Follow the AI tool's own skill installation procedure.
 

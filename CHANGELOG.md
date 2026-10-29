@@ -1,5 +1,21 @@
 # Change log
 
+## 0.20.126 — Release notes (2026-10-29)
+
+- Read and decide width rules and convert DSN layer widths using actual TRACK fields, units, enabled copper layers, and source/SDK rule bindings; remove the fixed EDA 4.1.78 version check. `editorVersion` remains diagnostic, and other capability or geometry limits remain.
+- Scoped JLCEDA Pro 4.1.93 acceptance passed: 4 nets x 4 copper layers converted; a 20 mil route below a 25 mil minimum was rejected before write; legal legacy SES imported 10 tracks and 2 vias; rule binding, repeat-zero-add, save/reopen readback, and original ARC protection checks passed. The retained fixture still has 9 DRC errors; whole-board acceptance and production readiness are not established.
+- Twelve repository regression suites and two local retained-fixture helper suites passed. The 2 helper suites are not additional independent repository suites. TypeScript passed and build completed with zero warnings.
+- Independent skill version: v2026.10.29. Current public marketplace version is v0.20.124; v0.20.125 was returned for revision. Check actual channel status for v0.20.126.
+- See [English release notes](docs/releases/v0.20.126-en.md) and [Chinese release notes](docs/releases/v0.20.126-zh.md).
+
+## 0.20.126 — 版本说明（2026-10-29）
+
+- 线宽规则读取、判断及 DSN 分层线宽转换按实际 TRACK 字段、单位、启用铜层及源码/SDK 规则绑定结构处理，不再固定检查 EDA 4.1.78。`editorVersion` 保留为诊断信息，其他能力或几何限制仍然存在。
+- 嘉立创 EDA 专业版 4.1.93 限定验收通过：4 网络 x 4 铜层转换；低于 25 mil 规则的 20 mil 线路写入前拒绝；合法旧 SES 导入 10 条走线和 2 个过孔；规则绑定、重复导入零新增、保存重开读回及原 ARC 保护检查通过。留存夹具仍有 9 项 DRC 错误，整板验收与生产就绪均未建立。
+- 12 组仓库回归和 2 组本机留存夹具辅助测试通过；2 组辅助测试不计作独立仓库回归。TypeScript 通过，构建零警告。
+- 配套技能独立版本：v2026.10.29。市场当前公开版为 v0.20.124，v0.20.125 已退回修改；v0.20.126 状态以实际渠道为准。
+- 详见[英文发布说明](docs/releases/v0.20.126-en.md)与[中文发布说明](docs/releases/v0.20.126-zh.md)。
+
 ## 0.20.125 — Release notes (2026-10-28)
 
 - Compared with v0.20.124, filter extra ARC duplicate/split candidates by the same `layerName` and `net`. Existing checks still reject same-layer, same-net width/type changes.
