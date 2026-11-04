@@ -6,7 +6,7 @@ import { createBridgeOwnerCoordinator } from './bridge/owner';
  *
  * 激活时：
  * 1. 注册全部内置指令到指令引擎
- * 2. 启动桥接客户端，主动连接本地指令代理（bridge/command-proxy.mjs，默认 ws://127.0.0.1:49720/ws）
+ * 2. 启动桥接客户端，主动连接配套技能的本地指令代理（默认 ws://127.0.0.1:49720/ws）
  * 3. 同时在全局对象挂载 __aiCommand 作为诊断/备用通道
  *
  * 注意：扩展运行在独立 JS 上下文，window 不与其他扩展共享，
@@ -176,7 +176,7 @@ export async function connectBridge(): Promise<void> {
 	if (!result)
 		return;
 	eda.sys_Dialog.showInformationMessage(
-			result.status + '\n稍后可在 About 查看结果；首次自动启动前需注册 bridge/install-url-scheme.ps1。',
+			result.status + '\n由 AI 使用配套技能的 scripts/start-proxy.ps1 在后台启动代理；本窗口会自动连接。稍后可在 About 查看结果。',
 			'启动桥接',
 		);
 }
@@ -227,7 +227,7 @@ export async function openSmtQuery(): Promise<void> {
 		// 代理未运行
 	}
 	eda.sys_Dialog.showInformationMessage(
-		'指令代理未运行，无法打开 SMT 物料查询窗口。\n请在仓库根目录先运行 npm ci，再运行 node bridge/command-proxy.mjs；也可运行 bridge/launch-proxy.bat。',
+		'指令代理未运行，无法打开 SMT 物料查询窗口。\n请让 AI 使用配套技能的 scripts/start-proxy.ps1 在后台启动代理，再打开物料查询。',
 		'SMT 物料查询',
 	);
 }

@@ -1,4 +1,15 @@
-# Bridge lifecycle in v0.20.57
+# Bridge lifecycle
+
+## Companion-skill startup in v0.20.127
+
+The companion skill includes the proxy and a Windows background launcher. The AI runs `scripts/start-proxy.ps1` from the installed skill. It reuses a compatible service or starts Node hidden, checks health, and reports errors. The bootstrap redirects its own log output before loading `command-proxy.mjs` in the same Node.js process. User data stays outside the skill directory. The EDA plugin polls for the service and connects automatically; it never auto-opens `ai-command-proxy://start`. Stop/drain, pause, request ownership, and reconnect semantics remain in place. Legacy repository URL-registration scripts remain optional compatibility tools, not part of first installation. See [setup](QUICKSTART.md).
+
+v0.20.127 passed cold-start checks for 8 cases and lifecycle suites covering 34 client and 17 proxy-owner cases. On EDA Pro 4.1.93, the installed release connected automatically, reported 217 registered commands, and passed read-only `project.getInfo` and `task.list` calls. A later fresh window reported v0.20.127 and passed read-only `project.getInfo`. This is startup and connection evidence only; it does not establish that all registered commands work, or that a whole board, DRC, or production use has passed. Complete macOS/Linux startup has not been tested.
+
+After an extension upgrade, handle and save pending work before reloading every EDA window that still uses the old execution environment. Importing the package in one window does not upgrade all other open windows. See [first installation and upgrades](QUICKSTART.md#troubleshooting-and-upgrades).
+
+The records below describe earlier versions and their verification boundaries; they do not replace the v0.20.127 checks above.
+
 
 Historical partial/timeout results no longer lock later independent requests. The proxy keeps the existing per-window request FIFO, which advances after the current response or configured timeout. A timeout does not cancel SDK calls that may still run in the host; it does not certify recovery. Current macro dependency steps still stop on partial. `write.acknowledge` is a compatibility no-op and is not required. The matching proxy reports `writeProtection:false` in `/health`.
 
