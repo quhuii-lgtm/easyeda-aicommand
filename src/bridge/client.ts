@@ -10,9 +10,7 @@ import { setDiagSink } from '../engine/diag';
  *
  * 断线自动重连。需要扩展启用「外部交互」权限。
  *
- * 自动拉起代理：激活时先探测代理 /health，若代理未运行，
- * 尝试通过 URL Scheme（ai-command-proxy://start）唤起本地启动器
- * （需先运行 bridge/install-url-scheme.ps1 注册当前仓库的启动器）。
+ * 代理由配套技能在后台启动；扩展定期检查健康状态并自动连接。
  */
 import { executeCommand, getCommandDocs, listCommandNames } from '../engine/registry';
 
@@ -67,13 +65,6 @@ let lastHeardAt = 0;
 /** 超过静默时长后发一次应用层探测；探测后仍静默才退役连接 */
 const SILENCE_DEAD_MS = 35000;
 let probeSentAt = 0;
-/**
- * 0.10.71：最近一次尝试自动拉起代理的时间戳；自动拉起从"一生一次"改为"每 5 分钟最多一次"。
- *  旧 autoLaunchTried 一生一次导致代理空闲退出/崩溃后数小时黑窗（2026-10-06 凌晨实发：
- *  05:56 代理退出，09:05 才复活）——重连循环里定期重试拉起，代理随 EDA 在、EDA 全关才退
- */
-let lastLaunchAttemptAt = 0;
-const LAUNCH_RETRY_MS = 5 * 60 * 1000;
 /**
  * 0.10.71：在途指令计数。自动重连/判死前若仍有指令在跑，推迟——重连会作废在途结果，
  *  批量接线途中撞上 2 分钟重连churn会被整体作废（凌晨 Luna 会话"只读查询超时"实发）
@@ -237,7 +228,7 @@ async function handleMessage(event: MessageEvent<any>, id: string, gen: number):
 			manualStop = false;
 			lifecycleGeneration++;
 			setLifecycleStatus('当前操作已结束，正在重新连接本窗口');
-			void connectWhenReady(true);
+			void connectWhenReady();
 		}
 		return;
 	}
@@ -425,8 +416,8 @@ function connect(port: number): void {
 	}
 }
 
-/** Health and URL launch share the lifecycle generation so a late probe cannot undo Stop. */
-async function probeAndAutoLaunch(port: number, force: boolean): Promise<boolean> {
+/** Health probing shares the lifecycle generation so a late response cannot undo Stop. */
+async function probeAndConnect(port: number): Promise<boolean> {
 	const generation = lifecycleGeneration;
 	let response: Response | undefined;
 	try {
@@ -434,7 +425,7 @@ async function probeAndAutoLaunch(port: number, force: boolean): Promise<boolean
 		response = await eda.sys_ClientUrl.request('http://localhost:' + port + '/health', 'GET');
 	}
 	catch {
-		// The launcher performs its own local-port check before starting a process.
+		// The companion skill starts the proxy; continue polling without opening a system URL.
 	}
 	if (manualStop || generation !== lifecycleGeneration)
 		return false;
@@ -455,26 +446,17 @@ async function probeAndAutoLaunch(port: number, force: boolean): Promise<boolean
 		}
 	}
 	proxyCompatible = false;
-	if (!force && Date.now() - lastLaunchAttemptAt < LAUNCH_RETRY_MS)
-		return false;
-	lastLaunchAttemptAt = Date.now();
-	try {
-		eda.sys_Window.open('ai-command-proxy://start', '_blank' as any);
-		setLifecycleStatus('已请求启动桥接；若尚未注册，请运行 bridge/install-url-scheme.ps1');
-	}
-	catch (err) {
-		setLifecycleStatus('自动启动失败：' + String(err) + '；可运行 bridge/launch-proxy.bat');
-	}
+	setLifecycleStatus('等待配套技能在后台启动本地桥接');
 	return false;
 }
 
-async function connectWhenReady(force: boolean): Promise<void> {
+async function connectWhenReady(): Promise<void> {
 	if (manualStop || connected || checkingHealth || inflightCommands > 0)
 		return;
 	checkingHealth = true;
 	const generation = lifecycleGeneration;
 	try {
-		const ready = await probeAndAutoLaunch(currentPort, force);
+		const ready = await probeAndConnect(currentPort);
 		if (ready && generation === lifecycleGeneration && !manualStop && !connected && inflightCommands === 0) {
 			if (connecting)
 				return;
@@ -521,7 +503,7 @@ export function startBridgeClient(port: number = DEFAULT_PORT): void {
 		started = true;
 		const tryConnect = (): void => {
 			if (!manualStop && !connected)
-				void connectWhenReady(false);
+				void connectWhenReady();
 			setTimeout(tryConnect, RECONNECT_MS);
 		};
 		try {
@@ -569,8 +551,8 @@ export function startBridgeClient(port: number = DEFAULT_PORT): void {
 		}
 		setTimeout(tryConnect, RECONNECT_MS);
 	}
-	setLifecycleStatus('正在检查并启动桥接');
-	void connectWhenReady(true);
+	setLifecycleStatus('正在检查本地桥接');
+	void connectWhenReady();
 }
 
 function requestBridgeStop(reconnect: boolean): void {

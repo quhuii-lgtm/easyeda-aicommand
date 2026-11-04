@@ -1,5 +1,21 @@
 # Change log
 
+## 0.20.127 — Release notes (2026-11-04)
+
+- Compared with v0.20.126, distribute the local proxy with the companion skill and support hidden Windows startup through `scripts/start-proxy.ps1`. The extension connects automatically and no longer auto-opens a custom URL when the proxy is unavailable; a manually stopped bridge can still be resumed from the EDA menu.
+- Reuse a compatible running proxy rather than forcing replacement. Keep user data under `%LOCALAPPDATA%/ai-command-engine`, outside the skill directory.
+- 34 client lifecycle cases, 17 proxy-owner cases, 8 Python cases, TypeScript checking, and a zero-warning build passed. Installed EDA Pro 4.1.93 acceptance covered automatic connection, About version 0.20.127, 217 registered commands, and read-only `project.getInfo` / `task.list`; a fresh-window check also passed read-only `project.getInfo`.
+- Startup and connection checks do not establish that all 217 commands work, or that whole-board DRC or production use has passed. Complete macOS/Linux startup has not been tested. The marketplace version before this update was v0.20.126; check the [GitHub release](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.20.127) and [marketplace listing](https://jlc-ext.com/item/eda_gdqnxffl/ai-command-engine) for current status.
+- See the [English release notes](docs/releases/v0.20.127-en.md) and [Chinese release notes](docs/releases/v0.20.127-zh.md).
+
+## 0.20.127 — 版本说明（2026-11-04）
+
+- 相比 0.20.126，本地代理随配套技能分发，并可通过 `scripts/start-proxy.ps1` 在 Windows 隐藏后台启动。插件自动连接；代理不可用时不再自动打开自定义 URL；手动停止桥接后仍可从 EDA 菜单恢复。
+- 兼容的运行中代理继续复用，不强制替换。用户数据保存在技能目录外的 `%LOCALAPPDATA%/ai-command-engine`。
+- 34 项客户端生命周期用例、17 项代理所有者用例、8 项 Python 用例、TypeScript 检查及零警告构建通过。嘉立创 EDA 专业版 4.1.93 安装验收覆盖自动连接、About 显示 0.20.127、注册 217 条指令及只读 `project.getInfo` / `task.list`；新窗口复核只读 `project.getInfo` 通过。
+- 启动和连接检查不代表 217 条指令全部可用，也不代表整板 DRC 或生产验收通过。macOS/Linux 完整启动尚未实测。本次更新前市场公开版为 0.20.126；当前状态见[GitHub 发布页](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.20.127)和[扩展市场页面](https://jlc-ext.com/item/eda_gdqnxffl/ai-command-engine)。
+- 详见[英文发布说明](docs/releases/v0.20.127-en.md)与[中文发布说明](docs/releases/v0.20.127-zh.md)。
+
 ## 0.20.126 — Release notes (2026-10-29)
 
 - Read and decide width rules and convert DSN layer widths using actual TRACK fields, units, enabled copper layers, and source/SDK rule bindings; remove the fixed EDA 4.1.78 version check. `editorVersion` remains diagnostic, and other capability or geometry limits remain.

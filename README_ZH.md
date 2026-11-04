@@ -4,13 +4,13 @@
 
 AI 指令引擎通过本机 Node.js 代理连接嘉立创 EDA 专业版，让 AI 按结构化指令查询和操作原理图、PCB、工程及器件库。
 
-## 本次更新：0.20.126（相比 0.20.125）
+## 本次更新：0.20.127（相比 0.20.126）
 
-线宽规则读取、判断和 DSN 分层线宽转换现在依据实际 TRACK 字段、单位、启用铜层，以及从源码与 SDK 读取的规则绑定结构；不再固定检查 EDA 4.1.78 版本。`editorVersion` 仍用于诊断；本次没有解除其他能力或几何限制。
+本地代理随配套 AI 技能分发，由 AI 在 Windows 隐藏后台启动；插件自动连接，不再为未运行的代理自动打开自定义 URL。用户手动停止桥接后，仍可从 EDA 菜单恢复。兼容的运行中代理会继续复用，不会被插件强制替换。
 
-嘉立创 EDA 专业版 4.1.93 的限定验收通过：转换后 4 个网络、4 个铜层的线宽匹配；低于 25 mil 最小值的 20 mil 线路在写入前被拒绝；合法旧版 SES 导入 10 条走线和 2 个过孔；规则绑定保留；重复导入零新增；保存重开读回通过；原 ARC 保护保持有效。留存夹具仍有 9 项 DRC 错误，整板验收未通过，也不代表满足生产要求。
+34 项客户端生命周期用例、17 项代理所有者用例、8 项 Python 用例、TypeScript 检查及零警告构建通过。嘉立创 EDA 专业版 4.1.93 安装版 0.20.127 自动连接，注册 217 条指令；只读 `project.getInfo` 和 `task.list` 调用成功。11 月 4 日处理旧窗口后重新打开，0.20.127 成功连接，只读 `project.getInfo` 成功。以上只验证启动与连接，不代表 217 条指令全部通过、整板验收、DRC 或生产就绪。macOS/Linux 完整启动尚未实测。
 
-12 组仓库回归、2 组本机留存夹具辅助测试、TypeScript 检查及零警告构建通过。2 组辅助测试不计作独立仓库回归。配套 AI 技能独立版本为 v2026.10.29。当前市场公开版为 v0.20.124；v0.20.125 已退回修改。v0.20.126 的 GitHub 与市场状态分别以[GitHub 发布页](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.20.126)和[嘉立创扩展市场页面](https://jlc-ext.com/item/eda_gdqnxffl/ai-command-engine)为准，渠道确认前不称已发布。
+本次更新前扩展市场公开版为 0.20.126。配套技能独立版本为 v2026.11.03。当前渠道状态和附件见[v0.20.127 GitHub 发布页](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.20.127)及[嘉立创扩展市场页面](https://jlc-ext.com/item/eda_gdqnxffl/ai-command-engine)。升级要求见[本次发布说明](docs/releases/v0.20.127-zh.md)。
 
 ## 功能
 
@@ -22,7 +22,7 @@ AI 指令引擎通过本机 Node.js 代理连接嘉立创 EDA 专业版，让 AI
 
 ### 功能演示
 
-以下 GIF 是功能示例，不代表 v0.20.126 全部功能或实机验收证据。
+以下 GIF 是功能示例，不代表 v0.20.127 全部功能或实机验收证据。
 
 ![原理图功能演示](images/demo-schematic.gif)
 
@@ -32,13 +32,14 @@ AI 指令引擎通过本机 Node.js 代理连接嘉立创 EDA 专业版，让 AI
 
 ## 首次安装与连接
 
-EDA 扩展、完整代理源码及依赖、AI 技能需分别安装。安装扩展不会自动安装 Node.js、代理依赖或技能。
+0.20.127 使用配套技能后台启动代理，插件自动连接，不再自动打开 Windows 启动链接。当前安装版已完成启动和只读连接验收；这不代表所有指令或绘图流程均已验收。
 
-1. **代理：**下载完整插件源码仓库并安装 Node.js >=20.17.0。在仓库目录运行 `npm ci`，再运行 `node bridge/command-proxy.mjs`。不能只复制代理脚本。
-2. **EDA 扩展：**从 [GitHub v0.20.126 发布页](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.20.126)下载 `.eext`，在嘉立创 EDA 专业版导入并启用，允许外部交互。
-3. **AI 技能：**从[技能发布页 v2026.10.29](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.10.29)或[完整双语 ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.10.29/ai-command-engine-skill_v2026.10.29_en-zh.zip)下载。把完整 `ai-command-engine/` 目录安装到 AI 工具的技能目录，保留 `SKILL.md`、`SKILL_ZH.md`、`references/`、`scripts/`、`VERSION` 和 `LICENSE`。重载 AI 工具，让它读取 `SKILL.md` 并报告技能版本。技能和插件分别编号。
+1. **技能与代理：**从[技能 v2026.11.03 发布页](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.11.03)下载[双语技能 ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.11.03/ai-command-engine-skill_v2026.11.03_en-zh.zip)，安装完整 `ai-command-engine/`。保留 `package.json`、`package-lock.json`、`scripts/` 和说明文件。Node.js >=20.17.0；首次在技能根目录执行 `npm ci --omit=dev`。
+2. **后台启动：**让 AI 按技能的[连接说明](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/blob/main/ai-command-engine/references/zh/setup.md)运行 `scripts/start-proxy.ps1`。无需完整插件源码或 URL 协议注册；Windows 启动器隐藏运行代理。
+3. **EDA 扩展：**从[插件 v0.20.127 发布页](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.20.127)取得配套 `.eext`，导入、启用并允许外部交互。插件自动接入代理；曾手动停止时点击“启动桥接”。
+4. **核对连接：**检查 `http://127.0.0.1:49720/health`、`http://127.0.0.1:49720/connections`，核对插件版本和工程，带目标 `instanceId` 调用只读 `project.getInfo`。
 
-按[首次安装指南](docs/QUICKSTART_ZH.md)完成连接。先在本机终端的完整源码目录启动代理，再在 EDA 导入并启用扩展、允许外部交互，选择“AI 指令引擎 → 启动桥接”。检查 `http://127.0.0.1:49720/health` 和 `http://127.0.0.1:49720/connections`，核对目标工程与 `instanceId`，先执行只读 `project.getInfo` 再修改文档。
+首次安装步骤详见[GitHub 中文安装指南](https://github.com/quhuii-lgtm/easyeda-aicommand/blob/main/docs/QUICKSTART_ZH.md)。升级前先处理并保存每个 EDA 窗口中的未完成操作，再重新加载仍运行旧版插件的窗口；在一个窗口导入插件不能保证其他已打开窗口也升级。插件与技能版本独立。更新技能不覆盖代理的用户数据，也不强制替换运行中的兼容代理。
 
 ## 项目链接
 
