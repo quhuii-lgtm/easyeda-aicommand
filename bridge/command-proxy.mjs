@@ -1,8 +1,8 @@
 /**
  * AI Command Engine — Command Proxy（指令代理）
  *
- * 独立服务：HTTP + WebSocket 同端口（默认 49720）。
- * - EDA 扩展（AI Command Engine）主动连接 ws://127.0.0.1:49720/ws
+ * 独立服务：HTTP + WebSocket 同端口（默认从 49720-49729 选择可用端口）。
+ * - EDA 扩展（AI Command Engine）主动发现并连接本地代理。
  * - AI 通过 HTTP 发送简易 JSON 指令
  * - smt.* 指令由代理本地处理（嘉立创开放平台签名调用），无需 EDA 在线
  *
@@ -11,8 +11,8 @@
  * - 从未有扩展连接时保持运行（等待 EDA 启动）
  *
  * 用法：
- *   node bridge/command-proxy.mjs            # 默认监听 49720
- *   PORT=49721 node bridge/command-proxy.mjs
+ *   node bridge/command-proxy.mjs            # 自动选择 49720-49729 中的可用端口
+ *   PORT=49721 node bridge/command-proxy.mjs # 显式固定端口，不自动切换
  *
  * 端点：
  *   GET  /health             服务与扩展连接状态（含全部在线实例）
@@ -47,7 +47,13 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { WebSocketServer } from 'ws'
 
-const PORT = Number(process.env.PORT) || 49720
+const DEFAULT_PORT_START = 49720
+const DEFAULT_PORT_END = 49729
+const requestedPort = process.env.PORT?.trim() || null
+if (requestedPort !== null && (!/^\d+$/.test(requestedPort) || Number(requestedPort) < 1 || Number(requestedPort) > 65535))
+	throw new Error(`Invalid PORT value: ${requestedPort}`)
+const PORT = requestedPort === null ? null : Number(requestedPort)
+let activePort = null
 // 0.10.37（KIMI-EDA-20261002-01 用户要求）：全链路指令超时统一 300s——客户端 live-common.ps1 已 300s，
 // 代理层必须 ≥ 扩展侧 client.ts 的对应超时，否则外层加长内层先掐。超时只是兜底，不代表任务已取消：
 // EDA 官方 API 无取消机制，代理超时后扩展可能仍在后台执行，重发前必须先确认现场状态。
@@ -387,7 +393,7 @@ function jlcAuthorization(cred, method, pathWithQuery, body) {
 async function jlcPost(path, bodyObj) {
 	const cred = loadCredentials()
 	if (!cred)
-		throw new Error('未配置嘉立创开放平台密钥。请打开 http://127.0.0.1:' + PORT + '/smt 填写 appId / accessKey / secretKey（只需配置一次，保存在代理工作目录，升级插件不丢失）。')
+		throw new Error('未配置嘉立创开放平台密钥。请打开 http://127.0.0.1:' + activePort + '/smt 填写 appId / accessKey / secretKey（只需配置一次，保存在代理工作目录，升级插件不丢失）。')
 	// 注意：参与签名的 body 必须与真实发送的 body 逐字节一致
 	const body = JSON.stringify(bodyObj)
 	const authorization = jlcAuthorization(cred, 'POST', path, body)
@@ -502,7 +508,7 @@ const LOCAL_COMMAND_DOCS = [
 			detail: '是否补全详情，默认 true',
 		},
 		returns: '{ totalRows, totalPages, pageNum, pageSize, components: [{ code, name, type, model, footprint, brand, stock, description, price, priceLadder }] }',
-		note: '首次使用需在 http://127.0.0.1:' + PORT + '/smt 配置开放平台密钥',
+		note: '首次使用需在 http://127.0.0.1:' + activePort + '/smt 配置开放平台密钥',
 	},
 	{
 		name: 'smt.queryComponentDetail',
@@ -511,7 +517,7 @@ const LOCAL_COMMAND_DOCS = [
 			componentCodeList: '元件编号列表，如 ["C17414","C25744"]（也接受 codes / code，支持逗号分隔字符串）',
 		},
 		returns: '{ count, components: [{ code, name, type, model, footprint, brand, encapsulationNumber, stock, description, price, priceLadder }] }',
-		note: '首次使用需在 http://127.0.0.1:' + PORT + '/smt 配置开放平台密钥',
+		note: '首次使用需在 http://127.0.0.1:' + activePort + '/smt 配置开放平台密钥',
 	},
 	{
 		name: 'write.acknowledge',
@@ -523,6 +529,13 @@ const LOCAL_COMMAND_DOCS = [
 		note: '不会检查、清除或绕过当前写队列，也不要求目标窗口在线；超时仍只表示代理停止等待，不能据此判断 EDA 中的操作已取消',
 	},
 ]
+
+function updateLocalCommandEndpoint(port) {
+	for (const command of LOCAL_COMMAND_DOCS) {
+		if (command.name.startsWith('smt.'))
+			command.note = `首次使用需在 http://127.0.0.1:${port}/smt 配置开放平台密钥`
+	}
+}
 
 async function executeLocalCommand(command) {
 	if (command.cmd === 'smt.queryComponent')
@@ -809,7 +822,7 @@ loadConfig();
 // ---------- HTTP 服务 ----------
 
 const server = http.createServer(async (req, res) => {
-	const url = new URL(req.url, `http://localhost:${PORT}`)
+	const url = new URL(req.url, `http://localhost:${activePort}`)
 
 	// CORS 预检
 	if (req.method === 'OPTIONS') {
@@ -823,6 +836,8 @@ const server = http.createServer(async (req, res) => {
 			json(res, 200, {
 				ok: true,
 				service: 'ai-command-proxy',
+				pid: process.pid,
+				port: activePort,
 				lifecycleProtocol: 1,
 				writeProtection: false,
 				extensionConnected: Boolean(selectedConnection()),
@@ -1002,7 +1017,16 @@ const server = http.createServer(async (req, res) => {
 
 // ---------- WebSocket（扩展接入） ----------
 
+// During the initial server.listen attempt, ws forwards the HTTP server's bind
+// error through its own EventEmitter. Keep it handled so EADDRINUSE/EACCES can
+// reach the ordered port-selection loop below.
+let selectingListenPort = false
 const wss = new WebSocketServer({ server, path: '/ws' })
+wss.on('error', error => {
+	if (selectingListenPort)
+		return
+	console.error(`[ai-command-proxy] WebSocket server error: code=${error?.code ?? 'UNKNOWN'} message=${error?.message ?? String(error)}`)
+})
 
 wss.on('connection', (ws) => {
 	ws.isAlive = true
@@ -1283,7 +1307,61 @@ const idleTimer = setInterval(() => {
 }, IDLE_SHUTDOWN_MS > 0 ? Math.min(10000, Math.max(100, Math.floor(IDLE_SHUTDOWN_MS / 4))) : 10000)
 idleTimer.unref()
 
-server.listen(PORT, '127.0.0.1', () => {
-	console.log(`[ai-command-proxy] 监听 http://127.0.0.1:${PORT}（WS: ws://127.0.0.1:${PORT}/ws），等待 EDA 扩展连接...`)
-	console.log(`[ai-command-proxy] SMT 物料查询页面: http://127.0.0.1:${PORT}/smt`)
-})
+function startOnPort(port) {
+	return new Promise((resolve, reject) => {
+		selectingListenPort = true
+		const onError = error => {
+			server.off('listening', onListening)
+			reject(error)
+		}
+		const onListening = () => {
+			server.off('error', onError)
+			selectingListenPort = false
+			activePort = port
+			updateLocalCommandEndpoint(port)
+			console.log(`[ai-command-proxy] 监听 http://127.0.0.1:${port}（WS: ws://127.0.0.1:${port}/ws），等待 EDA 扩展连接...`)
+			console.log(`[ai-command-proxy] SMT 物料查询页面: http://127.0.0.1:${port}/smt`)
+			resolve()
+		}
+		server.once('error', onError)
+		server.once('listening', onListening)
+		server.listen(port, '127.0.0.1')
+	})
+}
+
+function describeListenError(port, error) {
+	return `port=${port} code=${error?.code ?? 'UNKNOWN'} errno=${error?.errno ?? 'UNKNOWN'} syscall=${error?.syscall ?? 'listen'} message=${error?.message ?? String(error)}`
+}
+
+async function startServer() {
+	if (PORT !== null) {
+		try {
+			await startOnPort(PORT)
+		}
+		catch (error) {
+			throw new Error(`AI Command Proxy could not bind explicit port: ${describeListenError(PORT, error)}`, { cause: error })
+		}
+		return
+	}
+	const failures = []
+	for (let port = DEFAULT_PORT_START; port <= DEFAULT_PORT_END; port++) {
+		try {
+			await startOnPort(port)
+			return
+		}
+		catch (error) {
+			failures.push(describeListenError(port, error))
+			if (!['EADDRINUSE', 'EACCES'].includes(error?.code))
+				throw new Error(`AI Command Proxy stopped on an unexpected bind error: ${failures.at(-1)}`, { cause: error })
+		}
+	}
+	throw new Error(`AI Command Proxy could not bind any port in ${DEFAULT_PORT_START}-${DEFAULT_PORT_END}: ${failures.join('; ')}`)
+}
+
+try {
+	await startServer()
+}
+catch (error) {
+	console.error(error.stack || error)
+	process.exit(1)
+}

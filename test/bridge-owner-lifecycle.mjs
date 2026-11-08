@@ -15,6 +15,7 @@ const compiled = await build({
 		name: 'mock-index-dependencies',
 		setup(build) {
 			build.onResolve({ filter: /^\.\/bridge\/client$/ }, () => ({ path: 'bridge-client', namespace: 'mock' }));
+			build.onResolve({ filter: /^\.\/bridge\/smtMenu$/ }, () => ({ path: 'smt-menu', namespace: 'mock' }));
 			build.onResolve({ filter: /^\.\/commands\// }, args => ({ path: args.path, namespace: 'mock' }));
 			build.onResolve({ filter: /^\.\/dfm\/menu$/ }, () => ({ path: 'dfm-menu', namespace: 'mock' }));
 			build.onResolve({ filter: /^\.\/engine\/registry$/ }, () => ({ path: 'registry', namespace: 'mock' }));
@@ -34,6 +35,8 @@ const compiled = await build({
 						export const reconnectBridgeClient = () => { globalThis.__bridge.reconnectCalls++; globalThis.__bridge.status = 'reconnecting'; };
 					` };
 				}
+				if (args.path === 'smt-menu')
+					return { contents: 'export const openSmtQuery = async () => { globalThis.__bridge.smtCalls = (globalThis.__bridge.smtCalls ?? 0) + 1; };' };
 				if (args.path === 'registry')
 					return { contents: 'export const executeCommand = async () => ({}); export const getCommandDocs = () => []; export const listCommandNames = () => ["demo.command"]; export const registerCommand = () => { if (globalThis.__bridge.failRegistrations > 0) { globalThis.__bridge.failRegistrations--; throw new Error("register failed"); } };' };
 				if (args.path === 'dfm-menu')
@@ -254,6 +257,29 @@ await test('menus without an owner fail explicitly and do not activate locally',
 	await module.api.connectBridge();
 	assert.equal(bridge.clientInstances, 0);
 	assert.ok(module.messages.some(message => String(message[0]).includes('未发现')));
+});
+
+await test('owner SMT menu entry is exported and routes through its own owner RPC', async () => {
+	const bus = makeBus();
+	const bridge = { startCalls: 0, clientInstances: 0, stopCalls: 0, reconnectCalls: 0, status: 'connected' };
+	const owner = createModule(bus, bridge);
+	owner.api.activate();
+	assert.equal(typeof owner.api.openSmtQuery, 'function');
+	await owner.api.openSmtQuery();
+	assert.equal(bridge.smtCalls, 1);
+	assert.equal(bridge.clientInstances, 1);
+});
+
+await test('secondary SMT menu requests the owner to open the page', async () => {
+	const bus = makeBus();
+	const bridge = { startCalls: 0, clientInstances: 0, stopCalls: 0, reconnectCalls: 0, status: 'connected' };
+	const owner = createModule(bus, bridge), menu = createModule(bus, bridge);
+	owner.api.activate();
+	menu.api.activate();
+	await menu.api.openSmtQuery();
+	assert.equal(bridge.smtCalls, 1);
+	assert.equal(bridge.clientInstances, 1);
+	assert.equal(bus.services.size, 1);
 });
 
 await test('secondary menus route reconnect, stop, start and status through the single owner', async () => {

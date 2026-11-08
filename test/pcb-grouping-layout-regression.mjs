@@ -9,7 +9,7 @@ async function main() {
 	const root = resolve(import.meta.dirname, '..');
 	const built = await build({
 		stdin: {
-			contents: `import { planLayoutOfficial, pcbGroupingCommands } from '../src/commands/pcbGrouping.ts'; export { planLayoutOfficial, pcbGroupingCommands }`,
+			contents: `import { planLayoutOfficial, pcbGroupingCommands } from '../src/commands/pcbGrouping.ts'; import { setProxyPort } from '../src/bridge/proxy-endpoint.ts'; export { planLayoutOfficial, pcbGroupingCommands, setProxyPort }`,
 			resolveDir: resolve(root, 'test'),
 			sourcefile: 'pcb-grouping-layout-regression-entry.ts',
 		},
@@ -31,7 +31,7 @@ async function main() {
 		}],
 	});
 	const moduleUrl = `data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`;
-	const { planLayoutOfficial, pcbGroupingCommands } = await import(moduleUrl);
+	const { planLayoutOfficial, pcbGroupingCommands, setProxyPort } = await import(moduleUrl);
 
 	const components = Array.from({ length: 1000 }, (_, index) => ({
 		id: `component-${index}`,
@@ -119,6 +119,21 @@ async function main() {
 		};
 	};
 	const grouping = pcbGroupingCommands.find(command => command.name === 'pcb.groupBySchematicRegions').handler;
+	const sourceRollback = pcbGroupingCommands.find(command => command.name === 'pcb.sourceRollback').handler;
+	const backupRequests = [];
+	setProxyPort(49721);
+	globalThis.eda = {
+		sys_FileManager: { getDocumentSource: async () => source('PCB', 'pcb-proxy-test', []) },
+		sys_ClientUrl: { request: async (url, method) => {
+			backupRequests.push({ url, method });
+			return { text: async () => JSON.stringify({ ok: true, backups: [] }) };
+		} },
+		sys_Storage: { getExtensionUserConfig: async () => null },
+	};
+	await sourceRollback({ list: true }, {});
+	assert.deepEqual(backupRequests, [{ url: 'http://127.0.0.1:49721/source-backup/list?pcbUuid=pcb-proxy-test', method: 'GET' }]);
+	setProxyPort(null);
+	console.log('PASS PCB source backup requests use the discovered non-default proxy port');
 	for (const scenario of [
 		{ names: ['U1'], boardHeight: 1 },
 		{ names: ['U1', 'U2'], boardHeight: 200 },

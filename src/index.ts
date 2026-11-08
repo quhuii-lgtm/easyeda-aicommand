@@ -6,13 +6,14 @@ import { createBridgeOwnerCoordinator } from './bridge/owner';
  *
  * 激活时：
  * 1. 注册全部内置指令到指令引擎
- * 2. 启动桥接客户端，主动连接配套技能的本地指令代理（默认 ws://127.0.0.1:49720/ws）
+ * 2. 启动桥接客户端，扫描 49720–49729 的本地指令代理并连接匹配服务
  * 3. 同时在全局对象挂载 __aiCommand 作为诊断/备用通道
  *
  * 注意：扩展运行在独立 JS 上下文，window 不与其他扩展共享，
  * 因此与 AI 的通信必须走本扩展自己的 WebSocket 连接。
  */
 import { getBridgeLifecycleStatus, reconnectBridgeClient, startBridgeClient, stopBridgeClient } from './bridge/client';
+import { openSmtQuery as openSmtQueryAtOwner } from './bridge/smtMenu';
 import { autoCopperCommands } from './commands/autoCopper';
 import { componentAttributeCommands } from './commands/componentAttributes';
 import { dfmCommands } from './commands/dfm';
@@ -86,6 +87,8 @@ function handleBridgeOwnerRequest(request: any): unknown {
 			return { status: getBridgeLifecycleStatus(), commandCount: listCommandNames().length };
 		case 'commands':
 			return listCommandNames();
+		case 'open-smt':
+			return openSmtQueryAtOwner();
 		default:
 			throw new Error(`未知的桥接菜单请求：${String(request?.method)}`);
 	}
@@ -213,21 +216,9 @@ export async function listCommands(): Promise<void> {
 	);
 }
 
-/** 打开 SMT 物料查询窗口（页面由本地指令代理提供） */
+/** Open the SMT query page in the bridge owner context. */
 export async function openSmtQuery(): Promise<void> {
-	const url = 'http://127.0.0.1:49720/smt';
-	try {
-		const resp = await eda.sys_ClientUrl.request('http://127.0.0.1:49720/health', 'GET');
-		if (resp?.status === 200) {
-			eda.sys_Window.open(url, '_blank' as any);
-			return;
-		}
-	}
-	catch {
-		// 代理未运行
-	}
-	eda.sys_Dialog.showInformationMessage(
-		'指令代理未运行，无法打开 SMT 物料查询窗口。\n请让 AI 使用配套技能的 scripts/start-proxy.ps1 在后台启动代理，再打开物料查询。',
-		'SMT 物料查询',
-	);
+	await requestOwner('open-smt', 'SMT 物料查询');
 }
+
+/** 打开 SMT 物料查询窗口（页面由本地指令代理提供） */
