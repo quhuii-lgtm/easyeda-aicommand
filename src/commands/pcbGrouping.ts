@@ -13,6 +13,7 @@
  * 铁律：官方 API 返回值不可信，一切成败以回读源码重新解析比对为准（容差 0.001）。
  */
 import type { ICommandDef } from '../engine/types'
+import { getProxyUrl } from '../bridge/proxy-endpoint'
 import type {
 	IBBox,
 	IPendingRecord,
@@ -39,7 +40,6 @@ import {
 
 const GENERATED_PREFIX = 'spg_'
 const DOCUMENT_LAYER = 13
-const PROXY_BASE = 'http://127.0.0.1:49720'
 /** 代理不可用时的兜底备份槽（单槽覆盖，同官方做法） */
 const STORAGE_BACKUP_KEY = 'ai-command-engine:pcb-source-backup'
 
@@ -55,8 +55,11 @@ interface IBackupMeta {
 }
 
 async function proxyJson(path: string, method: 'GET' | 'POST', body?: unknown): Promise<any> {
+	const url = getProxyUrl(path)
+	if (url === null)
+		throw new Error('未连接兼容的指令代理，无法访问本地备份服务')
 	const resp = await eda.sys_ClientUrl.request(
-		`${PROXY_BASE}${path}`, method,
+		url, method,
 		body !== undefined ? JSON.stringify(body) : undefined,
 		{ headers: { 'Content-Type': 'application/json' } },
 	)

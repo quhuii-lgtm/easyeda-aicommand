@@ -4,13 +4,13 @@
 
 AI Command Engine connects AI tools to JLCEDA Pro through a local Node.js proxy. It provides structured commands for reading and editing schematics, PCB layouts, projects, and component libraries.
 
-## v0.20.127 update
+## v0.20.128 update (compared with v0.20.127)
 
-Compared with v0.20.126, the local proxy is distributed with the companion AI skill and can be started by the AI in the background on Windows. The extension connects automatically and no longer opens a custom URL to start an unavailable proxy. A manually stopped bridge can still be resumed from the EDA menu. Compatible running proxies are reused; the extension does not force-replace them.
+The proxy selects an available port in `49720–49729`, reuses a compatible service, and reports its actual endpoint. The extension discovers compatible services and rediscovers after disconnection. Explicit `-Port` / `PORT` selection remains pinned. SMT, PCB backup, and Python helper calls use the discovered endpoint. Binding errors retain system details. The companion skill starts the proxy hidden on Windows without opening the legacy URL, stopping unknown processes, or changing system settings.
 
-Validation passed for 34 client lifecycle cases, 17 owner lifecycle cases, 8 Python cases, TypeScript checking, and a zero-warning build. On JLCEDA Pro 4.1.93, installed v0.20.127 connected automatically, reported 217 registered commands, and completed read-only `project.getInfo` and `task.list` calls. After the previous EDA window was reopened on November 4, v0.20.127 connected and read-only `project.getInfo` succeeded. These checks cover startup and connection only; they do not validate all 217 commands, a whole board, DRC, or production readiness. Full macOS/Linux startup has not been tested.
+The 43 client lifecycle, 19 owner lifecycle, 1 SMT endpoint, 4 PCB grouping, 11 review-bridge, 10 Python helper, 2 skill packaging, 10 binding-error, and 1 real port-conflict checks passed, along with TypeScript and a zero-warning build. Windows host acceptance on JLCEDA Pro 4.1.93 covered automatic discovery/connection at port 49721, the 217-command help listing, read-only project/task queries, and the SMT menu at the actual endpoint. This does not validate all commands, PCB grouping writes, general drawing, save/reopen, whole-board DRC, or production readiness. Linux host behavior is untested.
 
-The public marketplace version before this update is v0.20.126. The companion skill is independently versioned as v2026.11.03. See the [v0.20.127 GitHub release](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.20.127) and [marketplace listing](https://jlc-ext.com/item/eda_gdqnxffl/ai-command-engine) for current channel status and attachments. Read the [release notes](docs/releases/v0.20.127-en.md) for upgrade guidance.
+See the [v0.20.128 GitHub release](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.20.128), [skill v2026.11.08 release](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.11.08), and [marketplace listing](https://jlc-ext.com/item/eda_gdqnxffl/ai-command-engine) for channel status. Read the [release notes](docs/releases/v0.20.128-en.md) for installation and scope.
 
 ## What it does
 
@@ -22,7 +22,7 @@ The public marketplace version before this update is v0.20.126. The companion sk
 
 ### Feature demos
 
-The following GIFs are illustrative feature examples. They are not evidence of full v0.20.127 functionality or host acceptance.
+The following GIFs illustrate feature workflows. They are not evidence that every feature passed v0.20.128 host acceptance.
 
 ![Schematic feature demo](images/demo-schematic.gif)
 
@@ -32,12 +32,12 @@ Available commands depend on the installed extension and EDA version. Query the 
 
 ## First installation
 
-v0.20.127 uses the companion skill to start the proxy in the background. The extension connects automatically without opening a Windows custom URL. Installed-host acceptance covers startup and read-only connection checks; it does not certify every command or drawing workflow.
+The extension, proxy skill, and AI tool are separate parts. Installing `.eext` does not install Node.js or the skill.
 
-1. **Skill and proxy:** download the [v2026.11.03 skill ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.11.03/ai-command-engine-skill_v2026.11.03_en-zh.zip) from the [standalone skill release](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.11.03), then install the complete `ai-command-engine/` folder. Keep its `package.json`, `package-lock.json`, `scripts/`, and instructions together. Use Node.js >=20.17.0 and run `npm ci --omit=dev` in the skill root on first use.
-2. **Background startup:** ask the AI to run `scripts/start-proxy.ps1` as described in the skill's [connection guide](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/blob/main/ai-command-engine/references/setup.md). The Windows launcher runs the proxy hidden. The full plugin source and URL registration are not required.
-3. **EDA extension:** get the companion `.eext` from the [v0.20.127 plugin release](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.20.127), import and enable it, and allow external interaction. It connects automatically; choose Start Bridge if it was manually stopped.
-4. **Verify:** check `http://127.0.0.1:49720/health` and `http://127.0.0.1:49720/connections`, confirm the version and project, then make a read-only `project.getInfo` call with the intended `instanceId`.
+1. **Skill and proxy:** download the [v2026.11.08 skill ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.11.08/ai-command-engine-skill_v2026.11.08_en-zh.zip) from the [skill release](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.11.08), then install the complete `ai-command-engine/` folder. Keep its references and scripts. Use Node.js >=20.17.0 and run `npm ci --omit=dev` in the skill root.
+2. **Background startup:** ask the AI to follow the skill's [connection guide](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/blob/main/ai-command-engine/references/setup.md) and run `scripts/start-proxy.ps1`. Windows starts it hidden and reports the actual endpoint; compatible services are reused.
+3. **EDA extension:** get the `.eext` from the [v0.20.128 plugin release](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.20.128), import and enable it, and allow external interaction.
+4. **Verify:** use the port reported by the launcher (within `49720–49729`) to check `/health` and `/connections`, confirm the target instance and project, then make a read-only `project.getInfo` call.
 
 See the [first-install guide](docs/QUICKSTART.md). After upgrading, handle and save pending work in every EDA window, then reload each window that still runs the old extension; importing into one window does not update all open windows. Plugin and skill versions are independent. Updating the skill does not overwrite proxy user data or force replacement of a compatible running proxy.
 

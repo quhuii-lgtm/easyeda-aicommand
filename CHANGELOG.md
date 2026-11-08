@@ -1,5 +1,13 @@
 # Change log
 
+## 0.20.128 — Release notes (2026-11-09)
+
+- Select an available proxy port from `49720–49729`; reuse compatible services and report the actual endpoint.
+- Automatically discover the proxy and rediscover after disconnection. Explicit `-Port` / `PORT` stays pinned to one port; route SMT, PCB backup, and Python helper requests through the discovered endpoint.
+- Preserve system details for binding errors. Keep hidden Windows startup and avoid the legacy startup URL, unknown-process termination, or system port changes.
+- Windows / JLCEDA Pro 4.1.93 startup, discovery, automatic connection, SMT entry, and read-only checks passed. Linux remains untested; this is not all-command, drawing-write, DRC, or production acceptance.
+- See [English release notes](docs/releases/v0.20.128-en.md) and [Chinese release notes](docs/releases/v0.20.128-zh.md). Check the separate GitHub, skill, and marketplace pages for current publication status.
+
 ## 0.20.127 — Release notes (2026-11-04)
 
 - Compared with v0.20.126, distribute the local proxy with the companion skill and support hidden Windows startup through `scripts/start-proxy.ps1`. The extension connects automatically and no longer auto-opens a custom URL when the proxy is unavailable; a manually stopped bridge can still be resumed from the EDA menu.

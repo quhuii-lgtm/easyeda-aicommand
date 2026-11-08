@@ -1,4 +1,6 @@
 import { setDiagSink } from '../engine/diag';
+import { setProxyPort } from './proxy-endpoint';
+export { getProxyPort, getProxyUrl } from './proxy-endpoint';
 /**
  * 桥接客户端：扩展侧主动连接本地指令代理（WebSocket）
  *
@@ -15,7 +17,9 @@ import { setDiagSink } from '../engine/diag';
 import { executeCommand, getCommandDocs, listCommandNames } from '../engine/registry';
 
 const WS_ID_PREFIX = 'ai-command-engine';
-const DEFAULT_PORT = 49720;
+const PORT_RANGE_START = 49720;
+const PORT_RANGE_SIZE = 10;
+const HEALTH_TIMEOUT_MS = 1500;
 const RECONNECT_MS = 5000;
 const HEARTBEAT_MS = 10000;
 /**
@@ -39,9 +43,11 @@ let started = false;
 let connected = false;
 /** 菜单「断开指令代理」置位：暂停自动重连，直到再次 startBridgeClient() */
 let manualStop = false;
-let currentPort = DEFAULT_PORT;
+let currentPort: number | null = null;
+let requestedPort: number | null = null;
 let lifecycleGeneration = 0;
 let lifecycleSequence = 0;
+let healthTimerSequence = 0;
 let lifecycleStatus = '未连接';
 let proxyCompatible = false;
 let connecting = false;
@@ -96,6 +102,33 @@ function nextLifecycleId(): string {
 	return `${INSTANCE_ID}-${++lifecycleSequence}`;
 }
 
+function withHealthTimeout<T>(operation: Promise<T>): Promise<T> {
+	return new Promise<T>((resolve, reject) => {
+		let settled = false;
+		let fallbackTimer: ReturnType<typeof setTimeout> | undefined;
+		const timerId = `ai-command-proxy-health-${INSTANCE_ID}-${++healthTimerSequence}`;
+		const finish = (complete: (value: any) => void, value: any): void => {
+			if (settled)
+				return;
+			settled = true;
+			if (fallbackTimer !== undefined)
+				clearTimeout(fallbackTimer);
+			else {
+				try { eda.sys_Timer.clearTimeoutTimer(timerId); }
+				catch { /* Timer may already have fired or the host may have refused it. */ }
+			}
+			complete(value);
+		};
+		const timeout = (): void => finish(reject, new Error(`本地桥接健康探测超过 ${HEALTH_TIMEOUT_MS} ms`));
+		let registered = false;
+		try { registered = eda.sys_Timer.setTimeoutTimer(timerId, HEALTH_TIMEOUT_MS, timeout); }
+		catch { /* Fall back to the extension timer below. */ }
+		if (!registered)
+			fallbackTimer = setTimeout(timeout, HEALTH_TIMEOUT_MS);
+		operation.then(value => finish(resolve, value), error => finish(reject, error));
+	});
+}
+
 function isCurrentConnection(id: string, gen: number): boolean {
 	return id === currentConnectionId && gen === connectionGeneration;
 }
@@ -123,6 +156,8 @@ function retireConnection(id: string, gen: number, closeHost = true): boolean {
 		return true;
 	connectionGeneration++;
 	currentConnectionId = null;
+	currentPort = null;
+	setProxyPort(null);
 	connected = false;
 	connecting = false;
 	probeSentAt = 0;
@@ -378,6 +413,8 @@ function connect(port: number): void {
 		return;
 	try {
 		connecting = true;
+		currentPort = port;
+		setProxyPort(port);
 		const gen = ++connectionGeneration;
 		const id = `${WS_ID_PREFIX}:${INSTANCE_ID}:${gen}`;
 		currentConnectionId = id;
@@ -417,36 +454,54 @@ function connect(port: number): void {
 }
 
 /** Health probing shares the lifecycle generation so a late response cannot undo Stop. */
-async function probeAndConnect(port: number): Promise<boolean> {
+async function probeAndConnect(): Promise<boolean> {
 	const generation = lifecycleGeneration;
-	let response: Response | undefined;
-	try {
-		// The host wraps refused 127.0.0.1 requests as HTTP 500; localhost preserves rejection semantics.
-		response = await eda.sys_ClientUrl.request('http://localhost:' + port + '/health', 'GET');
-	}
-	catch {
-		// The companion skill starts the proxy; continue polling without opening a system URL.
-	}
-	if (manualStop || generation !== lifecycleGeneration)
-		return false;
-	if (response) {
+	const ports = requestedPort === null
+		? Array.from({ length: PORT_RANGE_SIZE }, (_, index) => PORT_RANGE_START + index)
+		: [requestedPort];
+	let incompatibleService = false;
+	for (const port of ports) {
+		if (manualStop || generation !== lifecycleGeneration)
+			return false;
 		try {
-			const health = await response.json();
+			const { status, health } = await withHealthTimeout((async () => {
+				// The host wraps refused 127.0.0.1 requests as HTTP 500; localhost preserves rejection semantics.
+				const response: Response = await eda.sys_ClientUrl.request(`http://localhost:${port}/health`, 'GET');
+				return { status: response.status, health: response.status === 200 ? await response.json() : undefined };
+			})());
 			if (manualStop || generation !== lifecycleGeneration)
 				return false;
-			proxyCompatible = response.status === 200 && health?.service === 'ai-command-proxy' && health?.lifecycleProtocol === 1;
-			if (!proxyCompatible)
-				setLifecycleStatus('桥接版本不匹配：请在当前任务结束后更新配套桥接，现有服务未被关闭');
-			return proxyCompatible;
+			if (status !== 200) {
+				incompatibleService ||= status >= 400 && status < 500 && status !== 404;
+				continue;
+			}
+			try {
+				if (health?.ok !== false && health?.service === 'ai-command-proxy' && health?.lifecycleProtocol === 1) {
+					proxyCompatible = true;
+					currentPort = port;
+					setProxyPort(port);
+					return true;
+				}
+				incompatibleService = true;
+			}
+			catch {
+				incompatibleService = true;
+			}
 		}
 		catch {
-			proxyCompatible = false;
-			setLifecycleStatus('桥接健康响应无法识别，现有服务未被关闭');
-			return false;
+			// Unavailable ports are skipped; the companion skill will be checked again on the existing reconnect timer.
 		}
 	}
+	// Stop or a newer lifecycle action may arrive while the final candidate is pending.
+	// Preserve that action's status instead of replacing it with the scan's waiting result.
+	if (manualStop || generation !== lifecycleGeneration)
+		return false;
 	proxyCompatible = false;
-	setLifecycleStatus('等待配套技能在后台启动本地桥接');
+	currentPort = null;
+	setProxyPort(null);
+	setLifecycleStatus(incompatibleService
+		? '桥接版本不匹配：请在当前任务结束后更新配套桥接，现有服务未被关闭'
+		: '等待配套技能在后台启动本地桥接');
 	return false;
 }
 
@@ -456,11 +511,12 @@ async function connectWhenReady(): Promise<void> {
 	checkingHealth = true;
 	const generation = lifecycleGeneration;
 	try {
-		const ready = await probeAndConnect(currentPort);
+		const ready = await probeAndConnect();
 		if (ready && generation === lifecycleGeneration && !manualStop && !connected && inflightCommands === 0) {
 			if (connecting)
 				return;
-			connect(currentPort);
+			if (currentPort !== null)
+				connect(currentPort);
 		}
 	}
 	finally {
@@ -469,8 +525,9 @@ async function connectWhenReady(): Promise<void> {
 }
 
 /** Start is idempotent; resuming a draining connection does not discard its results. */
-export function startBridgeClient(port: number = DEFAULT_PORT): void {
-	currentPort = port;
+export function startBridgeClient(port?: number): void {
+	if (port !== undefined)
+		requestedPort = port;
 	if (connected && !manualStop && !stopRequest)
 		return;
 	if (checkingHealth || connecting)
@@ -598,7 +655,7 @@ export function stopBridgeClient(): void {
 /** Reconnect uses the same pending-request drain handshake as Stop. */
 export function reconnectBridgeClient(): void {
 	if (!connected && !stopRequest) {
-		startBridgeClient(currentPort);
+		startBridgeClient();
 		return;
 	}
 	requestBridgeStop(true);
