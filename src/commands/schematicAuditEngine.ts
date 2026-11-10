@@ -8,7 +8,7 @@
  * 零依赖纯函数，可独立单测。
  */
 
-export interface IAuditWire { primitiveId: string, net: string, line: Array<number> }
+export interface IAuditWire { primitiveId: string, net: string, line: Array<number>, sourceSegments?: Array<[number, number, number, number]> }
 export interface IAuditLabel { primitiveId: string, net: string, x?: number, y?: number, attached?: boolean, wireId?: string }
 export interface IAuditComp { primitiveId: string, designator?: string, x?: number, y?: number }
 export interface IAuditPin { pinNumber?: string, pinName?: string, x: number, y: number }
@@ -94,10 +94,22 @@ export function runStructuralAudit(input: IAuditInput): { issues: Array<IAuditIs
 		issues.push(it)
 	}
 
-	// 1. 解析线段（flat [x1,y1,x2,y2,...] → 简单段；零长重复点只计数）
+	// 1. 解析线段。源码 LINE 记录优先：一个 WIRE 可由多个独立 LINE 构成，
+	// SDK getState_Line 是连续路径坐标，不能把各个源码 LINE 端点串成一条假路径。
 	const allSegs: Array<{ wire: number, seg: TSeg }> = []
 	let zeroCount = 0
 	input.wires.forEach((w, wi) => {
+		if (w.sourceSegments) {
+			for (const seg of w.sourceSegments) {
+				const [x1, y1, x2, y2] = seg.map(Number) as TSeg
+				if (Math.abs(x1 - x2) < AUDIT_EPS && Math.abs(y1 - y2) < AUDIT_EPS) {
+					zeroCount++
+					continue
+				}
+				allSegs.push({ wire: wi, seg: [x1, y1, x2, y2] })
+			}
+			return
+		}
 		const line = w.line ?? []
 		const pts: Array<[number, number]> = []
 		for (let i = 0; i + 1 < line.length; i += 2)

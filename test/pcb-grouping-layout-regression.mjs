@@ -89,7 +89,7 @@ async function main() {
 		let sourceWrites = 0;
 		globalThis.eda = {
 			dmt_Project: { getCurrentProjectInfo: async () => ({ friendlyName: 'layout-test', data: [{ pcb: { uuid: pcbUuid }, schematic: { page: [{ uuid: schematicUuid, name: 'Sheet' }] } }] }) },
-			dmt_SelectControl: { getCurrentDocumentInfo: async () => ({ documentType: activeUuid === pcbUuid ? 2 : 1, uuid: activeUuid }) },
+			dmt_SelectControl: { getCurrentDocumentInfo: async () => ({ documentType: activeUuid === pcbUuid ? 3 : 1, uuid: activeUuid }) },
 			dmt_EditorControl: {
 				openDocument: async uuid => ({ uuid }),
 				activateDocument: async (tab) => {
@@ -180,7 +180,17 @@ async function main() {
 		'dryRun group bounds include the transformed 40×20 footprint extent and layout margins',
 	);
 	assert.equal(footprintFixture.writes, 0, 'dryRun must not write source');
+	await assert.rejects(() => grouping({
+		dryRun: false,
+		origin: { x: 0, y: 0 },
+		boardSize: { width: 1000, height: 500 },
+		groupGap: 1,
+		__docUuid: 'pcb-test',
+		expectedMenuPlan: JSON.stringify({ boardUuid: 'stale-board' }),
+	}, {}), /预览已过期/);
+	assert.equal(footprintFixture.writes, 0, 'stale menu preview must be rejected before source write or save');
 	console.log('PASS PCB grouping dryRun measures a real bottom 90° asymmetric footprint source and reports the expected anchor and extents');
+	console.log('PASS PCB grouping rejects a stale menu preview before source write');
 }
 
 main().catch((error) => {

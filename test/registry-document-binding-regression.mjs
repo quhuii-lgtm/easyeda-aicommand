@@ -74,6 +74,15 @@ try {
 	assert.equal(activateCalls, 0, 'same-type mismatch never self-heals by activating another tab')
 	assert.equal(result.error.cause?.partial, undefined)
 
+	currentDoc = { documentType: 3, uuid: 'copied-pcb', tabId: 'copied-pcb@project-b' }
+	const beforeWrongTab = handlerCalls
+	result = await executeCommand({ cmd: 'pcb.testPage', params: { __docUuid: 'copied-pcb', __tabId: 'copied-pcb@project-a' } })
+	assert.equal(result.ok, false)
+	assert.match(result.error.message, /目标页签不符/)
+	assert.equal(handlerCalls, beforeWrongTab, 'same document UUID in another project must not enter the handler')
+	result = await executeCommand({ cmd: 'pcb.testPage', params: { __docUuid: 'copied-pcb', __tabId: 'copied-pcb@project-b' } })
+	assert.equal(result.ok, true)
+
 	for (const badUuid of ['', '   ', null, 7, undefined]) {
 		const beforeInfo = infoCalls
 		const beforeHandler = handlerCalls

@@ -1484,11 +1484,44 @@ export const schematicCommands: Array<ICommandDef> = [
 			const auditCurrentPage = async () => {
 				// ① 采集（全部只读）
 				const rawWires = (await eda.sch_PrimitiveWire.getAll()) ?? []
-				const wires: Array<IAuditWire> = rawWires.map(w => ({
-					primitiveId: safeState<string>(w, 'getState_PrimitiveId') ?? '?',
-					net: safeState<string>(w, 'getState_Net') ?? '',
-					line: safeState<Array<number>>(w, 'getState_Line') ?? [],
-				}))
+				const focus = await eda.dmt_SelectControl.getCurrentDocumentInfo()
+				if (focus?.documentType !== 1 || !focus.uuid)
+					throw new Error('无法确认当前原理图页身份，结构审计停止')
+				const source = await eda.sys_FileManager.getDocumentSource()
+				if (typeof source !== 'string' || !source.trim())
+					throw new Error('无法读取当前原理图源码，不能按可能合并的 SDK 多段线判断物理导线连接')
+				const parsedSource = parseSourceLog(source)
+				if (parsedSource.docType !== 'SCH_PAGE' || parsedSource.uuid !== focus.uuid)
+					throw new Error('原理图源码与当前激活页不匹配，结构审计停止')
+				const sourceLinesByWire = new Map<string, Array<[number, number, number, number]>>()
+				for (const record of resolveRecords(parsedSource, 'LINE').values()) {
+					const data = record.data as Record<string, unknown>
+					if (data.lineGroup == null)
+						continue
+					const values = [data.startX, data.startY, data.endX, data.endY]
+					if (!values.every(value => typeof value === 'number' && Number.isFinite(value)))
+						throw new Error(`源码 LINE ${String(record.header.id)} 的端点无法解析，结构审计停止`)
+					const wireId = String(data.lineGroup)
+					const lines = sourceLinesByWire.get(wireId) ?? []
+					lines.push([values[0] as number, -(values[1] as number), values[2] as number, -(values[3] as number)])
+					sourceLinesByWire.set(wireId, lines)
+				}
+				const sdkWireIds = new Set(rawWires.map(w => safeState<string>(w, 'getState_PrimitiveId')).filter((id): id is string => typeof id === 'string' && !!id))
+				const unmatchedSourceWire = [...sourceLinesByWire.keys()].find(id => !sdkWireIds.has(id))
+				if (unmatchedSourceWire)
+					throw new Error(`源码 LINE 引用的 WIRE ${unmatchedSourceWire} 未在 SDK 导线列表中读回，结构审计无法确认`)
+				const wires: Array<IAuditWire> = rawWires.map(w => {
+					const primitiveId = safeState<string>(w, 'getState_PrimitiveId') ?? '?'
+					const line = safeState<Array<number>>(w, 'getState_Line') ?? []
+					if (sourceLinesByWire.size && !sourceLinesByWire.has(primitiveId) && line.length)
+						throw new Error(`SDK 导线 ${primitiveId} 有几何，但源码没有对应 LINE，结构审计无法确认`)
+					return {
+						primitiveId,
+						net: safeState<string>(w, 'getState_Net') ?? '',
+						line,
+						...(sourceLinesByWire.has(primitiveId) ? { sourceSegments: sourceLinesByWire.get(primitiveId)! } : {}),
+					}
+				})
 				const rawLabels = await collectNetLabels(undefined)
 				const labels: Array<IAuditLabel> = rawLabels.map(l => ({
 					primitiveId: String(l.primitiveId ?? '?'),
@@ -4922,12 +4955,12 @@ export const schematicCommands: Array<ICommandDef> = [
 	},
 	{
 		name: 'schematic.delete',
-		summary: '删除原理图图元（器件 / 导线 / 文本 / 网络标签等属性，按 primitiveId，可批量）；先完整预检类型与父子关系，再删后读回验证，区分直接删除、级联删除、原本不存在、仍存在和读回未知。TEXT 通过官方 sch_PrimitiveText.delete 按 ID 删除，并验证完整源码与模型；不确定时只读核验，不回退源码写入。逐项 8s 超时保护、batchSize 分批（默认 10，批间停 300ms）、全局时间预算 100s；不完整结果通过 error.cause.partial 供宏停止后续写入。【已知问题·EDA 4.1.78】TEXT删除功能保留，但0.20.55在两张独立测试页均出现即时删除成功、保存关闭重开后原TEXT恢复；保存前后各等待约5秒仍复现。当前持久性已知失败，不能把directDeleted或persistenceVerified:false理解为已永久删除，也不要按原请求盲目重删。此结论仅涉及独立TEXT，不等同器件位号、参数或网络标签',
+		summary: '删除原理图图元（器件 / 导线 / 文本 / 网络标签等属性，按 primitiveId，可批量）；先完整预检类型与父子关系，再删后读回验证，区分直接删除、级联删除、原本不存在、仍存在和读回未知。TEXT 通过官方 sch_PrimitiveText.delete 按 ID 删除，并验证完整源码与模型；不确定时只读核验，不回退源码写入。逐项 8s 超时保护、batchSize 分批（默认 10，批间停 300ms）、全局时间预算 100s；不完整结果通过 error.cause.partial 供宏停止后续写入。【独立 TEXT 保存复验】EDA 4.1.78 和 4.1.93 均复现插件即时删除后保存重开恢复。若需要持久删除，可用电脑操作技能在 EDA 界面打开正确工程和图页，选中目标文字，并用 schematic.getSelection 确认选区只包含请求的 TEXT ID，再用界面 Delete。保存、关闭并重开该页，用 schematic.listTexts 按原 ID 确认目标消失、其余文字保持。界面方式已在 4.1.93 实测。此说明仅适用于独立 TEXT',
 		params: [
 			{ name: 'primitiveIds', type: 'string[]', required: true, description: '要删除的图元 ID 列表（也兼容单数 primitiveId，自动转数组）' },
 			{ name: 'batchSize', type: 'number', description: '分批大小，默认 10：每批之间停 300ms 并记录分批进度。大批删除建议保持默认多次调用，不要一次调大硬跑' },
 		],
-		returns: '{ taskId, deleted: [...], failed: [...], outcomeBy: { id: directDeleted|cascadeDeleted|notFound|stillExists|unknown }, deletedBy: { id: type }, persistenceVerified?: false, reconciled?, sessionHealth?, probeDocumentUuid?, probeId?, probeStatus?, probeResidue?, batches?, unprocessed?, failedNote? }（TEXT 成功仅确认源码和模型当前读回，附 persistenceVerified:false；EDA 4.1.78已实测保存重开后原TEXT恢复，保留此功能但持久性已知失败；源码或模型读回异常保持 unknown 并停止后续写入。发生写操作后有未完成项时以 error.cause.partial=true 保留结果并阻止宏继续写入。健康探针单次创建与单次清理，按 ID+几何读回，清理前复核原文档焦点；只有删除前合法枚举见过探针且删除后合法枚举不含探针才报告 sessionHealth=ok，否则保留证据并报告 inconclusive/degraded）',
+		returns: '{ taskId, deleted: [...], failed: [...], outcomeBy: { id: directDeleted|cascadeDeleted|notFound|stillExists|unknown }, deletedBy: { id: type }, persistenceVerified?: false, reconciled?, sessionHealth?, probeDocumentUuid?, probeId?, probeStatus?, probeResidue?, batches?, unprocessed?, failedNote? }（TEXT 成功仅确认源码和模型当前读回，附 persistenceVerified:false；EDA 4.1.78、4.1.93均实测保存重开后原TEXT恢复；源码或模型读回异常保持 unknown 并停止后续写入。发生写操作后有未完成项时以 error.cause.partial=true 保留结果并阻止宏继续写入。健康探针单次创建与单次清理，按 ID+几何读回，清理前复核原文档焦点；只有删除前合法枚举见过探针且删除后合法枚举不含探针才报告 sessionHealth=ok，否则保留证据并报告 inconclusive/degraded）',
 		example: { cmd: 'schematic.delete', params: { primitiveIds: ['xxx', 'yyy'] } },
 		handler: async (params, ctx) => {
 			// 兼容单数 primitiveId（自动转数组）

@@ -7,6 +7,7 @@ import { parseSourceLog } from '../pcb/sourcelog'
 export interface IDocumentSnapshot {
 	documentUuid: string
 	documentType: number
+	tabId?: string
 	command: string
 	source: string
 	storageKey: string
@@ -224,12 +225,14 @@ async function currentDocument(): Promise<any> {
 }
 
 /** Read and persist an exact source snapshot, requiring focus and SDK storage readback before writes. */
-export async function captureDocumentSnapshot(command: string, documentType: number, expectedDocumentUuid?: string): Promise<IDocumentSnapshot> {
+export async function captureDocumentSnapshot(command: string, documentType: number, expectedDocumentUuid?: string, expectedTabId?: string): Promise<IDocumentSnapshot> {
 	const before = await currentDocument()
 	if (!before?.uuid || before.documentType !== documentType)
 		throw new Error(`快照前焦点文档类型或 UUID 无效（${command}）`)
 	if (expectedDocumentUuid !== undefined && before.uuid !== expectedDocumentUuid)
 		throw new Error(`快照目标 UUID 与预期不一致（${command}：expected=${expectedDocumentUuid}, focus=${before.uuid}）；已拒绝读取或保存快照`)
+	if (expectedTabId !== undefined && before.tabId !== expectedTabId)
+		throw new Error(`快照目标页签与预期不一致（${command}）`)
 	const source = await eda.sys_FileManager.getDocumentSource()
 	if (typeof source !== 'string' || !source.trim())
 		throw new Error(`无法取得非空文档源码，已拒绝执行 ${command}`)
@@ -237,7 +240,7 @@ export async function captureDocumentSnapshot(command: string, documentType: num
 	if (parsed.uuid !== before.uuid)
 		throw new Error(`源码 UUID 与焦点文档不一致（${command}），已拒绝执行`)
 	const after = await currentDocument()
-	if (after?.uuid !== before.uuid || after?.documentType !== documentType)
+	if (after?.uuid !== before.uuid || after?.documentType !== documentType || (expectedTabId !== undefined && after.tabId !== expectedTabId))
 		throw new Error(`读取快照期间焦点文档发生变化（${command}），已拒绝执行`)
 
 	const storageKey = `ai-command-engine:destructive-recovery:${command}:${before.uuid}`
@@ -248,6 +251,7 @@ export async function captureDocumentSnapshot(command: string, documentType: num
 		command,
 		source,
 		storageKey,
+		...(expectedTabId === undefined ? {} : { tabId: expectedTabId }),
 	}
 	const stored = JSON.stringify({ schema: 1, command, documentUuid: before.uuid, source })
 	let writeOk = false
@@ -266,7 +270,7 @@ export async function captureDocumentSnapshot(command: string, documentType: num
 /** Refuse to write unless the exact document captured by the snapshot still has focus. */
 export async function assertSnapshotFocused(snapshot: IDocumentSnapshot): Promise<void> {
 	const focus = await currentDocument()
-	if (focus?.uuid !== snapshot.documentUuid || focus?.documentType !== snapshot.documentType)
+	if (focus?.uuid !== snapshot.documentUuid || focus?.documentType !== snapshot.documentType || (snapshot.tabId !== undefined && focus.tabId !== snapshot.tabId))
 		throw new Error(`焦点文档已变化，已拒绝向目标文档写入（${snapshot.documentUuid}）`)
 }
 

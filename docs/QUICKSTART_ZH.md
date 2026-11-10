@@ -2,7 +2,9 @@
 
 [English](QUICKSTART.md) | 简体中文
 
-更新日期：2026-11-09，对应插件 0.20.128 和配套技能 2026.11.08。嘉立创 EDA 专业版 4.1.93 的 Windows 宿主验收覆盖代理隐藏启动、端口发现、自动连接、SMT 入口及只读查询。Linux 尚未实机验证；本次不代表完整绘图或生产验收。
+更新日期：2026-11-11，对应插件 0.20.135 和配套技能 2026.11.11。宿主证据范围为嘉立创 EDA 专业版 4.1.93、插件 0.20.133：PCB 区域的单个专属菜单含 15 项，八页结构审计没有阻断项。0.20.135 的帮助输出尚未在 EDA 实机读回。Linux 尚未实机验证；本次不代表完整绘图或生产验收。
+
+打开 PCB 图页后，「AI 指令引擎」菜单显示全部 15 项，包括 DFM、同网焊盘间距、分组与自动布线。开始页和原理图页显示 6 个通用入口。
 
 ## 第一次安装：交给 AI 完成
 
@@ -11,17 +13,17 @@
 ```text
 请安装并连接嘉立创 EDA“AI 指令引擎”，只做环境设置与只读连接验证，不修改图纸。
 1. 检查系统、Node.js和npm，Node.js要求>=20.17.0。
-2. 下载 https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.11.08/ai-command-engine-skill_v2026.11.08_en-zh.zip，将完整ai-command-engine目录安装到当前AI工具的技能目录。保留个人修改、references和scripts。读取SKILL.md及references/zh/setup.md。
+2. 下载 https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.11.11/ai-command-engine-skill_v2026.11.11_en-zh.zip，将完整ai-command-engine目录安装到当前AI工具的技能目录。保留个人修改、references和scripts。读取SKILL.md及references/zh/setup.md。
 3. 在技能根目录运行npm ci --omit=dev。在Windows按技能说明隐藏运行scripts/start-proxy.ps1；不要打开命令窗口或旧启动URL。
 4. 让启动器在49720–49729中选择可用端口或复用兼容代理，记录其返回的实际端点。不要结束未知进程或修改系统端口设置。显式-Port/PORT只使用指定端口。
-5. 指导我从 https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.20.128 取得配套.eext，在EDA导入、启用并允许外部交互。
+5. 指导我从 https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.20.135 取得配套.eext，在EDA导入、启用并允许外部交互。
 6. 在返回的实际端点查询/health与/connections，核对插件版本和工程，再使用目标instanceId调用只读project.getInfo并确认ok:true。多个窗口不自动选第一项。
 7. 报告环境、技能版本、实际端口、插件实例及只读调用结果。未完成项如实说明；连接不代表绘图验收。
 ```
 
 ## 1. 安装技能和代理
 
-从[技能 2026.11.08 发布页](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.11.08)下载[中英双语 ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.11.08/ai-command-engine-skill_v2026.11.08_en-zh.zip)，将完整技能安装到 AI 工具的技能目录。保留 `SKILL.md`、`SKILL_ZH.md`、`references/`、`scripts/`、`package.json`、`package-lock.json`、`VERSION` 和 `LICENSE`。重新加载技能。
+从[技能 2026.11.11 发布页](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.11.11)下载[中英双语 ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.11.11/ai-command-engine-skill_v2026.11.11_en-zh.zip)，将完整技能安装到 AI 工具的技能目录。保留 `SKILL.md`、`SKILL_ZH.md`、`references/`、`scripts/`、`package.json`、`package-lock.json`、`VERSION` 和 `LICENSE`。重新加载技能。
 
 在技能根目录运行一次：
 
@@ -45,7 +47,7 @@ powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "<�
 
 ## 3. 安装 EDA 插件
 
-从[插件 v0.20.128 发布页](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.20.128)下载配套 `.eext`，在 EDA 导入并启用，允许外部交互。插件与技能分别安装、独立编号。插件扫描端口范围发现代理，断线后重新发现。
+从[插件 v0.20.135 发布页](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.20.135)下载配套 `.eext`，在 EDA 导入并启用，允许外部交互。插件与技能分别安装、独立编号。插件扫描端口范围发现代理，断线后重新发现。
 
 插件自动连接代理。代理后启动也会接入；手动停止过桥接时，通过菜单“启动桥接”恢复。安装 `.eext` 不会安装 Node.js 或技能。
 
@@ -74,4 +76,4 @@ Invoke-RestMethod "http://127.0.0.1:$ProxyPort/connections" | ConvertTo-Json -De
 - 更新插件前，先处理并保存每个 EDA 窗口中的未完成操作，再重新加载仍运行旧版插件的所有窗口。在一个窗口导入新包不能保证其他已打开窗口也升级。
 - 发生超时先核对任务和实际内容，不盲目重发写操作。
 
-Windows 启动、端口发现、SMT 入口和只读连接已在嘉立创 EDA 专业版 4.1.93 验证。Linux 尚未实机验证；本次不代表全部指令或绘图验收。历史 Issue #12、#17、#18 仍开放，本次没有确定其历史问题根因。SMT 查询密钥按需配置，普通画图不需要。
+在 EDA 4.1.93 中实测通过界面持久删除独立原理图 TEXT：选中目标文字，用 `schematic.getSelection` 确认选区只有其原 ID，使用界面 Delete，保存、关闭并重开后用 `schematic.listTexts` 确认该 ID 已消失。API 删除后重开可能恢复，问题仍未解决；0.20.135 帮助输出尚未实机读回。本项不代表全部指令或绘图验收。Linux 尚未实机验证。历史 Issue #12、#17、#18 仍开放，本次没有确定其历史问题根因。SMT 查询密钥按需配置，普通画图不需要。

@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url'
 const bundle = 'test/.document-recovery-comparison.mjs'
 try {
 	await build({ entryPoints: ['src/engine/documentRecovery.ts'], outfile: bundle, bundle: true, format: 'esm', platform: 'node', target: 'node24' })
-	const { captureDocumentSnapshot, compareDocumentSources, withDocumentRecovery } = await import(pathToFileURL(resolve(bundle)).href)
+	const { assertSnapshotFocused, captureDocumentSnapshot, compareDocumentSources, withDocumentRecovery } = await import(pathToFileURL(resolve(bundle)).href)
 	const checkEqual = (expected, actual, message) => assert.equal(compareDocumentSources(expected, actual).equal, true, message)
 	const checkDifferent = (expected, actual, message) => assert.equal(compareDocumentSources(expected, actual).equal, false, message)
 	const source = (head, records) => `${JSON.stringify({ type: 'DOCHEAD', ticket: 0, id: 'head' })}||${JSON.stringify(head)}|\n${records.map(([header, data]) => `${JSON.stringify(header)}||${JSON.stringify(data)}|`).join('\n')}`
@@ -261,6 +261,12 @@ try {
 		assert.equal(saved.get(key), 'original-B-snapshot-bytes', 'preserve the prior recovery snapshot byte-for-byte')
 		const legacyCall = await captureDocumentSnapshot('legacy-command', 3)
 		assert.equal(legacyCall.documentUuid, 'locked-B', 'calls without expected UUID retain the existing behavior')
+		let tabId = 'locked-B@project-b'
+		globalThis.eda.dmt_SelectControl.getCurrentDocumentInfo = async () => ({ documentType: 3, uuid: 'locked-B', tabId })
+		await assert.rejects(() => captureDocumentSnapshot('pcb.importAutoRouteSes', 3, 'locked-B', 'locked-B@project-a'), /快照目标页签与预期不一致/)
+		const bound = await captureDocumentSnapshot('pcb.importAutoRouteSes', 3, 'locked-B', tabId)
+		tabId = 'locked-B@project-a'
+		await assert.rejects(() => assertSnapshotFocused(bound), /焦点文档已变化/)
 	}
 	const ambiguous = source({ docType: 'PCB', uuid: 'doc-2' }, [[{ type: 'LINE', id: 'same', ticket: 1 }, {}], [{ type: 'LINE', id: 'same', ticket: 2 }, {}]])
 	assert.equal(compareDocumentSources(ambiguous, ambiguous).equal, true, 'allow exact-string equality for repeated identities')

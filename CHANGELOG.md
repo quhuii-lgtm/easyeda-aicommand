@@ -1,5 +1,9 @@
 # Change log
 
+## 0.20.135
+
+- Open a PCB drawing page to see all 15 entries in the AI Command Engine menu, including DFM, same-net pad spacing, grouping, and auto-routing. The start page and schematic pages show six general entries.
+
 ## 0.20.128 — Release notes (2026-11-09)
 
 - Select an available proxy port from `49720–49729`; reuse compatible services and report the actual endpoint.

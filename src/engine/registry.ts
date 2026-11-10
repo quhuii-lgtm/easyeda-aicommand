@@ -206,6 +206,10 @@ export async function executeCommand(req: ICommandRequest, ctx?: ICommandContext
 			const expectUuid = hasExpectedUuid ? (params as any).__docUuid : undefined
 			if (hasExpectedUuid && (typeof expectUuid !== 'string' || !expectUuid.trim()))
 				throw new Error('__docUuid 必须是非空、非纯空白字符串')
+			const hasExpectedTab = Object.prototype.hasOwnProperty.call(params, '__tabId')
+			const expectTab = params.__tabId
+			if (hasExpectedTab && (typeof expectTab !== 'string' || !expectTab.trim()))
+				throw new Error('__tabId 必须是非空、非纯空白字符串')
 			const elapsedBeforeLookup = Date.now() - started
 			const lookupBudgetMs = fuseMs - elapsedBeforeLookup
 			if (lookupBudgetMs <= 0)
@@ -231,6 +235,8 @@ export async function executeCommand(req: ICommandRequest, ctx?: ICommandContext
 					Date.now() - started,
 				)
 			}
+			if (hasExpectedTab && doc.tabId !== expectTab)
+				throw new Error('当前页签与菜单操作的目标页签不符，请返回原 PCB 后重新打开菜单')
 			handlerFuseMs = fuseMs - (Date.now() - started)
 			if (handlerFuseMs <= 0)
 				throw new Error(`页级文档校验后执行预算已耗尽（${fuseMs}ms）；未启动页级指令`)

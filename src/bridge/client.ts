@@ -89,6 +89,11 @@ export function isBridgeConnected(): boolean {
 	return connected;
 }
 
+/** Instance identity used by owner-context local proxy menu operations. */
+export function getBridgeInstanceId(): string {
+	return INSTANCE_ID;
+}
+
 export function getBridgeLifecycleStatus(): string {
 	return lifecycleStatus;
 }

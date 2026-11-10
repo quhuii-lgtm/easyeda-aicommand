@@ -3,7 +3,7 @@
   "uuid": "29aa51f0bed4411d866cb7a7a249231a",
   "displayName": "AI 指令引擎",
   "description": "AI 指令引擎：为 AI 编程工具提供简易 JSON 指令接口，内部封装嘉立创 EDA 专业版扩展 API，支持宏指令组合与布线知识库",
-  "version": "0.20.128",
+  "version": "0.20.135",
   "publisher": "ai-command-engine",
   "engines": {
     "eda": "^3.2.0"
@@ -106,7 +106,7 @@
     ],
     "pcb": [
       {
-        "id": "aiCommand",
+        "id": "aiCommandPcb",
         "title": "AI 指令引擎",
         "menuItems": [
           {
@@ -138,13 +138,7 @@
             "id": "SmtQuery",
             "title": "SMT 物料查询…",
             "registerFn": "openSmtQuery"
-          }
-        ]
-      },
-      {
-        "id": "jlcDfmMenu",
-        "title": "嘉立创下单检查",
-        "menuItems": [
+          },
           {
             "id": "PcbDfm",
             "title": "嘉立创 PCB DFM...",
@@ -159,6 +153,36 @@
             "id": "PadSpacing",
             "title": "同网焊盘间距...",
             "registerFn": "padSpacingMenu"
+          },
+          {
+            "id": "PcbGroupByRegions",
+            "title": "按原理图功能区分组…",
+            "registerFn": "pcbGroupBySchematicRegionsMenu"
+          },
+          {
+            "id": "PcbAutoRouteStart",
+            "title": "启动自动布线…",
+            "registerFn": "pcbAutoRouteStartMenu"
+          },
+          {
+            "id": "PcbAutoRouteStatus",
+            "title": "查询自动布线状态…",
+            "registerFn": "pcbAutoRouteStatusMenu"
+          },
+          {
+            "id": "PcbAutoRouteStop",
+            "title": "停止自动布线…",
+            "registerFn": "pcbAutoRouteStopMenu"
+          },
+          {
+            "id": "PcbAutoRouteFetch",
+            "title": "取回已完成 SES…",
+            "registerFn": "pcbAutoRouteFetchMenu"
+          },
+          {
+            "id": "PcbAutoRouteImport",
+            "title": "显式导入已取回 SES…",
+            "registerFn": "pcbAutoRouteImportMenu"
           }
         ]
       }
