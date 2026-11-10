@@ -3,6 +3,7 @@
  *
  * 注意：PCB 坐标默认单位为 mil（与 PCB 编辑器内部一致，界面显示 mm 时注意换算，1mm ≈ 39.37mil）
  */
+import { frRequest } from '../bridge/freerouting'
 import type { ICommandDef } from '../engine/types'
 import { repairDsnClassNetReferences } from '../engine/dsnExport'
 import { applyDsnLayerWidthRules } from '../engine/dsnLayerWidths'
@@ -121,7 +122,6 @@ function invalidateDsnWidthComparison(comparison: ReturnType<typeof compareDsnWi
 }
 
 // ---------- FreeRouting 自动布线（REST 客户端 + 任务状态） ----------
-const FR_API_BASE = 'http://127.0.0.1:37864/v1'
 let currentRouteJobId: string | undefined
 const routeJobDocumentUuids = new Map<string, string>()
 const routeJobBaselines = new Map<string, SesRouteBaseline>()
@@ -408,26 +408,6 @@ function requireClearedSnapshot(before: HostRouteSnapshot, after: HostRouteSnaps
 	const source = sourceRouteDelta(before, after, [...plan.deleteLines, ...plan.deleteVias].flatMap(item => item.id ? [item.id] : []).concat(deletedArcIds))
 	if (!source.verified)
 		throw new Error(`清理阶段改变了计划外 PCB 源码记录：${JSON.stringify(source.differences)}`)
-}
-
-/** FreeRouting REST 请求（走 eda.sys_ClientUrl 绕开扩展网络限制，与官方集成扩展同款） */
-async function frRequest<T = unknown>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<T> {
-	const headers: Record<string, string> = {
-		'Freerouting-Environment-Host': 'EasyEDA/3.2',
-		'Freerouting-Profile-ID': '4c11cc11-75b4-4eaa-96b8-95a71d3611ef',
-	}
-	if (body)
-		headers['Content-Type'] = 'application/json'
-	const res = await (eda.sys_ClientUrl as any).request(
-		`${FR_API_BASE}${path}`, method, body ? JSON.stringify(body) : undefined, { headers },
-	)
-	if (!res.ok) {
-		const text = await res.text().catch(() => '')
-		throw new Error(`FreeRouting API ${method} ${path} 失败（${res.status}）：${text}`)
-	}
-	if (res.status === 204)
-		return undefined as T
-	return res.json() as Promise<T>
 }
 
 function safeState<T>(obj: any, method: string): T | undefined {
@@ -3760,7 +3740,7 @@ export const pcbCommands: Array<ICommandDef> = [
 			const currentDocument = await eda.dmt_SelectControl.getCurrentDocumentInfo()
 			if (currentDocument?.documentType !== 3 || typeof currentDocument.uuid !== 'string' || !currentDocument.uuid.trim())
 				throw new Error('当前焦点不是可识别的 PCB 文档，已拒绝 SES 导入')
-			const snapshot = await captureDocumentSnapshot('pcb.importAutoRouteSes', 3, currentDocument.uuid)
+			const snapshot = await captureDocumentSnapshot('pcb.importAutoRouteSes', 3, params.__docUuid ?? currentDocument.uuid, params.__tabId)
 			if (snapshot.documentUuid !== currentDocument.uuid)
 				throw new Error(`SES 导入目标文档在快照期间变化（${currentDocument.uuid} → ${snapshot.documentUuid}）`)
 			await assertSnapshotFocused(snapshot)
@@ -4376,6 +4356,11 @@ export const pcbCommands: Array<ICommandDef> = [
 			if (focus?.documentType !== 3 || typeof focus.uuid !== 'string' || !focus.uuid.trim())
 				throw new Error('启动自动布线前必须先激活一个有效 PCB 文档')
 			const routeDocumentUuid = focus.uuid
+			const matchesRoutingTarget = (target: typeof focus | undefined) => target?.documentType === 3
+				&& target.uuid === routeDocumentUuid
+				&& (params.__tabId === undefined || target.tabId === params.__tabId)
+			if ((params.__docUuid !== undefined && routeDocumentUuid !== params.__docUuid) || !matchesRoutingTarget(focus))
+				throw new Error('自动布线的目标 PCB 页签已变化')
 			let routeDocumentSource: string | undefined
 			let routeSnapshotWarning: string | undefined
 			try {
@@ -4397,7 +4382,7 @@ export const pcbCommands: Array<ICommandDef> = [
 			if (!dsnFile)
 				throw new Error('DSN 导出失败：请确认已激活 PCB 文档')
 			const focusAfterDsn = await eda.dmt_SelectControl.getCurrentDocumentInfo()
-			if (focusAfterDsn?.documentType !== 3 || focusAfterDsn.uuid !== routeDocumentUuid)
+			if (!matchesRoutingTarget(focusAfterDsn))
 				throw new Error(`导出 DSN 期间 PCB 焦点已变化（原文档=${routeDocumentUuid}，当前=${focusAfterDsn?.uuid ?? '未知'}），已拒绝提交布线任务`)
 			let sourceAfterDsn: string | undefined
 			if (routeDocumentSource !== undefined) {
@@ -4416,7 +4401,7 @@ export const pcbCommands: Array<ICommandDef> = [
 				? await prepareDsnWithPouredPlanes(eda, dsnRepair.text, routeDocumentUuid, routeDocumentSource)
 				: { ...dsnRepair, warnings: [...dsnRepair.warnings, `${routeSnapshotWarning ?? '源码快照不可用'}，保留原 DSN 平面内容`], limitations: [...dsnRepair.limitations, '源码快照不可用时不补写内层平面'] }
 			const focusAfterPreparation = await eda.dmt_SelectControl.getCurrentDocumentInfo()
-			if (focusAfterPreparation?.documentType !== 3 || focusAfterPreparation.uuid !== routeDocumentUuid)
+			if (!matchesRoutingTarget(focusAfterPreparation))
 				throw new Error(`读取 DSN 实填充期间 PCB 焦点已变化（原文档=${routeDocumentUuid}，当前=${focusAfterPreparation?.uuid ?? '未知'}），已拒绝提交布线任务`)
 			let sourceAfterPreparation: string | undefined
 			if (routeDocumentSource !== undefined) {
@@ -4442,7 +4427,7 @@ export const pcbCommands: Array<ICommandDef> = [
 			const sourceAfterSlotPreparation = routeDocumentSource !== undefined ? await eda.sys_FileManager.getDocumentSource().catch((error: unknown) => { routeSnapshotWarning = `槽孔补偿后复核源码快照失败：${String((error as any)?.message ?? error)}`; return undefined }) : undefined
 			const slotSnapshotComparison = routeDocumentSource === undefined || sourceAfterSlotPreparation === undefined ? undefined : comparePcbSourceSnapshots(routeDocumentSource, sourceAfterSlotPreparation)
 			const focusAfterSlotPreparation = await eda.dmt_SelectControl.getCurrentDocumentInfo()
-			if (focusAfterSlotPreparation?.documentType !== 3 || focusAfterSlotPreparation.uuid !== routeDocumentUuid)
+			if (!matchesRoutingTarget(focusAfterSlotPreparation))
 				throw new Error(`槽孔准备期间 PCB 焦点已变化（原文档=${routeDocumentUuid}，当前=${focusAfterSlotPreparation?.uuid ?? '未知'}），已拒绝提交布线任务`)
 			if (routeDocumentUuid && routeDocumentSource !== undefined && sourceAfterSlotPreparation !== undefined && !slotSnapshotComparison?.matches)
 				throw new Error(`槽孔准备期间 PCB 源码快照已变化：${slotSnapshotComparison?.reason ?? '无法比较'}，已拒绝提交布线任务`)
@@ -4486,6 +4471,8 @@ export const pcbCommands: Array<ICommandDef> = [
 			if (applyLayerWidthRulesRequested)
 				await assertRoutingSourceStable(routeDocumentUuid, sourceAfterSlotPreparation, 5000, '自动布线分层线宽转换')
 			const dsnBase64 = await blobToBase64(new Blob([finalDsnPrepared.text], { type: dsnFile.type }))
+			if (params.__tabId !== undefined && !matchesRoutingTarget(await eda.dmt_SelectControl.getCurrentDocumentInfo()))
+				throw new Error('提交自动布线任务前 PCB 页签已变化')
 			const session = await frRequest<{ id: string }>('POST', '/sessions/create')
 			const job = await frRequest<{ id: string }>('POST', '/jobs/enqueue', { session_id: session.id, name: dsnFile.name.replace(/\.dsn$/i, ''), priority: 'NORMAL' })
 			if (typeof job?.id !== 'string' || !job.id.trim())

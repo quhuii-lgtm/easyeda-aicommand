@@ -720,11 +720,20 @@ export const pcbGroupingCommands: Array<ICommandDef> = [
 			if (!project)
 				throw new Error('当前没有打开工程')
 			const currentDoc = await eda.dmt_SelectControl.getCurrentDocumentInfo()
+			if (currentDoc?.documentType !== 3 || !currentDoc.uuid)
+				throw new Error('当前焦点不是有效 PCB 文档，已停止功能区分组')
+			const targetTabId = String((currentDoc as any).tabId ?? '')
+			if (params.__docUuid && (currentDoc as any)?.uuid !== String(params.__docUuid))
+				throw new Error(`当前 PCB 文档与菜单目标不符（当前=${(currentDoc as any)?.uuid ?? '未知'}，目标=${String(params.__docUuid)}）`)
+			if (params.__tabId && targetTabId !== String(params.__tabId))
+				throw new Error(`当前 PCB 标签与菜单目标不符（当前 tabId=${(currentDoc as any)?.tabId ?? '未知'}，目标=${String(params.__tabId)}）`)
 			const boards = (project as any).data ?? []
 			const board = boards.find((item: any) => item.pcb?.uuid && item.pcb.uuid === (currentDoc as any)?.uuid)
 				?? boards.find((item: any) => item.pcb?.uuid)
 			if (!board?.pcb?.uuid)
 				throw new Error('工程中没有可用的 PCB（请先 project.associateBoard 关联或创建 PCB）')
+			if (params.__docUuid && board.pcb.uuid !== String(params.__docUuid))
+				throw new Error(`当前工程 PCB 与菜单目标不符（工程 PCB=${board.pcb.uuid}，目标=${String(params.__docUuid)}）`)
 			const projectName = String((project as any).friendlyName ?? (project as any).name ?? 'project')
 
 			// ---------- ② 逐页读原理图区框（openDocument→activate→getDocumentSource） ----------
@@ -752,9 +761,20 @@ export const pcbGroupingCommands: Array<ICommandDef> = [
 				}
 
 				// ---------- ③ 读 PCB 源码并校验身份 ----------
-				const pcbTab = await eda.dmt_EditorControl.openDocument(String(board.pcb.uuid))
-				if (pcbTab)
-					await eda.dmt_EditorControl.activateDocument(pcbTab as any).catch(() => false)
+				if (params.__tabId) {
+					const activated = await eda.dmt_EditorControl.activateDocument(targetTabId).catch(() => false)
+					if (!activated)
+						throw new Error(`无法重新激活原始 PCB 标签 tabId=${targetTabId}；拒绝在可能同 UUID 的其他工程标签读取或写入`)
+				}
+				else {
+					const pcbTab = await eda.dmt_EditorControl.openDocument(String(board.pcb.uuid))
+					if (pcbTab)
+						await eda.dmt_EditorControl.activateDocument(pcbTab as any).catch(() => false)
+				}
+				const focusedPcb = await eda.dmt_SelectControl.getCurrentDocumentInfo()
+				if (focusedPcb?.documentType !== 3 || focusedPcb.uuid !== String(board.pcb.uuid)
+					|| (params.__tabId && String((focusedPcb as any)?.tabId ?? '') !== targetTabId))
+					throw new Error(`功能区读取前未能恢复目标 PCB 标签（目标=${board.pcb.uuid}/${targetTabId}，当前=${focusedPcb?.uuid ?? '未知'}/${String((focusedPcb as any)?.tabId ?? '')}）`)
 				pcbSource = (await eda.sys_FileManager.getDocumentSource()) as string
 				if (!pcbSource)
 					throw new Error('无法获取 PCB 源码')
@@ -764,9 +784,12 @@ export const pcbGroupingCommands: Array<ICommandDef> = [
 				pcbDocument = parseSourceLog(pcbSource)
 			}
 			catch (err) {
-				await eda.dmt_EditorControl.openDocument(String(board.pcb.uuid))
-					.then((t: any) => t && eda.dmt_EditorControl.activateDocument(t as any))
-					.catch(() => false)
+				if (params.__tabId)
+					await eda.dmt_EditorControl.activateDocument(targetTabId).catch(() => false)
+				else
+					await eda.dmt_EditorControl.openDocument(String(board.pcb.uuid))
+						.then((t: any) => t && eda.dmt_EditorControl.activateDocument(t as any))
+						.catch(() => false)
 				throw err
 			}
 
@@ -899,6 +922,29 @@ export const pcbGroupingCommands: Array<ICommandDef> = [
 				...(allPlacements.length - actualBoxes.size > 0 ? { caliberNote: `${allPlacements.length - actualBoxes.size} 个器件实测失败，回退布局估算盒参与自检` } : {}),
 				...(overlapPairs.length ? { pairs: overlapPairs.slice(0, 20) } : {}),
 			}
+			const menuPlan = {
+				boardUuid: String(board.pcb.uuid),
+				tabId: String((currentDoc as any)?.tabId ?? ''),
+				board: { ...boardBox, source: boardSrc },
+				origin: { x: originX, y: originBottomY },
+				groups: groupSummaries,
+				ungrouped,
+				locked,
+				overlapCheck: overlapReport,
+			}
+			if (!dryRun && params.expectedMenuPlan !== undefined) {
+				let expectedPlan: unknown
+				try {
+					expectedPlan = typeof params.expectedMenuPlan === 'string' ? JSON.parse(params.expectedMenuPlan) : params.expectedMenuPlan
+				}
+				catch {
+					throw new Error('菜单分组预览签名格式无效；未创建备份、未写入、未保存')
+				}
+				const expected = JSON.stringify(expectedPlan)
+				const actual = JSON.stringify(menuPlan)
+				if (expected !== actual)
+					throw new Error('分组预览已过期或 PCB/布局输入已变化；未创建备份、未写入、未保存。请重新运行“按原理图功能区分组”查看新预览')
+			}
 
 			if (dryRun) {
 				return {
@@ -945,10 +991,29 @@ export const pcbGroupingCommands: Array<ICommandDef> = [
 
 			// ---------- ⑧ 五步写回管线：备份 → 写入 → 回读 → 逐器件比对 → 全过才保存 ----------
 			const backup = await storeBackup(projectName, String(board.pcb.uuid), pcbSource, `pcb.groupBySchematicRegions 写入前备份（${expected.length} 器件 / ${groups.length} 组）`)
+			if (params.expectedMenuPlan !== undefined) {
+				const currentAfterBackup = await eda.dmt_SelectControl.getCurrentDocumentInfo()
+				if (currentAfterBackup?.documentType !== 3 || currentAfterBackup.uuid !== String(board.pcb.uuid)
+					|| (params.__tabId && String((currentAfterBackup as any)?.tabId ?? '') !== String(params.__tabId)))
+					throw new Error(`创建分组备份后 PCB 焦点已变化（目标=${board.pcb.uuid}，当前=${currentAfterBackup?.uuid ?? '未知'}）；备份 ${backup.backupId} 已保留，未写入`)
+				const sourceAfterBackup = await eda.sys_FileManager.getDocumentSource()
+				if (!sourceAfterBackup || sourceAfterBackup !== pcbSource)
+					throw new Error(`创建分组备份后 PCB 源码已变化或无法读回；备份 ${backup.backupId} 已保留，未写入`)
+			}
+			const assertMenuTarget = async (phase: string): Promise<void> => {
+				if (params.expectedMenuPlan === undefined)
+					return
+				const focused = await eda.dmt_SelectControl.getCurrentDocumentInfo()
+				if (focused?.documentType !== 3 || focused.uuid !== String(board.pcb.uuid)
+					|| (params.__tabId && String((focused as any)?.tabId ?? '') !== String(params.__tabId)))
+					throw new Error(`${phase}时 PCB 目标标签已变化（目标=${board.pcb.uuid}/${String(params.__tabId ?? '')}，当前=${focused?.uuid ?? '未知'}/${String((focused as any)?.tabId ?? '')}）`)
+			}
 			try {
+				await assertMenuTarget('分组写入前')
 				const writeOk = await eda.sys_FileManager.setDocumentSource(patchSource)
 				if (!writeOk)
 					throw new Error('setDocumentSource 返回 false（官方运行时校验拒绝）')
+				await assertMenuTarget('分组写入后')
 				const written = await eda.sys_FileManager.getDocumentSource()
 				if (!written)
 					throw new Error('写入后回读源码为空')
@@ -956,6 +1021,7 @@ export const pcbGroupingCommands: Array<ICommandDef> = [
 				if (!verify.ok) {
 					throw new Error(`回读校验失败：${verify.mismatches.slice(0, 5).map(m => `${m.designator} 期望(${m.expected.x},${m.expected.y},${m.expected.angle}) 实际${m.actual ? `(${m.actual.x},${m.actual.y},${m.actual.angle})` : '不存在'}`).join('；')}${verify.mismatches.length > 5 ? ` 等 ${verify.mismatches.length} 项` : ''}`)
 				}
+				await assertMenuTarget('分组保存前')
 				// 0.10.26：spg_ 生成物（组边框 POLY + 组名 STRING）也回读核销——0.10.24 终验"组边框未见"
 				// 分不清是没生成还是 listLines 枚举不到（POLY 是 Polyline 不是 Line），现在直接源码核销
 				const writtenDoc = parseSourceLog(written)
@@ -991,6 +1057,14 @@ export const pcbGroupingCommands: Array<ICommandDef> = [
 				}
 			}
 			catch (err) {
+				if (params.expectedMenuPlan !== undefined) {
+					try {
+						await assertMenuTarget('分组失败恢复前')
+					}
+					catch (targetErr) {
+						throw new Error(`${err instanceof Error ? err.message : String(err)}；当前 PCB 标签与写入目标不一致，已禁止跨页恢复；备份 ${backup.backupId} 已保留，请核对目标页与源码后按需 sourceRollback。恢复状态未知：${String((targetErr as any)?.message ?? targetErr)}`)
+					}
+				}
 				// 任何一步失败：整份恢复原始源码
 				try {
 					await eda.sys_FileManager.setDocumentSource(pcbSource)

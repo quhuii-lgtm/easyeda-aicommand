@@ -681,6 +681,7 @@ for (const failure of ['modify-rejected', 'modify-afterapply-rejected', 'timer-r
 	})
 	const pin = x => ({ getState_PinNumber: () => '1', getState_X: () => x, getState_Y: () => 0 })
 	globalThis.eda = {
+		dmt_SelectControl: { getCurrentDocumentInfo: async () => ({ documentType: 1, uuid: 'audit-page' }) },
 		sch_PrimitiveWire: { getAll: async () => [] },
 		sch_PrimitiveAttribute: { getAll: async () => [] },
 		sch_PrimitiveComponent: {
@@ -688,12 +689,63 @@ for (const failure of ['modify-rejected', 'modify-afterapply-rejected', 'timer-r
 			getAllPinsByPrimitiveId: async id => [pin(id === 'c1' ? 0 : 15)],
 		},
 		sch_PrimitiveRectangle: { getAll: async () => [] },
-		sys_FileManager: { getDocumentSource: async () => ' ' },
+		sys_FileManager: { getDocumentSource: async () => '{"type":"DOCHEAD","id":"doc","ticket":0}||{"docType":"SCH_PAGE","uuid":"audit-page"}' },
 	}
 	const defaultMargin = await structuralAudit({})
 	assert.equal(defaultMargin.issues.some(issue => issue.rule === 'DEVICE_BBOX_OVERLAP'), true)
 	const zeroMargin = await structuralAudit({ deviceMargin: 0 })
 	assert.equal(zeroMargin.issues.some(issue => issue.rule === 'DEVICE_BBOX_OVERLAP'), false)
+}
+
+{
+	const makeSource = lines => [
+		'{"type":"DOCHEAD","id":"doc","ticket":0}||{"docType":"SCH_PAGE","uuid":"audit-page"}',
+		...lines.map((line, index) => `{"type":"LINE","id":"L${index + 1}","ticket":${index + 1}}||${JSON.stringify(line)}`),
+	].join('\n')
+	const page = lines => {
+		globalThis.eda = {
+			dmt_SelectControl: { getCurrentDocumentInfo: async () => ({ documentType: 1, uuid: 'audit-page' }) },
+			sch_PrimitiveWire: { getAll: async () => lines.wires },
+			sch_PrimitiveAttribute: { getAll: async () => [] },
+			sch_PrimitiveComponent: { getAll: async () => [] },
+			sch_PrimitiveRectangle: { getAll: async () => [] },
+			sys_FileManager: { getDocumentSource: async () => makeSource(lines.source) },
+		}
+	}
+	page({
+		wires: [
+			wire('wa', { net: 'NET_A', line: [0, 0, 10, 0, 100, 0, 110, 0] }),
+			wire('wb', { net: 'NET_B', line: [40, 0, 60, 0] }),
+		],
+		source: [
+			{ lineGroup: 'wa', startX: 0, startY: 0, endX: 10, endY: 0 },
+			{ lineGroup: 'wa', startX: 100, startY: 0, endX: 110, endY: 0 },
+			{ lineGroup: 'wb', startX: 40, startY: 0, endX: 60, endY: 0 },
+		],
+	})
+	const separated = await structuralAudit({})
+	assert.equal(separated.blockingCount, 0, 'distinct native LINE records must not be joined by flattened SDK path coordinates')
+
+	page({
+		wires: [
+			wire('wa', { net: 'NET_A', line: [0, 0, 10, 0] }),
+			wire('wb', { net: 'NET_B', line: [10, 0, 20, 0] }),
+		],
+		source: [
+			{ lineGroup: 'wa', startX: 0, startY: 0, endX: 10, endY: 0 },
+			{ lineGroup: 'wb', startX: 10, startY: 0, endX: 20, endY: 0 },
+		],
+	})
+	const touching = await structuralAudit({})
+	assert.equal(touching.issues.some(issue => issue.rule === 'MULTI_NET_TREE' && issue.type === 'blocking'), true,
+		'real cross-net endpoint contact must remain blocking')
+
+	page({
+		wires: [wire('sdk-id', { net: 'NET_A', line: [0, 0, 10, 0] })],
+		source: [{ lineGroup: 'source-id', startX: 0, startY: 0, endX: 10, endY: 0 }],
+	})
+	await assert.rejects(structuralAudit({}), /源码 LINE 引用的 WIRE .*未在 SDK 导线列表中读回/,
+		'source/SDK identity drift must stop the audit instead of silently using fallback geometry')
 }
 
 {

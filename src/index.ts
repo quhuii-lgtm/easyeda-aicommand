@@ -14,6 +14,7 @@ import { createBridgeOwnerCoordinator } from './bridge/owner';
  */
 import { getBridgeLifecycleStatus, reconnectBridgeClient, startBridgeClient, stopBridgeClient } from './bridge/client';
 import { openSmtQuery as openSmtQueryAtOwner } from './bridge/smtMenu';
+import { launchPcbToolsAction } from './menus/pcb-tools';
 import { autoCopperCommands } from './commands/autoCopper';
 import { componentAttributeCommands } from './commands/componentAttributes';
 import { dfmCommands } from './commands/dfm';
@@ -89,6 +90,24 @@ function handleBridgeOwnerRequest(request: any): unknown {
 			return listCommandNames();
 		case 'open-smt':
 			return openSmtQueryAtOwner();
+		case 'pcb-tools-group':
+			launchPcbToolsAction('group');
+			return { started: true };
+		case 'pcb-tools-route-start':
+			launchPcbToolsAction('route-start');
+			return { started: true };
+		case 'pcb-tools-route-status':
+			launchPcbToolsAction('route-status');
+			return { started: true };
+		case 'pcb-tools-route-stop':
+			launchPcbToolsAction('route-stop');
+			return { started: true };
+		case 'pcb-tools-route-fetch':
+			launchPcbToolsAction('route-fetch');
+			return { started: true };
+		case 'pcb-tools-route-import':
+			launchPcbToolsAction('route-import');
+			return { started: true };
 		default:
 			throw new Error(`未知的桥接菜单请求：${String(request?.method)}`);
 	}
@@ -219,6 +238,36 @@ export async function listCommands(): Promise<void> {
 /** Open the SMT query page in the bridge owner context. */
 export async function openSmtQuery(): Promise<void> {
 	await requestOwner('open-smt', 'SMT 物料查询');
+}
+
+async function startPcbMenuAction(method: string, title: string): Promise<void> {
+	const result = await requestOwner(method, title);
+	if (result?.started)
+		eda.sys_Dialog.showInformationMessage(`已在桥接所有者上下文启动“${title}”；结果会在完成后显示。`, title)
+}
+
+export async function pcbGroupBySchematicRegionsMenu(): Promise<void> {
+	await startPcbMenuAction('pcb-tools-group', '按原理图功能区分组');
+}
+
+export async function pcbAutoRouteStartMenu(): Promise<void> {
+	await startPcbMenuAction('pcb-tools-route-start', '启动自动布线');
+}
+
+export async function pcbAutoRouteStatusMenu(): Promise<void> {
+	await startPcbMenuAction('pcb-tools-route-status', '查询自动布线状态');
+}
+
+export async function pcbAutoRouteStopMenu(): Promise<void> {
+	await startPcbMenuAction('pcb-tools-route-stop', '停止自动布线');
+}
+
+export async function pcbAutoRouteFetchMenu(): Promise<void> {
+	await startPcbMenuAction('pcb-tools-route-fetch', '取回已完成 SES');
+}
+
+export async function pcbAutoRouteImportMenu(): Promise<void> {
+	await startPcbMenuAction('pcb-tools-route-import', '显式导入已取回 SES');
 }
 
 /** 打开 SMT 物料查询窗口（页面由本地指令代理提供） */
