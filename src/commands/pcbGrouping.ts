@@ -13,13 +13,14 @@
  * 铁律：官方 API 返回值不可信，一切成败以回读源码重新解析比对为准（容差 0.001）。
  */
 import type { ICommandDef } from '../engine/types'
-import { getProxyUrl } from '../bridge/proxy-endpoint'
 import type {
 	IBBox,
 	IPendingRecord,
 	ISourcePcbComponent,
 	ISourceRect,
 } from '../pcb/sourcelog'
+import { getProxyUrl } from '../bridge/proxy-endpoint'
+import { compareDocumentSources } from '../engine/documentRecovery'
 import {
 	appendRecords,
 	collectRecordPoints,
@@ -1008,8 +1009,11 @@ export const pcbGroupingCommands: Array<ICommandDef> = [
 					|| (params.__tabId && String((focused as any)?.tabId ?? '') !== String(params.__tabId)))
 					throw new Error(`${phase}时 PCB 目标标签已变化（目标=${board.pcb.uuid}/${String(params.__tabId ?? '')}，当前=${focused?.uuid ?? '未知'}/${String((focused as any)?.tabId ?? '')}）`)
 			}
+			let writeStarted = false
+			let saveStarted = false
 			try {
 				await assertMenuTarget('分组写入前')
+				writeStarted = true
 				const writeOk = await eda.sys_FileManager.setDocumentSource(patchSource)
 				if (!writeOk)
 					throw new Error('setDocumentSource 返回 false（官方运行时校验拒绝）')
@@ -1033,6 +1037,7 @@ export const pcbGroupingCommands: Array<ICommandDef> = [
 					expectedBorders: groups.length,
 					expectedLabels: groups.length,
 				}
+				saveStarted = true
 				await eda.pcb_Document.save()
 				return {
 					dryRun: false,
@@ -1062,17 +1067,34 @@ export const pcbGroupingCommands: Array<ICommandDef> = [
 						await assertMenuTarget('分组失败恢复前')
 					}
 					catch (targetErr) {
-						throw new Error(`${err instanceof Error ? err.message : String(err)}；当前 PCB 标签与写入目标不一致，已禁止跨页恢复；备份 ${backup.backupId} 已保留，请核对目标页与源码后按需 sourceRollback。恢复状态未知：${String((targetErr as any)?.message ?? targetErr)}`)
+						const message = `${err instanceof Error ? err.message : String(err)}；当前 PCB 标签与写入目标不一致，已禁止跨页恢复；备份 ${backup.backupId} 已保留，请核对目标页与源码后按需 sourceRollback。恢复状态未知：${String((targetErr as any)?.message ?? targetErr)}`
+						if (writeStarted)
+							throw new Error(message, { cause: { partial: true, retryable: false, source: 'pcb-group-restore-unknown', backupId: backup.backupId } })
+						throw new Error(message)
 					}
 				}
+				if (!writeStarted)
+					throw err
 				// 任何一步失败：整份恢复原始源码
 				try {
-					await eda.sys_FileManager.setDocumentSource(pcbSource)
+					const restoreOk = await eda.sys_FileManager.setDocumentSource(pcbSource)
+					if (!restoreOk)
+						throw new Error('setDocumentSource 返回 false，未确认恢复写入')
+					await assertMenuTarget('分组回滚读回前')
+					const restoredSource = await eda.sys_FileManager.getDocumentSource()
+					if (!restoredSource)
+						throw new Error('恢复后源码回读为空')
+					const restoration = compareDocumentSources(pcbSource, restoredSource)
+					if (!restoration.equal)
+						throw new Error(`恢复后源码与写入前快照不一致：${restoration.difference ?? 'unknown difference'}`)
+					await assertMenuTarget('分组回滚读回后')
 				}
 				catch (restoreErr) {
-					throw new Error(`${err instanceof Error ? err.message : String(err)}；且恢复原始源码也失败（${restoreErr instanceof Error ? restoreErr.message : String(restoreErr)}）——请立即用 pcb.sourceRollback 恢复备份 ${backup.backupId}，或不保存关闭文档重开`)
+					throw new Error(`${err instanceof Error ? err.message : String(err)}；无法确认原始源码已恢复（${restoreErr instanceof Error ? restoreErr.message : String(restoreErr)}）——备份 ${backup.backupId} 已保留，请先核对目标 PCB 与源码，再按需使用 pcb.sourceRollback`, { cause: { partial: true, retryable: false, source: 'pcb-group-rollback-unverified', backupId: backup.backupId } })
 				}
-				throw new Error(`${err instanceof Error ? err.message : String(err)}。已自动恢复原始源码（未保存），可用 pcb.sourceRollback 查看/恢复备份 ${backup.backupId}`)
+				if (saveStarted)
+					throw new Error(`${err instanceof Error ? err.message : String(err)}；内存源码已回滚并读回一致，但保存结果未知，备份 ${backup.backupId} 已保留`, { cause: { partial: true, retryable: false, source: 'pcb-group-save-outcome-unknown', backupId: backup.backupId } })
+				throw new Error(`${err instanceof Error ? err.message : String(err)}。已自动恢复原始源码并读回校验（未保存），可用 pcb.sourceRollback 查看/恢复备份 ${backup.backupId}`)
 			}
 		},
 	},

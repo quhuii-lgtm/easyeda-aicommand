@@ -5,7 +5,12 @@ import ts from 'typescript'
 const source = await readFile(new URL('../src/commands/pcb.ts', import.meta.url), 'utf8')
 // Compile the real command module in memory. Imports are omitted because these
 // scenarios use only command-local helpers and the injected EDA/API boundary.
-const runnableSource = source.replace(/^import .*$/gm, '') + `
+const runnableSource = `const frRequest = async (method, path, body) => {
+	const response = await globalThis.eda.sys_ClientUrl.request(path, method, body ? JSON.stringify(body) : undefined, {})
+	if (!response.ok) throw new Error(await response.text())
+	return response.json()
+}
+` + source.replace(/^import .*$/gm, '') + `
 module.exports.__setRouteSlot = value => { currentRouteJobId = value }
 module.exports.__getRouteSlot = () => currentRouteJobId
 module.exports.__setBaseline = (id, value) => routeJobBaselines.set(id, value)

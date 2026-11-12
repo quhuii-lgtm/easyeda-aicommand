@@ -76,7 +76,7 @@ const dsnFile = new Blob(['dsn'])
 Object.defineProperty(dsnFile, 'name', { value: 'design.dsn' })
 globalThis.eda = {
 	pcb_Net: { getAllNetsName: async () => ['MIN_LENGTH_BOUNDARY', 'MIN_LENGTH_BATCH', 'MIN_DELTA'] },
-	dmt_SelectControl: { getCurrentDocumentInfo: async () => ({ documentType: 3, uuid: focusSequence.length ? focusSequence.shift() : activeUuid }) },
+	dmt_SelectControl: { getCurrentDocumentInfo: async () => ({ documentType: 3, uuid: focusSequence.length ? focusSequence.shift() : activeUuid, tabId: 'tab-A' }) },
 	sys_FileManager: {
 		getDocumentSource: async () => {
 			documentSourceReads++

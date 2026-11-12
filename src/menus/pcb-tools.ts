@@ -5,12 +5,18 @@ import { frRequest } from '../bridge/freerouting'
 type MenuAction = 'group' | 'route-start' | 'route-status' | 'route-stop' | 'route-fetch' | 'route-import'
 type Target = { uuid: string, tabId: string, name: string }
 type CommandReply = { ok: boolean, cmd?: string, data?: any, error?: { message?: string, cause?: any } }
-type RouteSession = { jobId?: string, ses?: any, unknownStart?: boolean, state?: string }
+type RouteSession = { jobId?: string, operationId?: string, ses?: any, unknownStart?: boolean, state?: string }
 
 const routeSessions = new Map<string, RouteSession>()
 let activeAction: MenuAction | null = null
+let routeOperationSequence = 0
 const uncertainBoards = new Map<string, string>()
 const keyOf = (target: Target): string => `${target.tabId}::${target.uuid}`
+
+function newRouteOperationId(): string {
+	routeOperationSequence += 1
+	return `${Date.now().toString(36)}-${routeOperationSequence.toString(36)}-${Math.random().toString(36).slice(2)}`
+}
 
 function message(content: string, title: string): void {
 	eda.sys_Dialog.showInformationMessage(content, title)
@@ -181,17 +187,23 @@ async function routeStart(): Promise<void> {
 	const maxPasses = Number(text)
 	if (!Number.isInteger(maxPasses) || maxPasses < 1)
 		throw new Error('maxPasses 必须为正整数')
-	const response = await command(target, 'pcb.autoRouteStart', { maxPasses }, 300000)
+	// Persist an operation marker before the request: the proxy/HTTP reply can be
+	// lost after FreeRouting accepted the start, so no jobId may reach this menu.
+	const operationId = newRouteOperationId()
+	routeSessions.set(keyOf(target), { unknownStart: true, operationId })
+	const response = await command(target, 'pcb.autoRouteStart', { maxPasses, __routeOperationId: operationId }, 300000)
 	if (!response.ok) {
 		const jobId = typeof response.error?.cause?.jobId === 'string' ? response.error.cause.jobId : undefined
 		if (jobId)
-			routeSessions.set(keyOf(target), { jobId })
+			routeSessions.set(keyOf(target), { jobId, operationId })
 		else if ((response.error as any)?.cause?.outcome === 'start-request-unknown')
-			routeSessions.set(keyOf(target), { unknownStart: true })
+			routeSessions.set(keyOf(target), { unknownStart: true, operationId })
+		else
+			routeSessions.delete(keyOf(target))
 		throw Object.assign(new Error(response.error?.message ?? '自动布线启动失败'), { cause: response.error?.cause })
 	}
 	const data = response.data
-	routeSessions.set(keyOf(target), { jobId: String(data.jobId), state: 'SUBMITTED' })
+	routeSessions.set(keyOf(target), { jobId: String(data.jobId), operationId, state: 'SUBMITTED' })
 	const warnings = [...(data.dsnConversion?.warnings ?? []), ...(data.dsnConversion?.limitations ?? [])]
 	message(`启动请求已提交，尚未确认 FreeRouting 已开始。\nPCB：${target.name}（${target.uuid}）\n任务 ID：${data.jobId}\n最大迭代数：${maxPasses}\n规则完整性：${data.routingConstraintsComplete ? '完整' : '不完整'}\n线宽比对：${data.widthRuleComparison?.status ?? '未报告'}，未知项 ${data.widthRuleComparison?.unknowns?.length ?? '未报告'}\nDSN提示：${warnings.slice(0, 6).join('\n') || '无'}\n请用“查询自动布线状态…”查看任务；完成后先取回 SES，再显式导入。不会自动导入。`, '自动布线已提交')
 }
@@ -205,8 +217,11 @@ function getSession(target: Target): RouteSession {
 
 async function routeStatus(): Promise<void> {
 	const target = await currentTarget()
-	const session = getSession(target)
-	const data = requireSuccess(await command(target, 'pcb.autoRouteStatus', { jobId: session.jobId }))
+	const session = routeSessions.get(keyOf(target)) ?? {}
+	if (!session.jobId && !session.operationId)
+		throw new Error('当前菜单运行时没有本次启动操作标记，不能安全恢复任务；请回到原操作窗口，避免误查同页旧任务')
+	const recoveryParams = session.operationId ? { __routeOperationId: session.operationId } : {}
+	const data = requireSuccess(await command(target, 'pcb.autoRouteStatus', { ...recoveryParams, ...(session.jobId ? { jobId: session.jobId } : {}) }))
 	if (typeof data.jobId === 'string' && data.jobId) {
 		routeSessions.set(keyOf(target), { ...session, jobId: data.jobId, state: data.state, unknownStart: false })
 		if (['pcb.autoRouteStart', 'pcb.autoRouteStop'].includes(uncertainBoards.get(keyOf(target)) ?? ''))
@@ -217,11 +232,23 @@ async function routeStatus(): Promise<void> {
 
 async function routeStop(): Promise<void> {
 	const target = await currentTarget()
-	const session = getSession(target)
+	let session = routeSessions.get(keyOf(target)) ?? {}
+	if (!session.jobId) {
+		if (!session.operationId)
+			throw new Error('当前菜单运行时没有本次启动操作标记，未发送状态查询或停止请求')
+		const recovered = requireSuccess(await command(target, 'pcb.autoRouteStatus', { __routeOperationId: session.operationId }))
+		if (typeof recovered.jobId !== 'string' || !recovered.jobId)
+			throw new Error('状态恢复未返回有效 jobId；没有发送停止请求')
+		session = { ...session, jobId: recovered.jobId, state: recovered.state, unknownStart: false }
+		routeSessions.set(keyOf(target), session)
+	}
 	const accepted = await confirm(`目标 PCB：${target.name}\n任务 ID：${session.jobId}\n确认向 FreeRouting 发送停止请求？`, '停止自动布线', '停止任务')
 	if (!accepted)
 		return
-	const data = requireSuccess(await command(target, 'pcb.autoRouteStop', { jobId: session.jobId }))
+	const freshTarget = await currentTarget()
+	if (freshTarget.uuid !== target.uuid || freshTarget.tabId !== target.tabId)
+		throw new Error('确认期间 PCB 标签页已变化；未发送停止请求')
+	const data = requireSuccess(await command(target, 'pcb.autoRouteStop', { jobId: session.jobId, ...(session.operationId ? { __routeOperationId: session.operationId } : {}) }))
 	if (data.state && uncertainBoards.get(keyOf(target)) === 'pcb.autoRouteStop')
 		uncertainBoards.delete(keyOf(target))
 	message(`任务：${data.jobId}\n停止请求结果：${data.cancelled ? '已取消' : data.outcome ?? '未取消'}\n状态：${data.state ?? '未知'}${data.note ? `\n${data.note}` : ''}`, '自动布线停止结果')
@@ -260,7 +287,7 @@ async function routeImport(): Promise<void> {
 	if (freshTarget.uuid !== target.uuid || freshTarget.tabId !== target.tabId)
 		throw new Error('当前 PCB 标签页已变化；拒绝导入缓存 SES')
 	const data = requireSuccess(await command(target, 'pcb.importAutoRouteSes', { base64: ses.base64, fileName: ses.fileName, ...(ses.routeBaseline ? { routeBaseline: ses.routeBaseline } : {}) }, 300000))
-	routeSessions.set(keyOf(target), { jobId: session.jobId, ses: undefined })
+	routeSessions.set(keyOf(target), { ...session, jobId: session.jobId, ses: undefined })
 	message(`导入结果：${data.imported ? '已导入' : '未导入'}\n新增几何：${JSON.stringify(data.created ?? {})}\n已存在路线：${data.alreadyPresent ?? '?'}\n几何读回：${data.sesGeometryVerified === true ? '通过' : data.sesGeometryVerified === false ? '未通过' : '未知'}\n线宽合规：${data.widthRuleCompliance?.status ?? '未知'}；违规 ${data.widthRuleCompliance?.violations?.length ?? '?'}，未知项 ${data.widthRuleCompliance?.unknowns?.length ?? '?'}\n导入不等于 DRC 通过。`, 'SES 导入结果')
 }
 
