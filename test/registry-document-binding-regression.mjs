@@ -185,6 +185,23 @@ assert.equal(handlerCalls, beforeSameTypeMacroSwitch + 1, 'same-type page UUID c
 assert.equal(activateCalls, 0)
 
 // Non-page commands retain their existing behavior and do not invoke the page lookup.
+currentDoc = { documentType: 3, uuid: 'pcb-page' }
+let dependentWrites = 0
+register('pcb.interruptedGrouping', async () => {
+	throw new Error('grouping target changed after source write', {
+		cause: { partial: true, retryable: false, outcome: 'grouping-recovery-unknown' },
+	})
+})
+register('pcb.dependentWrite', async () => { dependentWrites++; return true })
+result = await executeCommand({ cmd: 'macro', params: { stopOnError: false, steps: [
+	{ cmd: 'pcb.interruptedGrouping' },
+	{ cmd: 'pcb.dependentWrite' },
+] } })
+assert.equal(result.ok, false)
+assert.equal(result.data.stoppedReason, 'partial')
+assert.equal(result.data.unexecutedSteps, 1)
+assert.equal(dependentWrites, 0, 'partial grouping failure stops dependent writes even with stopOnError:false')
+
 const beforeProjectInfo = infoCalls
 result = await executeCommand({ cmd: 'project.testPage' })
 assert.equal(result.ok, true)

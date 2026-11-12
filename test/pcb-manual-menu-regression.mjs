@@ -41,19 +41,41 @@ assert.match(source, /expectedMenuPlan: JSON\.stringify\(plan\)/, 'menu carries 
 console.log('PASS PCB helper menu is PCB-only, routes commands through the owner instance, and keeps SES import explicit and guarded');
 
 const bundled = await build({
-	entryPoints: [resolve(root, 'src/menus/pcb-tools.ts')], bundle: true, platform: 'node',
-	format: 'esm', write: false,
+	stdin: {
+		contents: `import { launchPcbToolsAction } from '../src/menus/pcb-tools.ts'; import { setProxyPort } from '../src/bridge/proxy-endpoint.ts'; export { launchPcbToolsAction, setProxyPort }`,
+		resolveDir: resolve(root, 'test'),
+		sourcefile: 'pcb-manual-menu-entry.ts',
+	},
+	bundle: true, platform: 'node', format: 'esm', write: false,
 });
-const { launchPcbToolsAction } = await import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString('base64')}`);
+const { launchPcbToolsAction, setProxyPort } = await import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString('base64')}`);
+setProxyPort(49721);
 const dialogs = [], requests = [], opened = [];
 let status;
+let loseStartReply = false;
+let acceptedStart = false;
 globalThis.eda = {
 	dmt_SelectControl: { getCurrentDocumentInfo: async () => ({ documentType: 3, uuid: 'pcb', tabId: 'tab' }) },
 	dmt_Project: { getCurrentProjectInfo: async () => ({}) },
-	sys_ClientUrl: { request: async (url, method) => {
-		requests.push({ url, method });
-		if (!status) throw new Error('connection refused');
-		return { ok: true, status: 200, json: async () => ({ status }) };
+	sys_ClientUrl: { request: async (url, method, body) => {
+		requests.push({ url, method, body });
+		if (url.endsWith('/system/status')) {
+			if (!status) throw new Error('connection refused');
+			return { ok: true, status: 200, json: async () => ({ status }) };
+		}
+		if (url.endsWith('/command')) {
+			const request = JSON.parse(body);
+			if (request.cmd === 'pcb.autoRouteStart') {
+				acceptedStart = true;
+				if (loseStartReply) throw new Error('HTTP response lost after server accepted start');
+				return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true, cmd: request.cmd, data: { jobId: 'job-A', dsnConversion: {}, routingConstraintsComplete: false } }) };
+			}
+			if (request.cmd === 'pcb.autoRouteStatus')
+				return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true, cmd: request.cmd, data: { jobId: 'job-A', state: 'RUNNING' } }) };
+			if (request.cmd === 'pcb.autoRouteStop')
+				return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true, cmd: request.cmd, data: { jobId: 'job-A', state: 'CANCELLED', cancelled: true } }) };
+		}
+		throw new Error(`unexpected request ${method} ${url}`);
 	} },
 	sys_Dialog: {
 		showConfirmationMessage: (...args) => dialogs.push(args),
@@ -87,4 +109,33 @@ assert.equal(ready[2], '启动自动布线');
 ready.at(-1)(undefined);
 await new Promise(resolve => setImmediate(resolve));
 assert.ok(requests.every(({url, method}) => url === 'http://127.0.0.1:37864/v1/system/status' && method === 'GET'));
+loseStartReply = true;
+const submit = await start();
+submit.at(-1)('50');
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(acceptedStart, true, `the mocked backend accepted the first start before its HTTP response was lost; submit=${JSON.stringify(submit.slice(0, 4))}, requests=${JSON.stringify(requests.map(item => ({ url: item.url, method: item.method, ...(item.body ? { cmd: JSON.parse(item.body).cmd } : {}) })))}, dialogs=${JSON.stringify(dialogs.map(item => item.slice(0, 3)))}`);
+assert.equal(requests.filter(item => item.url.endsWith('/command') && JSON.parse(item.body).cmd === 'pcb.autoRouteStart').length, 1, 'lost response must not cause a repeated start');
+const statusCallIndex = requests.length;
+launchPcbToolsAction('route-status');
+await new Promise(resolve => setImmediate(resolve));
+const recoveredStatusCall = requests.slice(statusCallIndex).find(item => item.url.endsWith('/command'));
+assert.ok(recoveredStatusCall, 'status must query the backend after a lost start response');
+const recoveredStatusRequest = JSON.parse(recoveredStatusCall.body);
+assert.equal(recoveredStatusRequest.cmd, 'pcb.autoRouteStatus');
+assert.equal(recoveredStatusRequest.params.jobId, undefined, 'status recovery must not require the lost cached jobId');
+assert.equal(recoveredStatusRequest.params.__docUuid, 'pcb');
+assert.equal(recoveredStatusRequest.params.__tabId, 'tab');
+assert.ok(recoveredStatusRequest.params.__routeOperationId, 'status recovery carries the original operation identity');
+const stopStartCount = requests.filter(item => item.url.endsWith('/command') && JSON.parse(item.body).cmd === 'pcb.autoRouteStart').length;
+launchPcbToolsAction('route-stop');
+await new Promise(resolve => setImmediate(resolve));
+const stopDialog = dialogs.pop();
+assert.equal(stopDialog[1], '停止自动布线');
+stopDialog[4](true);
+await new Promise(resolve => setImmediate(resolve));
+const stopRequest = requests.filter(item => item.url.endsWith('/command')).map(item => JSON.parse(item.body)).find(item => item.cmd === 'pcb.autoRouteStop');
+assert.ok(stopRequest, 'stop is available after status recovered the lost jobId');
+assert.equal(stopRequest.params.jobId, 'job-A');
+assert.equal(stopRequest.params.__routeOperationId, recoveredStatusRequest.params.__routeOperationId, 'stop must stay bound to the original operation');
+assert.equal(requests.filter(item => item.url.endsWith('/command') && JSON.parse(item.body).cmd === 'pcb.autoRouteStart').length, stopStartCount, 'status/stop recovery must not re-submit start');
 console.log('PASS FreeRouting setup choices, cancel, and healthy service bypass without a routing submission');

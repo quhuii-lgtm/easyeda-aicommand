@@ -143,7 +143,7 @@ function installFreerouting({ jobState = 'READY_TO_START', jobStates, failJobSta
 	const dsnFile = new Blob(['dsn'])
 	Object.defineProperty(dsnFile, 'name', { value: 'design.dsn' })
 	globalThis.eda = {
-		dmt_SelectControl: { getCurrentDocumentInfo: async () => ({ documentType: 3, uuid: activeUuid }) },
+		dmt_SelectControl: { getCurrentDocumentInfo: async () => ({ documentType: 3, uuid: activeUuid, tabId: 'tab-A' }) },
 		sys_FileManager: {
 			getDocumentSource: async () => `${JSON.stringify({ type: 'DOCHEAD', ticket: 0 })}||${JSON.stringify({ docType: 'PCB', uuid: activeUuid })}|`,
 		},

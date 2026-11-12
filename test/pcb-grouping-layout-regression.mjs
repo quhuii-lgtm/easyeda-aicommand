@@ -60,7 +60,7 @@ async function main() {
 		`${JSON.stringify({ type: 'DOCHEAD' })}||${JSON.stringify({ docType, uuid, client: 'test' })}`,
 		...records.map(({ type, id, ticket, data }) => `${JSON.stringify({ type, id, ticket })}||${JSON.stringify(data)}`),
 	].join('\n');
-	const makeFixture = ({ names, boardHeight, footprintSource, componentPose }) => {
+	const makeFixture = ({ names, boardHeight, footprintSource, componentPose, switchAfterFirstWrite = false, failPostWriteRead = false, rollbackReturnsFalse = false, rollbackReadbackMismatch = false }) => {
 		const schematicUuid = 'schematic-test';
 		const pcbUuid = 'pcb-test';
 		const schematicRecords = [];
@@ -98,14 +98,25 @@ async function main() {
 				},
 			},
 			sys_FileManager: {
-				getDocumentSource: async () => sources.get(activeUuid),
+				getDocumentSource: async () => sourceWrites === 1 && failPostWriteRead ? '' : sources.get(activeUuid),
 				getDocumentFootprintSources: async () => footprintSource ? [footprintSource] : [],
-				setDocumentSource: async () => {
+				setDocumentSource: async (value) => {
 					sourceWrites++;
+					if (sourceWrites === 1) {
+						sources.set(activeUuid, value);
+						if (switchAfterFirstWrite)
+							activeUuid = schematicUuid;
+						return true;
+					}
+					if (rollbackReturnsFalse)
+						return false;
+					if (!rollbackReadbackMismatch)
+						sources.set(activeUuid, value);
 					return true;
 				},
 			},
 			pcb_Primitive: { getPrimitivesBBox: async () => ({ minX: -0.5, minY: -0.5, maxX: 0.5, maxY: 0.5 }) },
+			pcb_Document: { save: async () => true },
 			sys_ClientUrl: { request: async () => { throw new Error('backup proxy unavailable'); } },
 			sys_Storage: { setExtensionUserConfig: async () => true },
 		};
@@ -114,6 +125,9 @@ async function main() {
 			sourceWrites,
 			get writes() {
 				return sourceWrites;
+			},
+			getSource(uuid) {
+				return sources.get(uuid);
 			},
 			boardHeight,
 		};
@@ -187,10 +201,77 @@ async function main() {
 		groupGap: 1,
 		__docUuid: 'pcb-test',
 		expectedMenuPlan: JSON.stringify({ boardUuid: 'stale-board' }),
-	}, {}), /预览已过期/);
+	}, {}), (error) => {
+		assert.match(error.message, /预览已过期/);
+		assert.notEqual(error.cause?.partial, true, 'pre-write validation refusal is not a partial mutation');
+		return true;
+	});
 	assert.equal(footprintFixture.writes, 0, 'stale menu preview must be rejected before source write or save');
 	console.log('PASS PCB grouping dryRun measures a real bottom 90° asymmetric footprint source and reports the expected anchor and extents');
 	console.log('PASS PCB grouping rejects a stale menu preview before source write');
+
+	const menuParams = { origin: { x: 0, y: 0 }, boardSize: { width: 1000, height: 500 }, groupGap: 1 };
+	const makeExpectedMenuPlan = preview => JSON.stringify({
+		boardUuid: 'pcb-test',
+		tabId: '',
+		board: preview.board,
+		origin: preview.origin,
+		groups: preview.groups,
+		ungrouped: preview.ungrouped,
+		locked: [],
+		overlapCheck: preview.overlapCheck,
+	});
+	const makeMenuFixture = async (options) => {
+		const fixture = makeFixture({ names: ['U1'], boardHeight: 500, ...options });
+		const preview = await grouping({ ...menuParams, dryRun: true }, {});
+		return { fixture, params: { ...menuParams, dryRun: false, expectedMenuPlan: makeExpectedMenuPlan(preview) } };
+	};
+
+	{
+		const { fixture, params } = await makeMenuFixture({ switchAfterFirstWrite: true });
+		await assert.rejects(() => grouping(params, {}), (error) => {
+			assert.equal(error.cause?.partial, true, 'confirmed source write followed by tab change is an uncertain partial result');
+			assert.equal(error.cause?.retryable, false);
+			assert.equal(error.cause?.source, 'pcb-group-restore-unknown');
+			assert.match(error.message, /已禁止跨页恢复/);
+			return true;
+		});
+		assert.equal(fixture.writes, 1, 'tab change after the write must prevent a rollback write to the newly active sheet');
+		assert.notEqual(fixture.getSource('pcb-test'), source('PCB', 'pcb-test', [
+			{ type: 'COMPONENT', id: 'pcb-component-0', ticket: 1, data: { positionX: 100, positionY: 50, angle: 0, layerId: 1, footprintUuid: '', deviceUuid: '' } },
+			{ type: 'ATTR', id: 'pcb-attr-0', ticket: 2, data: { parentId: 'pcb-component-0', key: 'Designator', value: 'U1' } },
+		]), 'the fixture records that the original target board already received the uncertain write');
+		assert.equal(fixture.getSource('schematic-test').includes('spg_'), false, 'no rollback is written to the wrong schematic tab');
+	}
+	console.log('PASS PCB grouping marks a post-write tab switch partial and refuses cross-tab rollback');
+
+	for (const recovery of [
+		{ label: 'false rollback acknowledgment', rollbackReturnsFalse: true, expected: /未确认恢复写入/ },
+		{ label: 'rollback readback mismatch', rollbackReadbackMismatch: true, expected: /源码与写入前快照不一致/ },
+	]) {
+		const { fixture, params } = await makeMenuFixture({ failPostWriteRead: true, ...recovery });
+		await assert.rejects(() => grouping(params, {}), (error) => {
+			assert.equal(error.cause?.partial, true, `${recovery.label} is reported as uncertain`);
+			assert.equal(error.cause?.retryable, false);
+			assert.equal(error.cause?.source, 'pcb-group-rollback-unverified');
+			assert.match(error.message, recovery.expected);
+			assert.doesNotMatch(error.message, /已自动恢复原始源码/);
+			return true;
+		});
+		assert.equal(fixture.writes, 2, `${recovery.label} reaches a rollback attempt after the source write`);
+	}
+	console.log('PASS PCB grouping does not claim rollback succeeded on false acknowledgment or mismatched readback');
+
+	{
+		const { fixture, params } = await makeMenuFixture({ failPostWriteRead: true });
+		await assert.rejects(() => grouping(params, {}), (error) => {
+			assert.equal(error.cause?.partial, undefined, 'a successful source-comparison readback confirms the in-memory rollback when save was never started');
+			assert.match(error.message, /已自动恢复原始源码并读回校验/);
+			return true;
+		});
+		assert.equal(fixture.writes, 2);
+	}
+	console.log('PASS PCB grouping confirms the original source by normalized readback comparison before claiming in-memory rollback');
 }
 
 main().catch((error) => {

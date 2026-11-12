@@ -50,7 +50,7 @@ const source = () => [
 const storage = new Map()
 globalThis.eda = {
 	sys_Environment: { getEditorCurrentVersion: () => '4.1.78' },
-	dmt_SelectControl: { getCurrentDocumentInfo: async () => { focusReads++; return { documentType: 3, uuid: focusUuid } } },
+	dmt_SelectControl: { getCurrentDocumentInfo: async () => { focusReads++; return { documentType: 3, uuid: focusUuid, tabId: 'tab-A' } } },
 	sys_FileManager: { getDocumentSource: async () => { sourceReads++; return source() } },
 	sys_Storage: { setExtensionUserConfig: async (key, value) => { storage.set(key, value); return true }, getExtensionUserConfig: key => storage.get(key) },
 	pcb_Layer: { getAllLayers: async () => activeLayers },
@@ -205,7 +205,7 @@ widthRuleSourceEnabled = false
 	assert.match(completed.note, /不会获取布线输出或修改 PCB/)
 	assert.equal((await command('pcb.autoRouteStatus').handler({ jobId: start.jobId, noImport: false }, {})).imported, false, 'explicit noImport:false cannot enable automatic import')
 	await assert.rejects(() => command('pcb.autoRouteStatus').handler({ jobId: start.jobId, noImport: 'false' }, {}), /noImport 必须是布尔值/)
-	assert.equal(focusReads, focusReadsBeforeStatus, 'completed status checks do not read or validate the active PCB focus')
+	assert.equal(focusReads, focusReadsBeforeStatus, 'legacy unscoped status polling preserves its current-task behavior')
 	assert.equal(outputCalls, outputsBeforeStatus, 'status never fetches the SES output')
 	assert.equal(sourceReads, sourcesBeforeStatus, 'completed status checks never snapshot or read PCB source')
 	assert.equal(lineEnumerations, lineReadsBeforeStatus, 'completed status checks never read route geometry')
@@ -233,7 +233,7 @@ widthRuleSourceEnabled = false
 	assert.equal(sourceReads, sourcesAfterNextStart, 'status never snapshots or reads PCB source')
 	assert.equal(lineEnumerations, lineReadsAfterNextStart, 'status never reads route geometry')
 	assert.ok(focusReadsAfterNextStart > focusReadsBeforeStatus, 'the intervening start performs focus checks')
-	assert.equal(focusReads, focusReadsAfterNextStart, 'status polling after the intervening start does not read focus')
+	assert.equal(focusReads, focusReadsAfterNextStart, 'legacy unscoped status polling does not add focus reads')
 	assert.equal(nextId, writesAfterNextStart, 'status never creates or deletes PCB primitives')
 	assert.equal(nativeCalls, nativeAfterNextStart, 'status never calls the SDK SES importer')
 	assert.equal(drcCalls, drcAfterNextStart, 'status never invokes DRC')

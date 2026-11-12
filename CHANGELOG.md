@@ -1,5 +1,10 @@
 # Change log
 
+## 0.20.136
+
+- Grouping now reports a partial result when a write has started and recovery cannot be verified. Dependent macro writes stop, and the result retains the backup ID and recovery evidence.
+- Auto-route menu status and stop recover the current operation using its operation ID, original PCB and tab.
+
 ## 0.20.135
 
 - Open a PCB drawing page to see all 15 entries in the AI Command Engine menu, including DFM, same-net pad spacing, grouping, and auto-routing. The start page and schematic pages show six general entries.

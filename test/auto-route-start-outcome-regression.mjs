@@ -50,6 +50,8 @@ const actualWidthSource = `{"type":"DOCHEAD"}||{"docType":"PCB","uuid":"pcb-A","
 		const edaCalls = [];
 		let jobState = startState;
 		let sourceReadIndex = 0;
+		let focusUuid = 'pcb-A';
+		let focusTabId = 'tab-A';
 		const getDocumentSource = () => {
 			if (widthRuleCase && !slotCase) return actualWidthSource;
 			sourceReadIndex++
@@ -83,7 +85,7 @@ const actualWidthSource = `{"type":"DOCHEAD"}||{"docType":"PCB","uuid":"pcb-A","
 			targetNet: null,
 		};
 		globalThis.eda = {
-			dmt_SelectControl: { getCurrentDocumentInfo: async () => { edaCalls.push('getCurrentDocumentInfo'); focusReads++; return focusChangeAfterSlot && sourceReadIndex >= 8 ? { documentType: 3, uuid: 'pcb-B' } : { documentType: 3, uuid: 'pcb-A' } } },
+			dmt_SelectControl: { getCurrentDocumentInfo: async () => { edaCalls.push('getCurrentDocumentInfo'); focusReads++; return { documentType: 3, uuid: focusChangeAfterSlot && sourceReadIndex >= 8 ? 'pcb-B' : focusUuid, tabId: focusTabId } } },
 			sys_Environment: { getEditorCurrentVersion: () => '4.1.78' },
 			pcb_Layer: { getAllLayers: async () => widthRuleCase && slotCase ? [
 				{ id: 1, name: 'Top Layer', type: 'SIGNAL', layerStatus: 1 },
@@ -143,22 +145,24 @@ const actualWidthSource = `{"type":"DOCHEAD"}||{"docType":"PCB","uuid":"pcb-A","
 		};
 		if (!missingSnapshot)
 			globalThis.eda.sys_FileManager = { getDocumentSource: async () => { edaCalls.push('getDocumentSource'); return getDocumentSource() } };
-		return { calls, edaCalls };
+		return { calls, edaCalls, setFocus: (uuid, tabId) => { focusUuid = uuid; focusTabId = tabId } };
 	}
 
 	const status = pcbCommands.find(command => command.name === 'pcb.autoRouteStatus');
 	const stop = pcbCommands.find(command => command.name === 'pcb.autoRouteStop');
-	const invalidCalls = install();
+	const { calls: invalidCalls, edaCalls: invalidEdaCalls } = install();
 	for (const automaticNeckdown of [null, 'true', 1])
 		await assert.rejects(() => start.handler({ automaticNeckdown }, {}), /automaticNeckdown 必须是布尔值/);
 	for (const skipDrc of [null, 'false', 1])
 		await assert.rejects(() => start.handler({ skipDrc }, {}), /skipDrc 必须是布尔值/);
 	for (const noImport of [null, 'true', 0])
 		await assert.rejects(() => status.handler({ noImport }, {}), /noImport 必须是布尔值/);
-	assert.deepEqual(invalidCalls, { calls: [], edaCalls: [] }, 'invalid flags must be rejected before EDA or HTTP calls');
+	assert.deepEqual({ calls: invalidCalls, edaCalls: invalidEdaCalls }, { calls: [], edaCalls: [] }, 'invalid flags must be rejected before EDA or HTTP calls');
 	for (const startFailure of ['http', 'transport']) {
-		const { calls: failedCalls } = install({ startFailure });
-		const error = await start.handler({}, {}).catch(reason => reason);
+		const { calls: failedCalls, setFocus } = install({ startFailure });
+		const operationId = `op-${startFailure}`;
+		const routeTarget = { __docUuid: 'pcb-A', __tabId: 'tab-A', __routeOperationId: operationId };
+		const error = await start.handler(routeTarget, {}).catch(reason => reason);
 		assert.ok(error instanceof Error);
 		assert.equal(error.cause?.partial, true);
 		assert.equal(error.cause?.retryable, false);
@@ -176,10 +180,18 @@ const actualWidthSource = `{"type":"DOCHEAD"}||{"docType":"PCB","uuid":"pcb-A","
 		assert.equal(duplicateCalls.filter(call => call.method !== 'GET').length, 0, 'unknown start outcome must not cause another write');
 		assert.equal(failedCalls.filter(call => call.method === 'PUT' && call.url.endsWith('/jobs/job-A/start')).length, 1, 'do not retry the uncertain start request');
 
-		const observed = await status.handler({ noImport: true }, {});
+		setFocus('pcb-B', 'tab-B');
+		const beforeWrongBoardRecovery = failedCalls.length;
+		await assert.rejects(() => status.handler({ ...routeTarget, __docUuid: 'pcb-B', __tabId: 'tab-B' }, {}), /没有与本次启动操作匹配的布线任务/);
+		assert.equal(failedCalls.length, beforeWrongBoardRecovery, 'another PCB must not trigger a GET for the previous task');
+		setFocus('pcb-A', 'tab-A');
+		const beforeWrongOperation = failedCalls.length;
+		await assert.rejects(() => status.handler({ ...routeTarget, __routeOperationId: 'different-operation' }, {}), /没有与本次启动操作匹配的布线任务/);
+		assert.equal(failedCalls.length, beforeWrongOperation, 'a different operation token must not query the accepted job');
+		const observed = await status.handler({ ...routeTarget, noImport: true }, {});
 		assert.equal(observed.jobId, 'job-A');
 		assert.equal(observed.state, 'READY_TO_START');
-		const cancelled = await stop.handler({}, {});
+		const cancelled = await stop.handler({ ...routeTarget, jobId: 'job-A' }, {});
 		assert.deepEqual(cancelled, { cancelled: true, jobId: 'job-A', state: 'CANCELLED' });
 		assert.equal(failedCalls.some(call => call.method === 'GET' && call.url.endsWith('/jobs/job-A')), true);
 		assert.equal(failedCalls.some(call => call.method === 'PUT' && call.url.endsWith('/jobs/job-A/cancel')), true);

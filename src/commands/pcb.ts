@@ -124,7 +124,58 @@ function invalidateDsnWidthComparison(comparison: ReturnType<typeof compareDsnWi
 // ---------- FreeRouting 自动布线（REST 客户端 + 任务状态） ----------
 let currentRouteJobId: string | undefined
 const routeJobDocumentUuids = new Map<string, string>()
+const routeJobTabIds = new Map<string, string>()
+const routeJobOperations = new Map<string, string>()
+const routeOperationJobs = new Map<string, string>()
 const routeJobBaselines = new Map<string, SesRouteBaseline>()
+
+function routeTargetKey(documentUuid: string, tabId: string): string {
+	return `${tabId}::${documentUuid}`
+}
+
+function routeOperationKey(targetKey: string, operationId: string): string {
+	return `${targetKey}::${operationId}`
+}
+
+async function resolveRouteJobId(params: Record<string, any>, commandName: string): Promise<string> {
+	const requestedJobId = typeof params.jobId === 'string' ? params.jobId.trim() : ''
+	const operationId = typeof params.__routeOperationId === 'string' ? params.__routeOperationId.trim() : ''
+	const hasRequestedTarget = params.__docUuid !== undefined || params.__tabId !== undefined
+	if (!hasRequestedTarget && !operationId) {
+		const legacyJobId = requestedJobId || currentRouteJobId
+		if (!legacyJobId)
+			throw new Error('没有进行中的布线任务')
+		return legacyJobId
+	}
+	const focus = await eda.dmt_SelectControl.getCurrentDocumentInfo()
+	if (focus?.documentType !== 3 || typeof focus.uuid !== 'string' || !focus.uuid.trim())
+		throw new Error(`${commandName} 要求当前激活有效 PCB 页签`)
+	const documentUuid = typeof params.__docUuid === 'string' && params.__docUuid.trim() ? params.__docUuid : focus.uuid
+	const tabId = typeof params.__tabId === 'string' && params.__tabId.trim() ? params.__tabId : focus.tabId
+	if (typeof tabId !== 'string' || !tabId.trim())
+		throw new Error(`${commandName} 无法确认当前 PCB tabId；请回到原 PCB 标签页重试`)
+	if (focus.uuid !== documentUuid || focus.tabId !== tabId)
+		throw new Error(`${commandName} 的 PCB 文档或标签页已变化；拒绝查询或停止其他页面的布线任务`)
+	const targetKey = routeTargetKey(documentUuid, tabId)
+	if (requestedJobId) {
+		const boundUuid = routeJobDocumentUuids.get(requestedJobId)
+		const boundTabId = routeJobTabIds.get(requestedJobId)
+		if ((boundUuid !== undefined && boundUuid !== documentUuid) || (boundTabId !== undefined && boundTabId !== tabId))
+			throw new Error(`${commandName} 的 jobId 与当前 PCB 文档/标签页绑定不一致`)
+		if (params.__docUuid !== undefined && (boundUuid !== documentUuid || boundTabId !== tabId))
+			throw new Error(`${commandName} 无法核实 jobId 与当前 PCB 文档/标签页的原始绑定`)
+		if (operationId && routeJobOperations.get(requestedJobId) !== routeOperationKey(targetKey, operationId))
+			throw new Error(`${commandName} 的 jobId 与本次布线操作身份不匹配`)
+		return requestedJobId
+	}
+	const jobId = operationId
+		? routeOperationJobs.get(routeOperationKey(targetKey, operationId))
+		: currentRouteJobId
+	if (!jobId || routeJobDocumentUuids.get(jobId) !== documentUuid || routeJobTabIds.get(jobId) !== tabId
+		|| (operationId && routeJobOperations.get(jobId) !== routeOperationKey(targetKey, operationId)))
+		throw new Error(`没有与本次启动操作匹配的布线任务（${documentUuid}，tabId=${tabId}）；未查询其他 PCB 或旧操作的任务`)
+	return jobId
+}
 /** 已完成回灌消费（或回灌已作废）的任务集合（0.10.65）：COMPLETED 任务的清线+导入只执行一次，
  *  任一步抛错也不允许重复轮询再进清线分支（旧版会叠加删除未锁定走线/重复导入） */
 const consumedRouteJobs = new Set<string>()
@@ -4324,6 +4375,7 @@ export const pcbCommands: Array<ICommandDef> = [
 			{ name: 'maxThreads', type: 'number', description: '并行线程数，默认 4' },
 			{ name: 'automaticNeckdown', type: 'boolean', description: '是否允许 FreeRouting 在窄焊盘处自动缩小走线宽度；默认 false。表示提交的设置，不代表服务器读回已验证' },
 			{ name: 'applyLayerWidthRules', type: 'boolean', description: '可选：仅当源码稳定且逐层preferred线宽已知时，将确认的DEFAULT层rule与class layer_rule写入本次DSN；默认false，不修改EDA规则或SES' },
+			{ name: '__routeOperationId', type: 'string', description: '菜单内部使用：用于在启动响应丢失时恢复这一次启动操作' },
 			{ name: 'skipDrc', type: 'boolean', description: '兼容参数；自动回灌停用期间不会自动运行 DRC' },
 		],
 		returns: '{ jobId, outcome: "start-request-submitted", routingSettings: { automaticNeckdown, readbackVerified: false }, widthRuleComparison, dsnConversion: { changed, changes, warnings, limitations, slotClearance? }, routingConstraintsComplete:false, stateVerified: false, note }；线宽差异默认只报告；applyLayerWidthRules:true时显式补写已确认的DSN DEFAULT与class层宽，并在dsnConversion逐项披露。不会修改EDA规则或SES；布线约束仍不完整。TRACK字段、单位和启用层集合可确认时，NORMAL/mil/open的显式NET多行TRACK规则仅在源码、唯一简单NET selector、SDK NET绑定及全部启用SIGNAL层ID逐层一致时按层确认；层范围不同时网络对照的layers列出各层结果，聚合项不提供单层范围。DEFAULT、NET与NET_CLASS多行规则可在完整逐层证据满足时按层确认；结构可确认的NET SAFE+TRACK可在SAFE引用结构及SDK双绑定一致时独立确认TRACK，同原始SAFE ID的严格ticket历史可消解到唯一最新实体，未消解删除或冲突仍未知；NET_CLASS混合在NET明确TRACK-only或自身SAFE／TRACK均经唯一SDK确认时可独立确认TRACK，显式NET优先；空NET继承仍未知。无structure base但完整默认层覆盖时可比较，转换为缺失层写明确preferred，非法base不作缺省。槽孔仅在原默认SAFE profile及已核对TRACK-only类结构、有效PAD_NET或独立NORMAL焊盘网络覆盖下补偿，不解释新的SAFE间距语义。preferred是配置值，不证明交互落线宽度。routingSettings表示提交值，不代表服务器读回已验证；/start响应不确定时抛出partial=true,retryable=false和jobId；只能查状态或取消，不要重提',
@@ -4491,6 +4543,15 @@ export const pcbCommands: Array<ICommandDef> = [
 			await frRequest('POST', `/jobs/${job.id}/settings`, settings)
 			await frRequest('POST', `/jobs/${job.id}/input`, { filename: dsnFile.name, data: dsnBase64 })
 			if (routeBaseline) routeJobBaselines.set(job.id, routeBaseline)
+			if (typeof focus.tabId === 'string' && focus.tabId.trim()) {
+				routeJobTabIds.set(job.id, focus.tabId)
+				const operationId = typeof params.__routeOperationId === 'string' ? params.__routeOperationId.trim() : ''
+				if (operationId) {
+					const operationKey = routeOperationKey(routeTargetKey(routeDocumentUuid, focus.tabId), operationId)
+					routeJobOperations.set(job.id, operationKey)
+					routeOperationJobs.set(operationKey, job.id)
+				}
+			}
 			currentRouteJobId = job.id
 			try {
 				await frRequest('PUT', `/jobs/${job.id}/start`)
@@ -4520,9 +4581,12 @@ export const pcbCommands: Array<ICommandDef> = [
 	},
 	{
 		name: 'pcb.autoRouteStatus',
-		summary: '只查询 FreeRouting 自动布线任务状态；COMPLETED 仅返回完成状态，不读取布线输出、不自动导入、不修改 PCB。请保留返回的 jobId，完成后调用 pcb.autoRouteGetResult 取回 SES，再按需显式调用 pcb.importAutoRouteSes 导入',
+		summary: '只查询 FreeRouting 自动布线任务状态；若启动回包丢失，可在同一 PCB 文档和标签页恢复本运行时已绑定任务，不盲取其他 PCB 的最近任务。COMPLETED 仅返回状态，不读取输出、不自动导入、不修改 PCB',
 		params: [
-			{ name: 'jobId', type: 'string', description: '任务 ID（留空取最近启动的任务）；请保留本指令返回的 jobId，以便完成后调用 pcb.autoRouteGetResult 取回 SES' },
+			{ name: 'jobId', type: 'string', description: '任务 ID；留空时仅按当前 PCB UUID、tabId 和本运行时布线任务绑定恢复，不会查询其他 PCB 的最近任务' },
+			{ name: '__docUuid', type: 'string', description: '菜单内部使用：目标 PCB 文档 UUID' },
+			{ name: '__tabId', type: 'string', description: '菜单内部使用：目标 PCB 标签页 ID' },
+			{ name: '__routeOperationId', type: 'string', description: '菜单内部使用：本次启动操作 ID；防止恢复到同一 PCB 上的旧任务' },
 			{ name: 'noImport', type: 'boolean', description: '兼容参数，仅接受布尔值；当前状态查询始终不自动回灌' },
 		],
 		returns: '{ jobId, state, stage, currentPass, statistics?, imported:false, autoImportEnabled:false, note? }；本指令只查询状态，不获取输出或写入 PCB',
@@ -4531,9 +4595,7 @@ export const pcbCommands: Array<ICommandDef> = [
 			sesCommandDeadline(params)
 			if (params.noImport !== undefined && typeof params.noImport !== 'boolean')
 				throw new Error('noImport 必须是布尔值')
-			const jobId = params.jobId ? String(params.jobId) : currentRouteJobId
-			if (!jobId)
-				throw new Error('没有进行中的布线任务（先 pcb.autoRouteStart）')
+			const jobId = await resolveRouteJobId(params, 'pcb.autoRouteStatus')
 			const status = await frRequest<{
 				state: string, stage?: string, current_pass?: number,
 				input?: { statistics?: Record<string, any> }, output?: { statistics?: Record<string, any> },
@@ -4653,16 +4715,17 @@ export const pcbCommands: Array<ICommandDef> = [
 	},
 	{
 		name: 'pcb.autoRouteStop',
-		summary: '停止进行中的 FreeRouting 任务；此命令不会导入 SES 或修改 PCB',
+		summary: '停止进行中的 FreeRouting 任务；jobId 留空时仅按当前 PCB UUID、tabId 和本运行时任务绑定恢复，不会停止其他 PCB 的最近任务；此命令不导入 SES 或修改 PCB',
 		params: [
-			{ name: 'jobId', type: 'string', description: '任务 ID（留空取最近启动的任务）' },
+			{ name: 'jobId', type: 'string', description: '任务 ID；留空时仅恢复当前 PCB 文档和标签页中本运行时绑定的任务' },
+			{ name: '__docUuid', type: 'string', description: '菜单内部使用：目标 PCB 文档 UUID' },
+			{ name: '__tabId', type: 'string', description: '菜单内部使用：目标 PCB 标签页 ID' },
+			{ name: '__routeOperationId', type: 'string', description: '菜单内部使用：本次启动操作 ID；防止恢复或停止同页上的其他任务' },
 		],
 		returns: '{ cancelled, jobId }',
 		example: { cmd: 'pcb.autoRouteStop' },
 		handler: async (params) => {
-			const jobId = params.jobId ? String(params.jobId) : currentRouteJobId
-			if (!jobId)
-				throw new Error('没有进行中的布线任务')
+			const jobId = await resolveRouteJobId(params, 'pcb.autoRouteStop')
 			const status = await frRequest<{ state?: string }>('GET', `/jobs/${jobId}`)
 			const state = String(status?.state ?? '').trim().toUpperCase()
 			if (isTerminalRouteState(state))
