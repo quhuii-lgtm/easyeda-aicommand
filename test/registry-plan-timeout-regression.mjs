@@ -6,17 +6,22 @@ import ts from 'typescript'
 // Run the actual registry without SDK calls, timers firing, or writes to the live proxy.
 const source = fs.readFileSync(new URL('../src/engine/registry.ts', import.meta.url), 'utf8')
 const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
+const moduleExecutionSource = fs.readFileSync(new URL('../src/engine/moduleExecution.ts', import.meta.url), 'utf8')
+const moduleExecutionCode = ts.transpileModule(moduleExecutionSource, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
+const moduleExecutionExports = {}
+vm.runInNewContext(moduleExecutionCode, { exports: moduleExecutionExports, Promise, Error })
 const timers = []
 let sdkCalls = 0
 let taskId = 0
 const context = { exports: {}, require(name) {
  if (name === './diag') return { diag() {} }
+ if (name === './moduleExecution') return moduleExecutionExports
  if (name === './tasks') return {
   beginTask() { return { task: { id: `test-${++taskId}` }, existing: false } },
   failTask() {}, finishTask() {}, taskProgress() {},
  }
  throw new Error(`Unexpected dependency: ${name}`)
-}, eda: { dmt_SelectControl: { async getCurrentDocumentInfo() { sdkCalls++; return { documentType: 1, uuid: 'test-page' } } } }, setTimeout(_fn, ms) { timers.push(ms); return 1 }, clearTimeout() {}, Date, console }
+}, eda: { dmt_SelectControl: { async getCurrentDocumentInfo() { sdkCalls++; return { documentType: 1, uuid: 'test-page' } } } }, setTimeout(_fn, ms) { timers.push(ms); return 1 }, clearTimeout() {}, Date, Error, console }
 vm.runInNewContext(code, context)
 const { registerCommand, executeCommand } = context.exports
 let calls = 0

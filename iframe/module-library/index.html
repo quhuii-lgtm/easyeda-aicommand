@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>模块复用</title>
+	<style>
+		:root { color-scheme: dark; font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif; background:#15171c; color:#e8eaed; --line:#343a46; --panel:#1e2128; --muted:#a2a8b4; --accent:#818cf8; }
+		* { box-sizing:border-box; }
+		body { margin:0; background:#15171c; }
+		main { padding:18px; display:grid; gap:14px; }
+		section { padding:14px; background:var(--panel); border:1px solid var(--line); border-radius:8px; }
+		h1 { margin:0 0 8px; font-size:19px; }
+		h2 { margin:0 0 10px; font-size:15px; }
+		p { margin:5px 0; color:var(--muted); font-size:12px; line-height:1.55; }
+		.steps { color:#d8dbea; }
+		label { display:block; margin:10px 0 5px; color:var(--muted); font-size:12px; }
+		input,select,button { width:100%; min-height:36px; color:#e8eaed; background:#262a33; border:1px solid #404653; border-radius:5px; padding:7px 9px; font:inherit; }
+		button { cursor:pointer; }
+		button:hover { border-color:var(--accent); }
+		button:disabled { opacity:.55; cursor:wait; }
+		.row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:end; }
+		.row button { width:auto; min-width:112px; }
+		.actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+		.actions button { width:auto; }
+		.primary { background:#4f46e5; border-color:#6366f1; color:white; }
+		#status { min-height:22px; color:#fbbf24; white-space:pre-wrap; overflow-wrap:anywhere; }
+		#project { color:#d8dbea; }
+		@media(max-width:620px) { .row { grid-template-columns:1fr; } .row button { width:100%; } }
+	</style>
+</head>
+<body>
+<main>
+	<section>
+		<h1>模块复用</h1>
+		<p>按三步操作：①确认当前工程；②选择模块及版本；③确认后恢复到当前工程。</p>
+		<p>提取、组合或替换模块时，请让 AI 协助核对范围和引脚映射；面板不会自动猜测这些内容。</p>
+		<p id="project">正在读取当前工程…</p>
+	</section>
+	<section>
+		<h2>本地模块目录</h2>
+		<label for="directory">目录完整路径（留空时恢复为嘉立创 EDA 安装目录下的 module-library）</label>
+		<div class="row"><input id="directory" type="text" autocomplete="off" spellcheck="false" placeholder="例如 D:\\EDA\\module-library"><button id="save-directory">保存目录</button></div>
+		<p>目录不可写时会显示实际错误；可以在这里改选有写入权限的目录。</p>
+	</section>
+	<section>
+		<h2>选择模块版本</h2>
+		<div class="row"><input id="query" type="search" placeholder="按名称、ID、标签或说明搜索"><button id="search">搜索</button></div>
+		<label for="module">模块及版本</label>
+		<select id="module"><option value="">正在读取模块列表…</option></select>
+		<div class="actions"><button id="refresh">刷新列表</button><button id="check-restore" hidden>查询上次恢复状态</button><button class="primary" id="restore">确认恢复到当前工程</button></div>
+	</section>
+	<p id="status" role="status" aria-live="polite">正在连接模块库…</p>
+</main>
+<script>
+(() => {
+	'use strict';
+	const api = window.eda && window.eda.aiCommandModules;
+	const byId = id => document.getElementById(id);
+	const status = byId('status');
+	const moduleSelect = byId('module');
+	let project;
+	let modules = [];
+	let busy = false;
+	let lastRestoreOperationId = '';
+	let restoreOutcomeUnknown = false;
+	const setStatus = text => { status.textContent = String(text ?? ''); };
+	const projectUuid = value => typeof value?.uuid === 'string' ? value.uuid : typeof value?.projectUuid === 'string' ? value.projectUuid : '';
+	const projectName = value => value?.friendlyName ?? value?.name ?? projectUuid(value) ?? '未命名工程';
+	const command = async (cmd, params = {}) => {
+		if (!api || typeof api.command !== 'function') throw new Error('模块复用入口尚未连接。请确认插件已启用，并让 AI 按配套技能在后台启动代理；如刚升级插件，请更新完整配套技能。');
+		const reply = await api.command(cmd, params);
+		if (reply && reply.ok === false) throw Object.assign(new Error(reply.error?.message || `${cmd} 执行失败`), { cause: reply.error?.cause });
+		return reply && reply.ok === true && Object.prototype.hasOwnProperty.call(reply, 'data') ? reply.data : reply;
+	};
+	function setBusy(value) {
+		busy = value;
+		for (const id of ['save-directory','search','refresh','check-restore']) byId(id).disabled = value;
+		byId('restore').disabled = value || restoreOutcomeUnknown;
+	}
+	function listValue(data) {
+		if (Array.isArray(data)) return data;
+		if (Array.isArray(data?.modules)) return data.modules;
+		return [];
+	}
+	function renderModules(entries) {
+		modules = entries;
+		moduleSelect.replaceChildren();
+		const empty = document.createElement('option');
+		empty.value = '';
+		empty.textContent = entries.length ? '请选择模块版本' : '没有找到模块';
+		moduleSelect.append(empty);
+		for (const item of entries) {
+			const option = document.createElement('option');
+			option.value = `${item.localId}\u0000${item.version}`;
+			option.textContent = `${item.name || item.localId} — ${item.version}`;
+			moduleSelect.append(option);
+		}
+	}
+	async function refreshModules(search = false) {
+		const query = byId('query').value.trim();
+		const result = await command(search && query ? 'module.librarySearch' : 'module.libraryList', search && query ? { query } : {});
+		renderModules(listValue(result));
+		setStatus(modules.length ? `找到 ${modules.length} 个模块版本。` : '当前目录还没有模块版本。');
+	}
+	async function refreshContext() {
+		if (!api || typeof api.getContext !== 'function') throw new Error('模块复用入口尚未连接。请确认插件已启用，并让 AI 按配套技能在后台启动代理；如刚升级插件，请更新完整配套技能。');
+		const context = await api.getContext();
+		project = context?.project;
+		lastRestoreOperationId = typeof context?.lastRestoreOperationId === 'string' ? context.lastRestoreOperationId : '';
+		restoreOutcomeUnknown = context?.restoreOutcomeUnknown === true;
+		byId('check-restore').hidden = !lastRestoreOperationId;
+		byId('restore').disabled = restoreOutcomeUnknown;
+		const uuid = projectUuid(project);
+		byId('project').textContent = uuid ? `当前工程：${projectName(project)}（${uuid}）` : `当前工程未确认：${context?.projectError || '请先在 EDA 中打开目标工程。'}`;
+		if (context?.library?.directory) byId('directory').value = context.library.source === 'user' ? context.library.directory : '';
+		if (context?.libraryError) setStatus(`模块库暂不可用：${context.libraryError}\n仍可在上方输入一个新的完整路径后保存。`);
+		else if (!uuid) setStatus('未确认当前工程；可以先设置目录和浏览模块，恢复前必须打开目标工程。');
+		else if (!context?.library?.directory) setStatus('代理未提供模块库目录。请让 AI 按配套技能在后台启动代理；如已升级插件，请更新完整配套技能。');
+		else setStatus(`模块库目录：${context.library.directory}`);
+		try { await refreshModules(false); }
+		catch (error) { setStatus(`读取模块列表失败：${error.message}\n可在上方输入新目录后保存；代理问题请让 AI 按配套技能在后台启动。`); }
+	}
+	byId('save-directory').addEventListener('click', async () => {
+		if (busy) return;
+		setBusy(true);
+		try {
+			const directory = byId('directory').value.trim();
+			const result = await command('module.setLibraryDirectory', { directory: directory || null });
+			byId('directory').value = result?.source === 'user' ? result.directory ?? directory : '';
+			setStatus(`目录设置已保存：${result?.directory || '默认目录'}`);
+			await refreshModules(false);
+		}
+		catch (error) { setStatus(`目录设置失败：${error.message}`); }
+		finally { setBusy(false); }
+	});
+	byId('search').addEventListener('click', async () => {
+		if (busy) return;
+		setBusy(true);
+		try { await refreshModules(true); }
+		catch (error) { setStatus(`搜索失败：${error.message}`); }
+		finally { setBusy(false); }
+	});
+	byId('refresh').addEventListener('click', async () => {
+		if (busy) return;
+		setBusy(true);
+		try { await refreshContext(); }
+		catch (error) { setStatus(`刷新失败：${error.message}`); }
+		finally { setBusy(false); }
+	});
+	byId('check-restore').addEventListener('click', async () => {
+		if (busy || !lastRestoreOperationId) return;
+		const wasUnknown = restoreOutcomeUnknown;
+		setBusy(true);
+		try {
+			const record = await command('module.getRestoreOperation', { operationId: lastRestoreOperationId });
+			const finished = record?.state === 'fileImported' && record?.outcome === 'confirmed' && record?.partial === false;
+			const notStarted = record?.state === 'not_started' && record?.outcome === 'not_started' && record?.partial === false;
+			if (finished || notStarted) {
+				restoreOutcomeUnknown = false;
+				setStatus(`恢复记录已确认：${record.state}，operationId=${lastRestoreOperationId}。metadataVerified=${String(record.metadataVerified)}；内容仍需按工程要求检查。`);
+			}
+			else {
+				restoreOutcomeUnknown = true;
+				setStatus(`恢复结果仍未确认：state=${String(record?.state)}，outcome=${String(record?.outcome)}。为避免重复导入，恢复按钮保持停用；保留 operationId=${lastRestoreOperationId}。`);
+			}
+		}
+		catch (error) {
+			restoreOutcomeUnknown = wasUnknown;
+			setStatus(`查询恢复记录失败：${error.message}\n保留 operationId=${lastRestoreOperationId}；${restoreOutcomeUnknown ? '恢复按钮保持停用' : '该操作此前已确认未开始，恢复按钮仍可用'}，请稍后重查。`);
+		}
+		finally { setBusy(false); }
+	});
+	byId('restore').addEventListener('click', async () => {
+		if (busy) return;
+		if (restoreOutcomeUnknown) { setStatus(`上次恢复结果尚未确认。请先查询 operationId=${lastRestoreOperationId}，不要重复恢复。`); return; }
+		const uuid = projectUuid(project);
+		if (!uuid) { setStatus('未能确认当前工程，请先打开目标工程并刷新。'); return; }
+		const [localId, version] = moduleSelect.value.split('\u0000');
+		if (!localId || !version) { setStatus('请先选择一个模块版本。'); return; }
+		const selected = modules.find(item => item.localId === localId && item.version === version);
+		if (!selected) { setStatus('所选版本已不在当前列表中，请刷新后重选。'); return; }
+		const confirmed = window.confirm(`将“${selected.name || localId}”版本 ${version} 恢复到当前工程“${projectName(project)}”。\n\n请确认目标工程正确，并确保恢复前已保存工程。继续吗？`);
+		if (!confirmed) return;
+		setBusy(true);
+		let restoreStarted = false;
+		try {
+			const record = await command('module.libraryGet', { localId, version });
+			const files = Array.isArray(record?.files) ? record.files : [];
+			const nativeFile = files.find(file => file?.role === 'native' && /\.epro2?$/i.test(String(file.relativePath ?? '')) && typeof file.base64 === 'string');
+			if (!nativeFile) throw new Error('所选版本没有可恢复的原生 .epro/.epro2 文件。');
+			const fileName = String(nativeFile.relativePath).split(/[\\/]/).pop();
+			if (!fileName) throw new Error('原生文件名无效，未执行恢复。');
+			const operationId = globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+			lastRestoreOperationId = operationId;
+			byId('check-restore').hidden = false;
+			restoreStarted = true;
+			const result = await command('module.restoreFile', { operationId, targetProjectUuid: uuid, fileName, base64: nativeFile.base64 });
+			if (result?.outcome === 'unknown' || result?.partial === true) {
+				restoreOutcomeUnknown = true;
+				setStatus(`恢复状态未知，请查询 operationId=${operationId}；不要盲目重复恢复。`);
+			}
+			else {
+				restoreOutcomeUnknown = false;
+				setStatus(`恢复指令已返回，operationId=${operationId}。metadataVerified=${String(result?.metadataVerified)}；这只核对工程元数据，不代表整板内容已验收。`);
+			}
+		}
+		catch (error) {
+			const cause = error?.cause;
+			const confirmedNotStarted = cause?.partial === false
+				&& (cause?.outcome === 'not_started' || cause?.source === 'module-operation-busy' || cause?.source === 'menu-project-preflight');
+			restoreOutcomeUnknown = restoreStarted && !confirmedNotStarted;
+			setStatus(restoreOutcomeUnknown
+				? `恢复失败或结果未知：${error.message}\n保留 operationId=${lastRestoreOperationId}；请查询恢复状态，不要盲目重试。`
+				: restoreStarted
+					? `已确认恢复没有开始：${error.message}\n可在确认当前工程或等待现有模块操作结束后重试。operationId=${lastRestoreOperationId}`
+				: `恢复准备失败：${error.message}\n尚未提交恢复。`);
+		}
+		finally { setBusy(false); }
+	});
+	refreshContext().catch(error => setStatus(error.message));
+})();
+</script>
+</body>
+</html>

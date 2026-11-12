@@ -15,6 +15,7 @@ import type {
 } from './types'
 import { beginTask, failTask, finishTask, taskProgress } from './tasks'
 import { diag } from './diag'
+import { runWithModuleExecution } from './moduleExecution'
 
 const registry = new Map<string, ICommandDef>()
 
@@ -275,8 +276,9 @@ export async function executeCommand(req: ICommandRequest, ctx?: ICommandContext
 				? { ...context, onProgress: onHeartbeatProgress }
 				: context
 			try {
+				const rawHandler = runWithModuleExecution(cmd, () => def.handler(params, hbContext))
 				data = await withHeartbeatFuse(
-					def.handler(params, hbContext),
+					rawHandler,
 					handlerFuseMs,
 					`指令 ${cmd} 执行超时（${handlerFuseMs}ms 无进度心跳）——官方调用可能仍在后台执行，重发前先用只读指令确认现场`,
 					(r) => { resetFuse = r },
