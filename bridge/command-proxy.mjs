@@ -46,6 +46,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { WebSocketServer } from 'ws'
+import { createModuleLibraryService, getModuleLibraryOriginDiagnostic, isTrustedModuleLibraryOrigin } from './module-library.mjs'
 
 const DEFAULT_PORT_START = 49720
 const DEFAULT_PORT_END = 49729
@@ -74,6 +75,7 @@ const IDLE_SHUTDOWN_MS = Number(process.env.PROXY_IDLE_MS) >= 0 && process.env.P
 const WS_PING_INTERVAL_MS = 20000
 
 const PROXY_DIR = path.dirname(fileURLToPath(import.meta.url))
+const moduleLibraryService = createModuleLibraryService({ stateDirectory: PROXY_DIR })
 const CREDENTIALS_FILE = path.join(PROXY_DIR, 'jlc-credentials.json')
 const JLC_ENDPOINT = 'https://open-api.jlc.com'
 const SMT_QUERY_PATH = '/smtOpenApi/order/selectComponentInfo'
@@ -178,6 +180,23 @@ function noExtension(res) {
 	})
 }
 
+function rejectModuleOrigin(res, origin, message, extra = {}) {
+	return json(res, 403, {
+		ok: false,
+		...extra,
+		error: {
+			message,
+			code: 'ORIGIN_NOT_ALLOWED',
+			cause: {
+				...getModuleLibraryOriginDiagnostic(origin),
+				partial: false,
+				writeAttempted: false,
+				outcome: 'not_started',
+			},
+		},
+	})
+}
+
 /** 按 instanceId 找可用连接（指令级路由用；找不到或不在线返回 null） */
 function connectionFor(instanceId) {
 	for (const [ws, c] of connections.entries()) {
@@ -242,15 +261,27 @@ const READONLY_COMMAND_PATTERNS = [
 	/^editor\.(listTabs|screenshot|zoomToAll|zoomToRegion)$/,
 	/^library\.(search|get)/,
 	/^task\.(get|list)/,
-	/^module\.getCopyOperation$/,
-	/^module\.getRestoreOperation$/,
-	/^module\.getPlacementOperation$/,
-	/^module\.getPcbImportOperation$/,
-	/^module\.exportTemplateFile$/,
+	/^module\.getStatus$/,
+	/^module\.get[A-Za-z0-9]*Operation$/,
+	/^module\.library(Info|List|Search|Get)$/,
 	/^knowledge\./,
 ]
 function isReadOnlyCommand(cmd) {
 	return typeof cmd === 'string' && READONLY_COMMAND_PATTERNS.some(re => re.test(cmd))
+}
+
+function containsModuleCommand(command) {
+	const pendingCommands = [command]
+	while (pendingCommands.length > 0) {
+		const current = pendingCommands.pop()
+		if (!current || typeof current !== 'object' || Array.isArray(current))
+			continue
+		if (typeof current.cmd === 'string' && current.cmd.startsWith('module.'))
+			return true
+		if (current.cmd === 'macro' && Array.isArray(current.params?.steps))
+			pendingCommands.push(...current.params.steps)
+	}
+	return false
 }
 /** 每个 EDA 窗口（ws）一条写队列；tail 永远 resolved，深度单独计数 */
 const writeQueues = new Map()
@@ -826,19 +857,47 @@ const server = http.createServer(async (req, res) => {
 
 	// CORS 预检
 	if (req.method === 'OPTIONS') {
+		if (url.pathname === '/module-library') {
+			const origin = req.headers.origin
+			if (!isTrustedModuleLibraryOrigin(origin, activePort))
+				return rejectModuleOrigin(res, origin, 'module-library requests from this Origin are not allowed')
+			res.writeHead(204, corsHeaders({
+				'Access-Control-Allow-Origin': origin || '*',
+				'Access-Control-Allow-Methods': 'POST,OPTIONS',
+				'Access-Control-Allow-Headers': 'Content-Type, Accept',
+				'Vary': 'Origin',
+			}))
+			res.end()
+			return
+		}
 		res.writeHead(204, corsHeaders())
 		res.end()
 		return
 	}
 
 	try {
-		if (req.method === 'GET' && url.pathname === '/health') {
+		if (url.pathname === '/module-library') {
+			if (req.method !== 'POST')
+				return json(res, 405, { ok: false, error: { message: 'module-library only accepts POST', code: 'METHOD_NOT_ALLOWED' } })
+			if (!isTrustedModuleLibraryOrigin(req.headers.origin, activePort))
+				return rejectModuleOrigin(res, req.headers.origin, 'module-library requests from this Origin are not allowed')
+			let body
+			try {
+				body = JSON.parse(await readBody(req) || '{}')
+			}
+			catch (error) {
+				return json(res, 400, { ok: false, error: { message: `invalid JSON request body: ${error.message}`, code: 'INVALID_JSON' } })
+			}
+			return json(res, 200, await moduleLibraryService.dispatch(body?.action, body?.params ?? {}))
+		}
+		else if (req.method === 'GET' && url.pathname === '/health') {
 			json(res, 200, {
 				ok: true,
 				service: 'ai-command-proxy',
 				pid: process.pid,
 				port: activePort,
 				lifecycleProtocol: 1,
+				moduleLibraryProtocol: 1,
 				writeProtection: false,
 				extensionConnected: Boolean(selectedConnection()),
 				extension: extensionInfo,
@@ -901,6 +960,8 @@ const server = http.createServer(async (req, res) => {
 		else if (req.method === 'POST' && url.pathname === '/command') {
 			const body = await readBody(req)
 			const command = JSON.parse(body)
+			if (containsModuleCommand(command) && !isTrustedModuleLibraryOrigin(req.headers.origin, activePort))
+				return rejectModuleOrigin(res, req.headers.origin, 'module commands from this Origin are not allowed', { cmd: command.cmd })
 			// smt.* / write.acknowledge 指令由代理本地执行，无需 EDA 在线；acknowledge 为兼容旧客户端保留的 no-op
 			if (typeof command.cmd === 'string' && (command.cmd.startsWith('smt.') || command.cmd === 'write.acknowledge')) {
 				try {

@@ -15,6 +15,7 @@ export { getProxyPort, getProxyUrl } from './proxy-endpoint';
  * 代理由配套技能在后台启动；扩展定期检查健康状态并自动连接。
  */
 import { executeCommand, getCommandDocs, listCommandNames } from '../engine/registry';
+import { hasActiveModuleExecution } from '../engine/moduleExecution';
 
 const WS_ID_PREFIX = 'ai-command-engine';
 const PORT_RANGE_START = 49720;
@@ -53,7 +54,7 @@ let proxyCompatible = false;
 let connecting = false;
 let checkingHealth = false;
 let pendingResume: string | null = null;
-let stopRequest: { id: string; reconnect: boolean } | null = null;
+let stopRequest: { id: string; reconnect: boolean; ready?: boolean; blocked?: boolean } | null = null;
 /**
  * 0.10.69（KIMI-EDA-20261006-01）：恢复口令。模块级随机数，随 hello/pause/resume 帧携带。
  *  代理只在口令匹配时才允许清除「断开指令代理」的暂停态——防止旧版本残留模块的重放 hello
@@ -171,6 +172,64 @@ function retireConnection(id: string, gen: number, closeHost = true): boolean {
 	return closeRetiredConnection(id);
 }
 
+function hasRawWriteInFlight(): boolean {
+	return inflightCommands > 0 || hasActiveModuleExecution();
+}
+
+/** Finish a pending stop intent after the old connection is confirmed dead and raw handlers have settled. */
+function settleDisconnectedStopIntent(): boolean {
+	const completed = stopRequest;
+	if (!completed || completed.blocked || hasRawWriteInFlight())
+		return false;
+	stopRequest = null;
+	pendingResume = null;
+	if (completed.reconnect) {
+		manualStop = false;
+		lifecycleGeneration++;
+		setLifecycleStatus('旧连接已结束且原操作已完成，正在重新连接本窗口');
+		void connectWhenReady();
+	}
+	else {
+		manualStop = true;
+		setLifecycleStatus('本窗口桥接已停止');
+	}
+	return true;
+}
+
+/** Complete stop-ready only after the underlying SDK handler, not just its watchdog response, has settled. */
+function finishStopReady(id: string, gen: number): boolean {
+	const completed = stopRequest;
+	if (!completed?.ready || completed.blocked)
+		return false;
+	if (hasRawWriteInFlight()) {
+		setLifecycleStatus('桥接已确认停止条件，但底层操作仍在执行；连接保留并继续探测');
+		return false;
+	}
+	try {
+		eda.sys_WebSocket.send(id, JSON.stringify({ type: 'bye', requestId: completed.id }));
+	}
+	catch (err) {
+		setLifecycleStatus(`停止确认后断开失败：${String(err)}`);
+		return false;
+	}
+	if (!retireConnection(id, gen))
+		return false;
+	stopRequest = null;
+	connected = false;
+	connecting = false;
+	if (completed.reconnect) {
+		manualStop = false;
+		lifecycleGeneration++;
+		setLifecycleStatus('当前操作已结束，正在重新连接本窗口');
+		void connectWhenReady();
+	}
+	else {
+		manualStop = true;
+		setLifecycleStatus('本窗口桥接已停止');
+	}
+	return true;
+}
+
 function log(message: string): void {
 	try {
 		eda.sys_Log.add(message);
@@ -188,8 +247,12 @@ async function handleMessage(event: MessageEvent<any>, id: string, gen: number):
 	const eventType = (event as any)?.type;
 	if (eventType === 'close' || eventType === 'error') {
 		retireConnection(id, gen, false);
-		if (stopRequest)
-			setLifecycleStatus('停止尚未确认：连接已中断，原操作未必已结束');
+		if (stopRequest) {
+			if (!settleDisconnectedStopIntent())
+				setLifecycleStatus(stopRequest.blocked
+					? '代理报告操作状态未知；连接已中断，保留停止/重连意图等待状态恢复'
+					: '连接已中断；等待底层操作实际结束后按最新停止/重连意图处理');
+		}
 		else if (!manualStop)
 			setLifecycleStatus('连接已中断，等待重新连接');
 		return;
@@ -243,33 +306,13 @@ async function handleMessage(event: MessageEvent<any>, id: string, gen: number):
 			return;
 		}
 		if (msg.type === 'stop-blocked') {
+			stopRequest.blocked = true;
 			setLifecycleStatus('停止尚未完成：代理报告原操作状态未知，连接继续保留');
 			return;
 		}
-		if (inflightCommands > 0) {
-			setLifecycleStatus('停止尚未完成：本窗口仍有操作未返回，连接继续保留');
-			return;
-		}
-		const completed = stopRequest;
-		try {
-			eda.sys_WebSocket.send(id, JSON.stringify({ type: 'bye', requestId: completed.id }));
-		}
-		catch (err) {
-			setLifecycleStatus(`停止确认后断开失败：${String(err)}`);
-			return;
-		}
-		if (!retireConnection(id, gen))
-			return;
-		stopRequest = null;
-		connected = false;
-		connecting = false;
-		setLifecycleStatus('本窗口桥接已停止');
-		if (completed.reconnect) {
-			manualStop = false;
-			lifecycleGeneration++;
-			setLifecycleStatus('当前操作已结束，正在重新连接本窗口');
-			void connectWhenReady();
-		}
+		stopRequest.ready = true;
+		stopRequest.blocked = false;
+		finishStopReady(id, gen);
 		return;
 	}
 
@@ -481,7 +524,7 @@ async function probeAndConnect(): Promise<boolean> {
 				continue;
 			}
 			try {
-				if (health?.ok !== false && health?.service === 'ai-command-proxy' && health?.lifecycleProtocol === 1) {
+				if (health?.ok !== false && health?.service === 'ai-command-proxy' && health?.lifecycleProtocol === 1 && health?.moduleLibraryProtocol === 1) {
 					proxyCompatible = true;
 					currentPort = port;
 					setProxyPort(port);
@@ -505,19 +548,19 @@ async function probeAndConnect(): Promise<boolean> {
 	currentPort = null;
 	setProxyPort(null);
 	setLifecycleStatus(incompatibleService
-		? '桥接版本不匹配：请在当前任务结束后更新配套桥接，现有服务未被关闭'
+		? '桥接能力不匹配：请更新完整配套技能（需包含模块库支持），现有服务未被关闭'
 		: '等待配套技能在后台启动本地桥接');
 	return false;
 }
 
 async function connectWhenReady(): Promise<void> {
-	if (manualStop || connected || checkingHealth || inflightCommands > 0)
+	if (manualStop || connected || checkingHealth || hasRawWriteInFlight())
 		return;
 	checkingHealth = true;
 	const generation = lifecycleGeneration;
 	try {
 		const ready = await probeAndConnect();
-		if (ready && generation === lifecycleGeneration && !manualStop && !connected && inflightCommands === 0) {
+		if (ready && generation === lifecycleGeneration && !manualStop && !connected && !hasRawWriteInFlight()) {
 			if (connecting)
 				return;
 			if (currentPort !== null)
@@ -533,6 +576,14 @@ async function connectWhenReady(): Promise<void> {
 export function startBridgeClient(port?: number): void {
 	if (port !== undefined)
 		requestedPort = port;
+	if (stopRequest && !connected) {
+		stopRequest.reconnect = true;
+		if (pendingCloseId && !closeRetiredConnection(pendingCloseId))
+			return;
+		if (!settleDisconnectedStopIntent())
+			setLifecycleStatus('已记录重连意图；等待底层操作实际结束');
+		return;
+	}
 	if (connected && !manualStop && !stopRequest)
 		return;
 	if (checkingHealth || connecting)
@@ -570,22 +621,42 @@ export function startBridgeClient(port?: number): void {
 		};
 		try {
 			eda.sys_Timer.setIntervalTimer('aiCommandHeartbeat', HEARTBEAT_MS, () => {
-				if (!connected)
+				if (!connected) {
+					settleDisconnectedStopIntent();
 					return;
+				}
 				const id = currentConnectionId;
 				if (!id)
 					return;
+				if (stopRequest?.ready)
+					finishStopReady(id, connectionGeneration);
+				if (!connected)
+					return;
 				const now = Date.now();
 				if (probeSentAt > 0) {
-					if (!manualStop && inflightCommands === 0 && now - probeSentAt > SILENCE_DEAD_MS) {
-						if (retireConnection(id, connectionGeneration))
-							setLifecycleStatus('桥接探测超时，等待重新连接');
+					if (now - probeSentAt > SILENCE_DEAD_MS) {
+						probeSentAt = 0;
+						if (!stopRequest?.blocked && !hasRawWriteInFlight()) {
+							const pendingStop = stopRequest;
+							if (retireConnection(id, connectionGeneration)) {
+								if (pendingStop)
+									settleDisconnectedStopIntent();
+								else
+									setLifecycleStatus('桥接探测超时，等待重新连接');
+							}
+						}
+						else {
+							setLifecycleStatus(stopRequest?.blocked
+								? '代理报告操作状态未知；探测无响应，连接与停止意图均保留'
+								: '底层操作仍在执行；探测无响应，连接保留，操作结束后再处理');
+						}
 					}
 					return;
 				}
-				if (!manualStop && lastHeardAt > 0 && now - lastHeardAt > SILENCE_DEAD_MS) {
+				if ((!manualStop || stopRequest) && lastHeardAt > 0 && now - lastHeardAt > SILENCE_DEAD_MS) {
 					probeSentAt = now;
-					setLifecycleStatus('桥接静默，正在探测连接');
+					if (!manualStop)
+						setLifecycleStatus('桥接静默，正在探测连接');
 					try {
 						eda.sys_WebSocket.send(id, JSON.stringify({ type: 'ping' }));
 					}
@@ -601,7 +672,7 @@ export function startBridgeClient(port?: number): void {
 				catch (err) {
 					if (probeSentAt === 0 && lastHeardAt === heardBeforePing) {
 						probeSentAt = now;
-						if (!manualStop)
+						if (!manualStop || stopRequest)
 							setLifecycleStatus('桥接心跳发送失败，正在等待探测结果');
 					}
 					log('桥接心跳发送失败：' + String(err));
@@ -627,7 +698,7 @@ function requestBridgeStop(reconnect: boolean): void {
 	pendingResume = null;
 	manualStop = true;
 	if (!connected) {
-		setLifecycleStatus(inflightCommands > 0 ? '停止尚未确认：连接中断且仍有操作未返回' : '本窗口桥接已停止');
+		setLifecycleStatus(hasRawWriteInFlight() ? '停止尚未确认：连接中断且底层操作仍未结束' : '本窗口桥接已停止');
 		return;
 	}
 	if (!proxyCompatible) {

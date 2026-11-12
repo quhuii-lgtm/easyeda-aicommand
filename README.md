@@ -4,21 +4,23 @@
 
 AI Command Engine connects AI tools to JLCEDA Pro through a local Node.js proxy. It provides structured commands for reading and editing schematics, PCB layouts, projects, and component libraries.
 
-## v0.20.136 update (compared with v0.20.135)
+## v0.21.2 update (compared with v0.20.136)
 
-Grouping now reports a partial result when a write has started and recovery cannot be verified. Dependent macro writes stop, and the result retains the backup ID and recovery evidence.
+Module reuse is integrated into AI Command Engine with 27 module.* commands. The release includes extraction, library management, restoration, PCB composition and component replacement interfaces, plus the follow-up routing-state fixes from v0.21.1. Query the connected instance’s help and follow the module-reuse guide before using a command.
 
-The auto-routing menu retains an operation ID before sending a start request. If the response is lost, status and stop can recover the job using that operation ID, the original PCB and its tab. Recovery refuses mismatched operations and PCBs.
+A user-selected module directory takes priority. Without a selection, the default is module-library under the actual EDA installation directory. Ordinary ACE functions work independently of the module library. The standalone module extension and existing module files remain available.
 
-On Windows / JLCEDA Pro 4.1.93, installed v0.20.136 grouped two components, verified its backup and readback, saved, and retained the result after closing and reopening. Existing tracks, vias and network records were preserved. Operation-bound job recovery succeeded and incorrect operations and PCBs were rejected. The stop entry recovered a job that had already completed and reported that cancellation was unnecessary. No SES was imported during these checks.
+Windows / JLCEDA Pro 4.1.99 verification covered idle proxy failure followed by Reconnect and background proxy startup, restoring the same instance without restarting EDA. Normal Stop/Start and read-only project, PCB component, module-library and task queries passed. The 20-component readback was identical. Earlier integrated-version checks covered extraction, automatic library saving, search/readback, directory settings and restored documents after save/reopen.
 
-Controlled fault injection and macro regressions cover uncertain recovery and lost responses. Full live triggers for switching tabs during a write and losing the menu start response remain unverified. Running-job cancellation and menu/silkscreen visual checks were not repeated. Standalone TEXT API persistence retains the limitation documented in v0.20.135.
+The local 52-case client lifecycle suite, 19-case owner suite, module integration, registry timeout, type checking and build passed. A real in-flight host write was not deliberately hung. Not all 27 module commands were host-tested. Representative PCB combination/replacement, formal schematic per-pin net names and DRC/DFM remain unverified.
 
-Open a PCB drawing page to see all 15 AI Command Engine menu entries, including DFM, same-net pad spacing, grouping and auto-routing. The start page and schematic pages show six general entries.
+For one resistor sample, official New Project import retained DEVICE/SYMBOL/FOOTPRINT META.tags through save/reopen. Existing Project import/rebuild/export returned empty tags before any drawing page was opened or saved, with resource UUIDs remapped. Bytes supplied to the SDK File matched the original archive. The observed difference is limited to that mode and sample; the SDK internal stage remains unknown, and no tags patch is included.
 
-**Update the complete companion skill to 2026.11.12 together with the extension.** Download the [bilingual skill ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.11.12), replace the complete ai-command-engine directory in the AI tool’s skill folder while preserving personal settings, then reload the skill.
+**Update the complete companion skill to 2026.11.12.5.** Download the [bilingual skill ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.11.12.5), install the complete ai-command-engine folder, preserve personal settings, then reload the skill. The skill proxy retains its external user-data directory adapter.
 
-See the [plugin release](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.20.136), [marketplace](https://jlc-ext.com/item/eda_gdqnxffl/ai-command-engine), and [release notes](docs/releases/v0.20.136-en.md) for channel status and scope.
+Open a PCB drawing to see 16 AI Command Engine menu entries. The start page and schematic pages show seven entries. Module reuse is available through the same plugin, menu and proxy.
+
+See the [plugin release](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.21.2), [marketplace](https://jlc-ext.com/item/eda_gdqnxffl/ai-command-engine) and [release notes](docs/releases/v0.21.2-en.md) for channel status.
 
 ## What it does
 
@@ -28,9 +30,13 @@ See the [plugin release](https://github.com/quhuii-lgtm/easyeda-aicommand/releas
 - Export DSN, call an external routing service, and explicitly import SES results.
 - Search and maintain component-library resources and inspect project data.
 
+### Module reuse
+
+Follow the complete companion skill’s module-reuse guide and connected command help.
+
 ### Feature demos
 
-The following GIFs illustrate feature workflows. They are not evidence that every feature passed v0.20.136 host acceptance.
+The following GIFs illustrate feature workflows. They are not evidence that every feature passed v0.21.2 host acceptance.
 
 ![Schematic feature demo](images/demo-schematic.gif)
 
@@ -42,9 +48,9 @@ Available commands depend on the installed extension and EDA version. Query the 
 
 The extension, proxy skill, and AI tool are separate parts. Installing `.eext` does not install Node.js or the skill.
 
-1. **Skill and proxy:** download the [v2026.11.12 skill ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.11.12/ai-command-engine-skill_v2026.11.12_en-zh.zip) from the [skill release](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.11.12), then install the complete `ai-command-engine/` folder. Keep its references and scripts. Use Node.js >=20.17.0 and run `npm ci --omit=dev` in the skill root.
+1. **Skill and proxy:** download the [v2026.11.12.5 skill ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.11.12.5/ai-command-engine-skill_v2026.11.12.5_en-zh.zip) from the [skill release](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.11.12.5), then install the complete `ai-command-engine/` folder. Keep its references and scripts. Use Node.js >=20.17.0 and run `npm ci --omit=dev` in the skill root.
 2. **Background startup:** ask the AI to follow the skill's [connection guide](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/blob/main/ai-command-engine/references/setup.md) and run `scripts/start-proxy.ps1`. Windows starts it hidden and reports the actual endpoint; compatible services are reused.
-3. **EDA extension:** get the `.eext` from the [v0.20.136 plugin release](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.20.136), import and enable it, and allow external interaction.
+3. **EDA extension:** get the `.eext` from the [v0.21.2 plugin release](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.21.2), import and enable it, and allow external interaction.
 4. **Verify:** use the port reported by the launcher (within `49720–49729`) to check `/health` and `/connections`, confirm the target instance and project, then make a read-only `project.getInfo` call.
 
 See the [first-install guide](docs/QUICKSTART.md). After upgrading, handle and save pending work in every EDA window, then reload each window that still runs the old extension; importing into one window does not update all open windows. Plugin and skill versions are independent. Updating the skill does not overwrite proxy user data or force replacement of a compatible running proxy.

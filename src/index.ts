@@ -12,7 +12,8 @@ import { createBridgeOwnerCoordinator } from './bridge/owner';
  * 注意：扩展运行在独立 JS 上下文，window 不与其他扩展共享，
  * 因此与 AI 的通信必须走本扩展自己的 WebSocket 连接。
  */
-import { getBridgeLifecycleStatus, reconnectBridgeClient, startBridgeClient, stopBridgeClient } from './bridge/client';
+import { getBridgeInstanceId, getBridgeLifecycleStatus, reconnectBridgeClient, startBridgeClient, stopBridgeClient } from './bridge/client';
+import { getProxyUrl } from './bridge/proxy-endpoint';
 import { openSmtQuery as openSmtQueryAtOwner } from './bridge/smtMenu';
 import { launchPcbToolsAction } from './menus/pcb-tools';
 import { autoCopperCommands } from './commands/autoCopper';
@@ -25,6 +26,7 @@ import { fanoutCommands } from './commands/fanout';
 import { knowledgeCommands } from './commands/knowledge';
 import { libCommands } from './commands/lib';
 import { manufacturingProfileCommands } from './commands/manufacturingProfile';
+import { moduleCommands } from './commands/module';
 import { padBranchCommands } from './commands/padBranches';
 import { netSilkscreenCommands } from './commands/netSilkscreen';
 import { padExpansionCommands } from './commands/padExpand';
@@ -37,6 +39,7 @@ import { silkscreenCheckCommands } from './commands/silkscreenCheck';
 import { systemCommands } from './commands/system';
 import { installDfmMenuApi, padSpacingMenu, pcbDfmMenu, smtDfmMenu } from './dfm/menu';
 import { executeCommand, getCommandDocs, listCommandNames, registerCommand } from './engine/registry';
+import { installModuleToolsApi, openModuleToolsMenu } from './menus/module-tools';
 
 let registered = false;
 let activating = false;
@@ -62,6 +65,7 @@ function registerAllCommands(): void {
 		...netSilkscreenCommands,
 		...dfmCommands,
 		...pcbGroupingCommands,
+		...moduleCommands,
 		...knowledgeCommands,
 		...systemCommands,
 		...libCommands,
@@ -88,6 +92,12 @@ function handleBridgeOwnerRequest(request: any): unknown {
 			return { status: getBridgeLifecycleStatus(), commandCount: listCommandNames().length };
 		case 'commands':
 			return listCommandNames();
+		case 'open-modules':
+			return openModuleToolsMenu();
+		case 'module-menu-context':
+			return getModuleMenuContext();
+		case 'module-menu-command':
+			return handleModuleMenuCommand(request?.payload);
 		case 'open-smt':
 			return openSmtQueryAtOwner();
 		case 'pcb-tools-group':
@@ -113,8 +123,137 @@ function handleBridgeOwnerRequest(request: any): unknown {
 	}
 }
 
+const MODULE_MENU_COMMANDS = new Set([
+	'module.libraryInfo',
+	'module.setLibraryDirectory',
+	'module.librarySave',
+	'module.libraryList',
+	'module.librarySearch',
+	'module.libraryGet',
+	'project.getInfo',
+	'module.restoreFile',
+	'module.getRestoreOperation',
+]);
+const lastRestoreOperationByProject = new Map<string, { operationId: string, outcomeUnknown: boolean }>();
+
+function projectUuidOf(value: any): string | undefined {
+	const uuid = typeof value?.uuid === 'string' ? value.uuid : value?.projectUuid;
+	return typeof uuid === 'string' && uuid.trim() ? uuid : undefined;
+}
+
+async function runOwnerProxyCommand(cmd: string, params: Record<string, unknown> = {}): Promise<any> {
+	const url = getProxyUrl('/command');
+	if (!url)
+		throw new Error('模块库代理尚未连接。请让 AI 按配套技能在后台启动代理，并更新完整配套技能后重试。');
+	const response: Response = await eda.sys_ClientUrl.request(url, 'POST', JSON.stringify({
+		instanceId: getBridgeInstanceId(),
+		cmd,
+		params,
+	}), { headers: { 'Content-Type': 'application/json' } });
+	if (!response.ok)
+		throw new Error(`${cmd} 请求失败（HTTP ${response.status}）；请先查询状态，不要重复提交写入`);
+	let result: any;
+	try { result = JSON.parse(await response.text()); }
+	catch { throw new Error(`${cmd} 返回内容无法读取，结果未知；不要重复提交写入`); }
+	if (!result || typeof result.ok !== 'boolean')
+		throw new Error(`${cmd} 返回格式无效，结果未知；不要重复提交写入`);
+	if (!result.ok)
+		throw Object.assign(new Error(result.error?.message ?? `${cmd} 执行失败`), { cause: result.error?.cause });
+	return result.data;
+}
+
+async function getModuleMenuContext(): Promise<Record<string, unknown>> {
+	const [projectResult, libraryResult] = await Promise.allSettled([
+		runOwnerProxyCommand('project.getInfo'),
+		runOwnerProxyCommand('module.libraryInfo'),
+	]);
+	const project = projectResult.status === 'fulfilled' ? projectResult.value : null;
+	const library = libraryResult.status === 'fulfilled' ? libraryResult.value : null;
+	return {
+		project,
+		projectError: projectResult.status === 'rejected' ? String(projectResult.reason?.message ?? projectResult.reason) : undefined,
+		library,
+		libraryError: libraryResult.status === 'rejected' ? String(libraryResult.reason?.message ?? libraryResult.reason) : undefined,
+		lastRestoreOperationId: projectUuidOf(project) ? lastRestoreOperationByProject.get(projectUuidOf(project)!)?.operationId : undefined,
+		restoreOutcomeUnknown: projectUuidOf(project) ? lastRestoreOperationByProject.get(projectUuidOf(project)!)?.outcomeUnknown === true : false,
+	};
+}
+
+async function runModuleMenuCommand(payload: any): Promise<any> {
+	const cmd = payload?.cmd;
+	const params = payload?.params;
+	if (typeof cmd !== 'string' || !MODULE_MENU_COMMANDS.has(cmd))
+		throw new Error('模块面板只允许执行模块库和当前工程查询指令');
+	if (params !== undefined && (!params || typeof params !== 'object' || Array.isArray(params)))
+		throw new Error('模块面板指令参数必须是对象');
+	const safeParams = (params ?? {}) as Record<string, unknown>;
+	if (cmd === 'module.getRestoreOperation') {
+		const currentProject = await runOwnerProxyCommand('project.getInfo');
+		const projectUuid = projectUuidOf(currentProject);
+		const operationId = safeParams.operationId;
+		const lastRestore = projectUuid ? lastRestoreOperationByProject.get(projectUuid) : undefined;
+		if (!projectUuid || typeof operationId !== 'string' || lastRestore?.operationId !== operationId)
+			throw new Error('只能查询本窗口当前工程最近一次面板提交的恢复操作');
+		const record = await runOwnerProxyCommand(cmd, safeParams);
+		const resolved = (record?.state === 'fileImported' && record?.outcome === 'confirmed' && record?.partial === false)
+			|| (record?.state === 'not_started' && record?.outcome === 'not_started' && record?.partial === false);
+		if (resolved)
+			lastRestoreOperationByProject.set(projectUuid, { operationId, outcomeUnknown: false });
+		return record;
+	}
+	if (cmd === 'module.restoreFile') {
+		const requestedProjectUuid = safeParams.targetProjectUuid;
+		if (typeof requestedProjectUuid !== 'string' || !requestedProjectUuid.trim())
+			throw new Error('恢复前必须确认目标工程', { cause: { partial: false, outcome: 'not_started', source: 'menu-project-preflight' } });
+		const currentProject = await runOwnerProxyCommand('project.getInfo');
+		const currentUuid = typeof currentProject?.uuid === 'string' ? currentProject.uuid : currentProject?.projectUuid;
+		if (typeof currentUuid !== 'string' || currentUuid !== requestedProjectUuid)
+			throw new Error('当前工程已变化或无法确认；未执行恢复，请重新选择目标工程并确认', { cause: { partial: false, outcome: 'not_started', source: 'menu-project-preflight' } });
+		if (typeof safeParams.operationId !== 'string' || !safeParams.operationId.trim())
+			throw new Error('恢复前必须生成唯一操作 ID', { cause: { partial: false, outcome: 'not_started', source: 'menu-project-preflight' } });
+		lastRestoreOperationByProject.set(currentUuid, { operationId: safeParams.operationId as string, outcomeUnknown: true });
+	}
+	try {
+		const result = await runOwnerProxyCommand(cmd, safeParams);
+		if (cmd === 'module.restoreFile') {
+			const projectUuid = safeParams.targetProjectUuid as string;
+			const confirmed = result?.state === 'fileImported' && result?.outcome === 'confirmed' && result?.partial === false;
+			const notStarted = result?.state === 'not_started' && result?.outcome === 'not_started' && result?.partial === false;
+			lastRestoreOperationByProject.set(projectUuid, { operationId: safeParams.operationId as string, outcomeUnknown: !(confirmed || notStarted) });
+		}
+		return result;
+	}
+	catch (error) {
+		const cause = (error as any)?.cause;
+		const confirmedNotStarted = cause?.partial === false
+			&& (cause?.outcome === 'not_started' || cause?.source === 'module-operation-busy');
+		if (cmd === 'module.restoreFile' && confirmedNotStarted) {
+			const projectUuid = safeParams.targetProjectUuid as string;
+			lastRestoreOperationByProject.set(projectUuid, { operationId: safeParams.operationId as string, outcomeUnknown: false });
+		}
+		throw error;
+	}
+}
+
+async function handleModuleMenuCommand(payload: any): Promise<Record<string, unknown>> {
+	try {
+		return { ok: true, data: await runModuleMenuCommand(payload) };
+	}
+	catch (error) {
+		const reason = error as any;
+		return {
+			ok: false,
+			error: {
+				message: String(reason?.message ?? error),
+				...(reason?.cause && typeof reason.cause === 'object' ? { cause: reason.cause } : {}),
+			},
+		};
+	}
+}
+
 export function activate(_status?: 'onStartupFinished', _arg?: string): void {
 	installDfmMenuApi();
+	installModuleToolsApi((method, payload) => bridgeOwner.request(method, payload));
 	if (registered || activating)
 		return;
 	activating = true;
@@ -168,6 +307,10 @@ export function activate(_status?: 'onStartupFinished', _arg?: string): void {
 }
 
 export { padSpacingMenu, pcbDfmMenu, smtDfmMenu };
+
+export async function openModuleTools(): Promise<void> {
+	await requestOwner('open-modules', '模块复用');
+}
 
 async function requestOwner(method: string, title: string): Promise<any | undefined> {
 	try {

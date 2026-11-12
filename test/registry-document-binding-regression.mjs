@@ -8,6 +8,10 @@ const virtualClock = installVirtualClock()
 try {
 	const source = fs.readFileSync(new URL('../src/engine/registry.ts', import.meta.url), 'utf8')
 	const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
+	const moduleExecutionSource = fs.readFileSync(new URL('../src/engine/moduleExecution.ts', import.meta.url), 'utf8')
+	const moduleExecutionCode = ts.transpileModule(moduleExecutionSource, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
+	const moduleExecutionExports = {}
+	vm.runInNewContext(moduleExecutionCode, { exports: moduleExecutionExports, Promise, Error })
 	let currentDoc = { documentType: 3, uuid: 'pcb-page' }
 	let infoCalls = 0
 	let activateCalls = 0
@@ -18,6 +22,7 @@ try {
 		exports: {},
 		require(name) {
 			if (name === './diag') return { diag() {} }
+			if (name === './moduleExecution') return moduleExecutionExports
 			if (name === './tasks') return {
 				beginTask() { return { task: { id: 'macro-test' }, existing: false } },
 				failTask() {}, finishTask() {}, taskProgress() {},
@@ -30,6 +35,7 @@ try {
 		},
 		setTimeout: globalThis.setTimeout,
 		clearTimeout: globalThis.clearTimeout,
+		Error,
 		Date: class VirtualDate extends Date { static now() { return virtualClock.now } },
 		console,
 	}

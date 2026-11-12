@@ -120,7 +120,7 @@ export function createBridgeOwnerCoordinator(version: string) {
 		role = 'inactive';
 	}
 
-	function request(method: string): Promise<any> {
+	function request(method: string, payload?: unknown): Promise<any> {
 		const owners = discoverOwners();
 		if (owners.length === 0)
 			throw new Error('未发现已激活的 AI Command Engine 所有者，请先激活扩展');
@@ -128,7 +128,7 @@ export function createBridgeOwnerCoordinator(version: string) {
 			throw new Error(`发现 ${owners.length} 个 AI Command Engine 所有者，拒绝执行菜单操作`);
 		if (owners[0].phase !== 'ready')
 			throw new Error('AI Command Engine 所有者正在初始化，请稍后重试');
-		return eda.sys_MessageBus.rpcCall(owners[0].rpcTopic, { method });
+		return eda.sys_MessageBus.rpcCall(owners[0].rpcTopic, payload === undefined ? { method } : { method, payload });
 	}
 
 	return { activate, markReady, release, request };

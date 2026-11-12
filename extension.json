@@ -3,7 +3,7 @@
   "uuid": "29aa51f0bed4411d866cb7a7a249231a",
   "displayName": "AI 指令引擎",
   "description": "AI 指令引擎：为 AI 编程工具提供简易 JSON 指令接口，内部封装嘉立创 EDA 专业版扩展 API，支持宏指令组合与布线知识库",
-  "version": "0.20.136",
+  "version": "0.21.2",
   "publisher": "ai-command-engine",
   "engines": {
     "eda": "^3.2.0"
@@ -62,6 +62,11 @@
             "id": "SmtQuery",
             "title": "SMT 物料查询…",
             "registerFn": "openSmtQuery"
+          },
+          {
+            "id": "ModuleReuse",
+            "title": "模块复用…",
+            "registerFn": "openModuleTools"
           }
         ]
       }
@@ -100,6 +105,11 @@
             "id": "SmtQuery",
             "title": "SMT 物料查询…",
             "registerFn": "openSmtQuery"
+          },
+          {
+            "id": "ModuleReuse",
+            "title": "模块复用…",
+            "registerFn": "openModuleTools"
           }
         ]
       }
@@ -138,6 +148,11 @@
             "id": "SmtQuery",
             "title": "SMT 物料查询…",
             "registerFn": "openSmtQuery"
+          },
+          {
+            "id": "ModuleReuse",
+            "title": "模块复用…",
+            "registerFn": "openModuleTools"
           },
           {
             "id": "PcbDfm",

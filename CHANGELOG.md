@@ -1,5 +1,9 @@
 # Change log
 
+## 0.21.2
+
+- Module reuse is integrated into AI Command Engine with 27 module.* commands. The release includes extraction, library management, restoration, PCB composition and component replacement interfaces, plus the follow-up routing-state fixes from v0.21.1. Query the connected instance’s help and follow the module-reuse guide before using a command.
+
 ## 0.20.136
 
 - Grouping now reports a partial result when a write has started and recovery cannot be verified. Dependent macro writes stop, and the result retains the backup ID and recovery evidence.

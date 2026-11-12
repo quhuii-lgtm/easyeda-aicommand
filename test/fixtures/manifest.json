@@ -365,6 +365,22 @@
       "fixtureSha256": "4b9f4930bfcc9015afb9b9f2f4a7119dadab1abf0e3a7e8b3361a437aab33de7",
       "bytes": 247735,
       "method": "retain source and readback data; remove request, instance and timestamp envelopes; decode DSN base64; add explicitly labelled single-field derived COMBO input"
+    },
+    {
+      "fixture": "module-reuse/A61-036-PERSISTENT-1206-VARIANT.epro2",
+      "source": "模块复用插件/验证/官方API/A61-036-PERSISTENT-1206-VARIANT.epro2",
+      "sourceSha256": "fe03a1a3e4e9ebd5e7d8044d03e1341a91691b406e8b53b8001b7b7d32937941",
+      "fixtureSha256": "fe03a1a3e4e9ebd5e7d8044d03e1341a91691b406e8b53b8001b7b7d32937941",
+      "bytes": 362199,
+      "method": "copy original native archive bytes unchanged; test only"
+    },
+    {
+      "fixture": "module-reuse/A63-000-MCU-new-version-workcard.json",
+      "source": "模块复用插件/验证/官方API/A63-000-MCU-new-version-workcard.json",
+      "sourceSha256": "66d818aa6f3bfa2fb0d181f144f65c78bc4bbc4352eacef97960279a85d529ca",
+      "fixtureSha256": "66d818aa6f3bfa2fb0d181f144f65c78bc4bbc4352eacef97960279a85d529ca",
+      "bytes": 14546,
+      "method": "copy original module extraction workcard bytes unchanged; test only"
     }
   ]
 }

@@ -11,6 +11,7 @@ const routeSessions = new Map<string, RouteSession>()
 let activeAction: MenuAction | null = null
 let routeOperationSequence = 0
 const uncertainBoards = new Map<string, string>()
+const uncertainStartOperationByBoard = new Map<string, string>()
 const keyOf = (target: Target): string => `${target.tabId}::${target.uuid}`
 
 function newRouteOperationId(): string {
@@ -47,20 +48,31 @@ function menuParams(target: Target, extra: Record<string, unknown> = {}): Record
 async function command(target: Target, cmd: string, params: Record<string, unknown>, timeoutMs = 300000): Promise<CommandReply> {
 	const url = getProxyUrl('/command')
 	if (!url)
-		throw new Error('本窗口没有连接到兼容的本地代理；请先等待桥接连接后重试')
+		throw new Error('本窗口没有连接到兼容的本地代理；请先等待桥接连接后重试', {
+			cause: { partial: false, outcome: 'not-started', requestSent: false },
+		})
 	const instanceId = getBridgeInstanceId()
-	if (!instanceId.trim())
-		throw new Error('本窗口 instanceId 无效，已停止请求')
+	if (typeof instanceId !== 'string' || !instanceId.trim())
+		throw new Error('本窗口 instanceId 无效，已停止请求', {
+			cause: { partial: false, outcome: 'not-started', requestSent: false },
+		})
+	let requestSent = false
 	const request = async (): Promise<CommandReply> => {
-		const response = await eda.sys_ClientUrl.request(url, 'POST', JSON.stringify({ instanceId, cmd, params: menuParams(target, params) }), { headers: { 'Content-Type': 'application/json' } })
+		const body = JSON.stringify({ instanceId, cmd, params: menuParams(target, params) })
+		requestSent = true
+		const response = await eda.sys_ClientUrl.request(url, 'POST', body, { headers: { 'Content-Type': 'application/json' } })
 		const text = await response.text()
 		if (!response.ok)
 			throw new Error(`${cmd} HTTP ${response.status}；未确认指令结果，不能盲目重发`)
 		const result = JSON.parse(text) as CommandReply
 		if (!result || typeof result !== 'object' || typeof result.ok !== 'boolean')
 			throw new Error(`${cmd} 返回格式无法确认；不要重复提交`)
-		if (isWrite && !result.ok && (result.error as any)?.cause?.partial === true)
+		const cause = result?.error?.cause
+		if (isWrite && !result.ok && (cause?.partial === true || cause?.outcome === 'start-request-unknown')) {
 			uncertainBoards.set(keyOf(target), cmd)
+			if (cmd === 'pcb.autoRouteStart' && typeof params.__routeOperationId === 'string')
+				uncertainStartOperationByBoard.set(keyOf(target), params.__routeOperationId)
+		}
 		return result
 	}
 	const isWrite = cmd === 'pcb.autoRouteStart' || cmd === 'pcb.autoRouteStop' || cmd === 'pcb.importAutoRouteSes'
@@ -70,8 +82,13 @@ async function command(target: Target, cmd: string, params: Record<string, unkno
 		return await Promise.race([request(), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`等待 ${cmd} 返回超过 ${timeoutMs}ms；该请求可能仍在执行，不能重发`)), timeoutMs) })])
 	}
 	catch (error) {
-		if (isWrite)
+		const cause = (error as any)?.cause
+		const provenNotSent = requestSent === false && cause?.requestSent === false
+		if (isWrite && !provenNotSent) {
 			uncertainBoards.set(keyOf(target), cmd)
+			if (cmd === 'pcb.autoRouteStart' && typeof params.__routeOperationId === 'string')
+				uncertainStartOperationByBoard.set(keyOf(target), params.__routeOperationId)
+		}
 		throw error
 	}
 	finally {
@@ -191,18 +208,45 @@ async function routeStart(): Promise<void> {
 	// lost after FreeRouting accepted the start, so no jobId may reach this menu.
 	const operationId = newRouteOperationId()
 	routeSessions.set(keyOf(target), { unknownStart: true, operationId })
-	const response = await command(target, 'pcb.autoRouteStart', { maxPasses, __routeOperationId: operationId }, 300000)
+	let response: CommandReply
+	try {
+		response = await command(target, 'pcb.autoRouteStart', { maxPasses, __routeOperationId: operationId }, 300000)
+	}
+	catch (error) {
+		const cause = (error as any)?.cause
+		if (cause?.requestSent === false && (cause?.outcome === 'not-started' || cause?.outcome === 'not_started')) {
+			const current = routeSessions.get(keyOf(target))
+			if (current?.operationId === operationId) {
+				if (previous)
+					routeSessions.set(keyOf(target), previous)
+				else
+					routeSessions.delete(keyOf(target))
+			}
+		}
+		throw error
+	}
 	if (!response.ok) {
 		const jobId = typeof response.error?.cause?.jobId === 'string' ? response.error.cause.jobId : undefined
+		const startUnknown = response.error?.cause?.partial === true || response.error?.cause?.outcome === 'start-request-unknown'
 		if (jobId)
 			routeSessions.set(keyOf(target), { jobId, operationId })
-		else if ((response.error as any)?.cause?.outcome === 'start-request-unknown')
+		else if (startUnknown)
 			routeSessions.set(keyOf(target), { unknownStart: true, operationId })
-		else
-			routeSessions.delete(keyOf(target))
+		else {
+			if (previous)
+				routeSessions.set(keyOf(target), previous)
+			else
+				routeSessions.delete(keyOf(target))
+		}
 		throw Object.assign(new Error(response.error?.message ?? '自动布线启动失败'), { cause: response.error?.cause })
 	}
 	const data = response.data
+	if (typeof data?.jobId !== 'string' || !data.jobId.trim()) {
+		routeSessions.set(keyOf(target), { unknownStart: true, operationId })
+		uncertainBoards.set(keyOf(target), 'pcb.autoRouteStart')
+		uncertainStartOperationByBoard.set(keyOf(target), operationId)
+		throw new Error('启动响应缺少有效 jobId；结果未知，请查询状态恢复，不要再次启动')
+	}
 	routeSessions.set(keyOf(target), { jobId: String(data.jobId), operationId, state: 'SUBMITTED' })
 	const warnings = [...(data.dsnConversion?.warnings ?? []), ...(data.dsnConversion?.limitations ?? [])]
 	message(`启动请求已提交，尚未确认 FreeRouting 已开始。\nPCB：${target.name}（${target.uuid}）\n任务 ID：${data.jobId}\n最大迭代数：${maxPasses}\n规则完整性：${data.routingConstraintsComplete ? '完整' : '不完整'}\n线宽比对：${data.widthRuleComparison?.status ?? '未报告'}，未知项 ${data.widthRuleComparison?.unknowns?.length ?? '未报告'}\nDSN提示：${warnings.slice(0, 6).join('\n') || '无'}\n请用“查询自动布线状态…”查看任务；完成后先取回 SES，再显式导入。不会自动导入。`, '自动布线已提交')
@@ -224,8 +268,13 @@ async function routeStatus(): Promise<void> {
 	const data = requireSuccess(await command(target, 'pcb.autoRouteStatus', { ...recoveryParams, ...(session.jobId ? { jobId: session.jobId } : {}) }))
 	if (typeof data.jobId === 'string' && data.jobId) {
 		routeSessions.set(keyOf(target), { ...session, jobId: data.jobId, state: data.state, unknownStart: false })
-		if (['pcb.autoRouteStart', 'pcb.autoRouteStop'].includes(uncertainBoards.get(keyOf(target)) ?? ''))
+		const key = keyOf(target)
+		if (uncertainBoards.get(key) === 'pcb.autoRouteStart' && uncertainStartOperationByBoard.get(key) === session.operationId) {
 			uncertainBoards.delete(keyOf(target))
+			uncertainStartOperationByBoard.delete(key)
+		}
+		else if (uncertainBoards.get(key) === 'pcb.autoRouteStop')
+			uncertainBoards.delete(key)
 	}
 	message(`PCB：${target.name}\n任务：${data.jobId}\n状态：${data.state}${data.stage ? ` / ${data.stage}` : ''}${data.currentPass != null ? `\n迭代：${data.currentPass}` : ''}\n状态查询不读取 SES，也不修改 PCB。${data.state === 'COMPLETED' ? '\n下一步可选择“取回已完成 SES…”。' : ''}`, '自动布线状态')
 }
@@ -241,6 +290,11 @@ async function routeStop(): Promise<void> {
 			throw new Error('状态恢复未返回有效 jobId；没有发送停止请求')
 		session = { ...session, jobId: recovered.jobId, state: recovered.state, unknownStart: false }
 		routeSessions.set(keyOf(target), session)
+		const key = keyOf(target)
+		if (uncertainBoards.get(key) === 'pcb.autoRouteStart' && uncertainStartOperationByBoard.get(key) === session.operationId) {
+			uncertainBoards.delete(key)
+			uncertainStartOperationByBoard.delete(key)
+		}
 	}
 	const accepted = await confirm(`目标 PCB：${target.name}\n任务 ID：${session.jobId}\n确认向 FreeRouting 发送停止请求？`, '停止自动布线', '停止任务')
 	if (!accepted)
