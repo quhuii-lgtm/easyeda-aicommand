@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import { build } from 'esbuild';
 
 const manifest = JSON.parse(await readFile('extension.json', 'utf8'));
-assert.equal(manifest.version, '0.21.2');
+assert.equal(manifest.version, '0.21.6');
 for (const surface of ['home', 'sch', 'pcb']) {
 	const groups = manifest.headerMenus[surface];
 	assert.equal(groups.length, 1, `${surface} keeps a single top-level menu`);

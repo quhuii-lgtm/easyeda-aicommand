@@ -2,7 +2,7 @@ import { getBridgeInstanceId } from '../bridge/client'
 import { getProxyUrl } from '../bridge/proxy-endpoint'
 import { frRequest } from '../bridge/freerouting'
 
-type MenuAction = 'group' | 'route-start' | 'route-status' | 'route-stop' | 'route-fetch' | 'route-import'
+type MenuAction = 'group' | 'mark-regions' | 'locate-region' | 'route-start' | 'route-status' | 'route-stop' | 'route-fetch' | 'route-import'
 type Target = { uuid: string, tabId: string, name: string }
 type CommandReply = { ok: boolean, cmd?: string, data?: any, error?: { message?: string, cause?: any } }
 type RouteSession = { jobId?: string, operationId?: string, ses?: any, unknownStart?: boolean, state?: string }
@@ -29,6 +29,10 @@ function confirm(content: string, title: string, yes: string): Promise<boolean> 
 
 function input(content: string, title: string, value: string, props: { min?: number, max?: number, step?: number, placeholder?: string } = {}): Promise<string | undefined> {
 	return new Promise(resolve => eda.sys_Dialog.showInputDialog(content, '', title, 'number', value, props, (answer: unknown) => resolve(answer == null || answer === '' ? undefined : String(answer))))
+}
+
+function select(options: Array<{ value: string, displayContent: string }>, title: string, defaultOption: string): Promise<string | undefined> {
+	return new Promise(resolve => eda.sys_Dialog.showSelectDialog(options, '', '', title, defaultOption, false, value => resolve(value || undefined)))
 }
 
 async function currentTarget(): Promise<Target> {
@@ -142,6 +146,56 @@ async function groupComponents(): Promise<void> {
 		uncertainBoards.delete(keyOf(target))
 	const result = requireSuccess(await command(target, 'pcb.groupBySchematicRegions', { dryRun: false, expectedMenuPlan: JSON.stringify(plan) }, 300000))
 	message(`分组布局完成：移动 ${result.moved} 个器件，生成组框 ${result.generated?.borders ?? '?'} 个、组名 ${result.generated?.labels ?? '?'} 个。\n回读校验：${result.verify?.ok ? `通过（${result.verify.checked}）` : '未通过'}；保存：${result.saved ? '已保存' : '未确认'}。\n请注意：既有走线没有随器件移动。${result.warning ? `\n${result.warning}` : ''}`, 'PCB 功能区分组结果')
+}
+
+function formatRegionGroups(groups: any[]): string {
+	return groups.map(group => {
+		const members = Array.isArray(group.members) ? group.members : group.designators ?? []
+		const designators = members.map((member: any) => typeof member === 'string' ? member : member?.designator ?? member?.name ?? '?')
+		return `${group.name}（${group.pageName ?? '未命名页'}，${members.length} 个器件）：${designators.join('、') || '无器件'}`
+	}).join('\n') || '未发现功能区'
+}
+
+async function markSchematicRegions(): Promise<void> {
+	const target = await currentTarget()
+	const preview = requireSuccess(await command(target, 'pcb.markSchematicRegions', { dryRun: true }))
+	if (typeof preview.signature !== 'string' || !preview.signature)
+		throw new Error('功能区预览没有有效签名；未执行标记')
+	const groups = Array.isArray(preview.regions) ? preview.regions : []
+	const unmatchedCount = groups.reduce((sum: number, group: any) => sum + (group.unmatched?.length ?? 0), 0)
+	const ambiguousCount = groups.reduce((sum: number, group: any) => sum + (group.ambiguous?.length ?? 0), 0)
+	const accepted = await confirm(
+		`目标 PCB：${target.name}（${target.uuid}）\n功能区：${groups.length}\n${formatRegionGroups(groups)}\n未匹配：${unmatchedCount}；歧义：${ambiguousCount}\n\n确认后仅添加功能区标记/标签，不移动元件。`,
+		'标记 PCB 功能区', '确认并标记')
+	if (!accepted)
+		return
+	const freshTarget = await currentTarget()
+	if (freshTarget.uuid !== target.uuid || freshTarget.tabId !== target.tabId)
+		throw new Error('确认期间 PCB 标签页已变化；拒绝标记功能区')
+	const result = requireSuccess(await command(target, 'pcb.markSchematicRegions', { dryRun: false, expectedSignature: preview.signature }, 300000))
+	message(`功能区：${result.regions?.length ?? groups.length}\n写入标记记录：${result.written ?? 0}\n读回校验：${result.verified ? '通过' : '未通过'}；移动器件：0（此命令不移动器件）\n保存：${result.saved ? '已保存' : result.written === 0 ? '无需保存' : '未确认'}`, 'PCB 功能区标记结果')
+}
+
+async function locateSchematicRegion(): Promise<void> {
+	const target = await currentTarget()
+	const result = requireSuccess(await command(target, 'pcb.getSchematicRegions', {}))
+	const groups = Array.isArray(result.regions) ? result.regions : []
+	if (!groups.length) {
+		message('当前 PCB 没有可定位的原理图功能区。', '定位 PCB 功能区')
+		return
+	}
+	const options = groups.map((group: any) => ({
+		value: String(group.regionId),
+		displayContent: `${group.name}（${group.pageName ?? '未命名页'}，${group.members?.length ?? 0} 个器件）`,
+	}))
+	const regionId = await select(options, '选择要定位的功能区', options[0].value)
+	if (!regionId)
+		return
+	const freshTarget = await currentTarget()
+	if (freshTarget.uuid !== target.uuid || freshTarget.tabId !== target.tabId)
+		throw new Error('选择期间 PCB 标签页已变化；拒绝定位功能区')
+	const located = requireSuccess(await command(target, 'pcb.locateSchematicRegion', { regionId }))
+	message(`功能区：${groups.find((group: any) => String(group.regionId) === regionId)?.name ?? regionId}\n成员：${located.designators?.join('、') ?? '未返回'}\n高亮选择：${located.selectedIds?.length ?? 0} 个；缩放定位：${located.zoomed ? '已完成' : '未确认'}`, '功能区定位结果')
 }
 
 const freeRoutingSetupGuide = 'https://github.com/easyeda/eext-freerouting-intergration#使用方法'
@@ -347,6 +401,8 @@ async function routeImport(): Promise<void> {
 
 const actions: Record<MenuAction, () => Promise<void>> = {
 	group: groupComponents,
+	'mark-regions': markSchematicRegions,
+	'locate-region': locateSchematicRegion,
 	'route-start': routeStart,
 	'route-status': routeStatus,
 	'route-stop': routeStop,

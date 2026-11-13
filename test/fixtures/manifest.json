@@ -381,6 +381,14 @@
       "fixtureSha256": "66d818aa6f3bfa2fb0d181f144f65c78bc4bbc4352eacef97960279a85d529ca",
       "bytes": 14546,
       "method": "copy original module extraction workcard bytes unchanged; test only"
+    },
+    {
+      "fixture": "device-association-effective-projection.json",
+      "source": "device association A/B, typed ATTR and reopened semantic evidence, 2026-11-13",
+      "sourceSha256": "5e30c7c31e1852acf4286e263780306a010ee61314aa3623ed13ef5aa96a5924",
+      "fixtureSha256": "082ca38edbd5d3a41e9186d64ad615f63d33c521c932d041dde066e0f777b635",
+      "bytes": 2701,
+      "method": "extract identity/resource fields from semantic association proof and typed/reopened readbacks; omit runtime envelopes and live source"
     }
   ]
 }

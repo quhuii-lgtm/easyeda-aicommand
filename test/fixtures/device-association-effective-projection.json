@@ -1,0 +1,107 @@
+{
+  "sourceEvidence": [
+    "device-a-semantic-association-proof.json",
+    "device-a-typed-attr-readonly.json",
+    "device-a-reopened-current-readonly.json"
+  ],
+  "projectUuid": "e90358116de54305a699e2e7c365dd39",
+  "pageUuid": "8f5a0251d7c21150",
+  "candidateId": "43de285a3ed557ec",
+  "attrId": "2b22aeef02a6e35f",
+  "deviceUuid": "db984e08830bc4e1",
+  "symbolUuid": "9acd5bd9604bd77c",
+  "footprintUuid": "ceea2c7e9d9be09b",
+  "sourceLibraryUuid": "fbdf14627cad45beaf30d44528a6cb7c",
+  "deviceTitle": "0603WAF1002T5E",
+  "partId": "0603WAF1002T5E.1",
+  "uid": "gge52",
+  "designator": "R3",
+  "reference": {
+    "libraryUuid": "fbdf14627cad45beaf30d44528a6cb7c",
+    "uuid": "db984e08830bc4e1"
+  },
+  "submittedTarget": {
+    "component": {
+      "id": "43de285a3ed557ec",
+      "data": {
+        "partId": "0603WAF1002T5E.1",
+        "attrs": {
+          "DeviceName": "{\"name\":\"0603WAF1002T5E\",\"source\":\"\",\"uuid\":\"db984e08830bc4e1\"}"
+        }
+      }
+    },
+    "attributes": [
+      {
+        "id": "2b22aeef02a6e35f",
+        "data": {
+          "parentId": "43de285a3ed557ec",
+          "key": "Device",
+          "value": "db984e08830bc4e1"
+        }
+      }
+    ]
+  },
+  "actualRawTarget": {
+    "component": {
+      "id": "43de285a3ed557ec",
+      "data": {
+        "partId": "0603WAF1002T5E.1",
+        "attrs": {
+          "DeviceName": "{\"name\":\"0603WAF1002T5E\",\"source\":\"\",\"uuid\":\"db984e08830bc4e1\"}"
+        }
+      }
+    },
+    "attributes": [
+      {
+        "id": "2b22aeef02a6e35f",
+        "data": {
+          "parentId": "43de285a3ed557ec",
+          "key": "Device",
+          "value": ""
+        }
+      }
+    ]
+  },
+  "resourceDocuments": [
+    {
+      "docType": "DEVICE",
+      "uuid": "db984e08830bc4e1",
+      "effectiveRecords": [
+        {
+          "header": {
+            "type": "META",
+            "id": "META"
+          },
+          "data": {
+            "title": "0603WAF1002T5E",
+            "attributes": {
+              "Symbol": "9acd5bd9604bd77c",
+              "Footprint": "ceea2c7e9d9be09b"
+            },
+            "source": "library|fbdf14627cad45beaf30d44528a6cb7c"
+          }
+        }
+      ]
+    },
+    {
+      "docType": "SYMBOL",
+      "uuid": "9acd5bd9604bd77c",
+      "effectiveRecords": [
+        {
+          "header": {
+            "type": "PART",
+            "id": "0603WAF1002T5E.1"
+          },
+          "data": {
+            "title": "0603WAF1002T5E.1"
+          }
+        }
+      ]
+    },
+    {
+      "docType": "FOOTPRINT",
+      "uuid": "ceea2c7e9d9be09b",
+      "effectiveRecords": []
+    }
+  ]
+}

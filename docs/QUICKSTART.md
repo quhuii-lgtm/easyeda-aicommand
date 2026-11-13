@@ -2,9 +2,9 @@
 
 English | [简体中文](QUICKSTART_ZH.md)
 
-Updated for plugin v0.21.2 and complete companion skill 2026.11.12.5. Install the matching proxy and skill before checking the connection.
+Updated for plugin v0.21.6 and complete companion skill 2026.11.13.4. Install the matching proxy and skill before checking the connection.
 
-Open a PCB drawing to see 16 AI Command Engine menu entries. The start page and schematic pages show seven entries. Module reuse is available through the same plugin, menu and proxy.
+Open a PCB drawing to see 18 AI Command Engine menu entries. The start page and schematic pages show seven entries. Module reuse is available through the same plugin, menu and proxy.
 
 ## Ask your AI to set up the connection
 
@@ -13,10 +13,10 @@ Give this request to an AI tool that can access local files and run terminal com
 ```text
 Install and connect AI Command Engine for JLCEDA Pro. Set up the environment and verify a read-only call; do not edit drawings.
 1. Check the OS, Node.js and npm. Node.js >=20.17.0 is required.
-2. Download https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.11.12.5/ai-command-engine-skill_v2026.11.12.5_en-zh.zip and install the complete ai-command-engine folder in this AI tool's skills directory. Preserve personal changes and references. Read SKILL.md and references/setup.md.
+2. Download https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.11.13.4/ai-command-engine-skill_v2026.11.13.4_en-zh.zip and install the complete ai-command-engine folder in this AI tool's skills directory. Preserve personal changes and references. Read SKILL.md and references/setup.md.
 3. Run npm ci --omit=dev in the skill root. On Windows ask the skill to run scripts/start-proxy.ps1 hidden. Do not open a console window or the legacy startup URL.
 4. Let the launcher select an available port in 49720–49729 or reuse a compatible proxy. Keep the actual endpoint it reports. Do not stop unknown processes or change system port settings. Explicit -Port/PORT uses only that port.
-5. Guide me to install the companion .eext from https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.21.2, enable it and allow external interaction in EDA.
+5. Guide me to install the companion .eext from https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.21.6, enable it and allow external interaction in EDA.
 6. Query /health and /connections at the returned endpoint; verify the version/project and call read-only project.getInfo with the intended instanceId. Confirm ok:true. Do not automatically choose the first of multiple windows.
 7. Report the environment, skill version, actual port, plugin instance and read-only result. State missing checks; connection is not drawing acceptance.
 ```
@@ -25,7 +25,7 @@ Install and connect AI Command Engine for JLCEDA Pro. Set up the environment and
 
 Get the complete skill from [skill releases](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases). Install `ai-command-engine/` in your AI tool's skills directory. Keep the entry points, `references/`, `scripts/`, `package.json`, `package-lock.json`, `VERSION`, and `LICENSE` together and reload the skill.
 
-For v2026.11.12.5, download the [English/Chinese ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.11.12.5/ai-command-engine-skill_v2026.11.12.5_en-zh.zip) from its [release page](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.11.12.5).
+For v2026.11.13.4, download the [English/Chinese ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.11.13.4/ai-command-engine-skill_v2026.11.13.4_en-zh.zip) from its [release page](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.11.13.4).
 
 In the skill root, run once:
 
@@ -49,7 +49,7 @@ Newly launched proxy data is stored in `%LOCALAPPDATA%/ai-command-engine`, outsi
 
 ## 3. Install the EDA extension
 
-Get the companion `.eext` from the [v0.21.2 plugin release](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.21.2), import and enable it, and allow external interaction. Plugin and skill are installed separately and use independent versions. The extension discovers proxies in the port range and rediscovers after disconnection.
+Get the companion `.eext` from the [v0.21.6 plugin release](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.21.6), import and enable it, and allow external interaction. Plugin and skill are installed separately and use independent versions. The extension discovers proxies in the port range and rediscovers after disconnection.
 
 The extension connects automatically, including when the proxy starts later. If manually stopped, use Start Bridge to resume. Installing the extension does not install Node.js or the skill.
 

@@ -2,7 +2,7 @@ import { parseReplacementNativeSource, patchReplacementNativeSource } from './co
 import { activateOrOpenReplacementDocument } from './componentReplacementNavigation';
 
 type Json = Record<string, any>;
-type Context = { operationId: string; partIndex?: number; partCount?: number; previousResults: unknown[] };
+type Context = { operationId: string; partIndex?: number; partCount?: number; previousResults: unknown[]; assertActive?: () => void };
 type Part = Json & { pageUuid: string; componentId: string; subPartName: string; newSubPartName: string; native: ReturnType<typeof parseReplacementNativeSource>; source: string; oldTyped: Json; oldDeviceReference: { libraryUuid: string; uuid: string }; oldDeviceDefaults: Json };
 type Prepared = { projectUuid: string; archiveDocuments: Array<{ docType: string; uuid: string }>; replacements: Array<{ input: Json; newDevice: { reference: { libraryUuid: string; uuid: string }; defaults: Json; parts: Array<{ name: string }> }; schematicParts: Part[] }> };
 
@@ -442,6 +442,85 @@ function validateCandidateResourceBinding(projectUuid: string, candidateResult: 
 	if (symbolAttrs.length !== 1 || symbolAttrs[0].data.value !== symbolUuid) throw new Error('SCH候选直属Symbol ATTR缺失、重复或与实际SYMBOL不符');
 	return { effectiveReference, typedReference: { libraryUuid: typedLibrary, uuid: deviceUuid }, sourceLibraryUuid, symbolUuid };
 }
+/** The only accepted raw/typed mismatch is a raw Device ATTR value projected to empty by SCH native serialization. */
+export function projectEffectiveDeviceRawExpected(expected: Json, proof: Json): Json {
+	if (!proof || typeof proof !== 'object' || proof.projection !== 'device-attr-uuid-to-empty'
+		|| typeof proof.candidateId !== 'string' || typeof proof.attrId !== 'string' || typeof proof.pageUuid !== 'string'
+		|| typeof proof.projectUuid !== 'string' || proof.rawUuid !== proof.deviceUuid || proof.actualRawUuid !== '') throw new Error('有效Device关联投影证明无效');
+	const output = JSON.parse(JSON.stringify(expected)) as Json;
+	if (output?.component?.id !== proof.candidateId || !Array.isArray(output.attributes)) throw new Error('有效Device关联投影候选目标不符');
+	const matches = output.attributes.filter((row: any) => row?.id === proof.attrId);
+	const deviceRows = output.attributes.filter((row: any) => row?.data?.key === 'Device' && row?.data?.parentId === proof.candidateId);
+	if (matches.length !== 1 || deviceRows.length !== 1 || deviceRows[0] !== matches[0]
+		|| matches[0].data?.parentId !== proof.candidateId || matches[0].data?.key !== 'Device' || matches[0].data?.value !== proof.deviceUuid)
+		throw new Error('有效Device关联投影未绑定唯一指定的直属Device ATTR');
+	matches[0].data.value = '';
+	return output;
+}
+export function assertEffectiveDeviceRawProjection(input: { expected: Json; actual: Json; submitted: Json; proof: Json; resourceDocuments: any[];
+	projectUuid: string; pageUuid: string; candidateId: string; deviceUuid: string; symbolUuid: string; partId: string }): Json {
+	const proof = input.proof;
+	if (!Array.isArray(input.resourceDocuments) || proof.projection !== 'device-attr-uuid-to-empty' || proof.projectUuid !== input.projectUuid
+		|| proof.pageUuid !== input.pageUuid || proof.candidateId !== input.candidateId || proof.deviceUuid !== input.deviceUuid
+		|| proof.symbolUuid !== input.symbolUuid || proof.rawUuid !== input.deviceUuid || proof.actualRawUuid !== '') throw new Error('有效Device关联证明与当前候选或上下文不符');
+	const submittedRow = input.submitted.attributes?.filter((row: any) => row?.id === proof.attrId) ?? [];
+	if (submittedRow.length !== 1 || submittedRow[0].data?.parentId !== input.candidateId || submittedRow[0].data?.key !== 'Device'
+		|| submittedRow[0].data?.value !== input.deviceUuid) throw new Error('有效Device关联提交目标未包含唯一正确原始UUID');
+	const projected = projectEffectiveDeviceRawExpected(input.expected, proof);
+	if (stable(projected) !== stable(input.actual)) throw new Error('raw Device投影以外的COMPONENT/ATTR变化');
+	const oneDoc = (type: string, uuid: string) => {
+		const docs = input.resourceDocuments.filter(row => row?.docType === type && row.uuid === uuid);
+		if (docs.length !== 1 || !Array.isArray(docs[0].effectiveRecords)) throw new Error(`有效Device关联资源闭包缺失或不唯一：${type}/${uuid}`);
+		return docs[0];
+	};
+	const device = oneDoc('DEVICE', input.deviceUuid), symbol = oneDoc('SYMBOL', input.symbolUuid), footprint = oneDoc('FOOTPRINT', proof.footprintUuid);
+	const metas = device.effectiveRecords.filter((row: any) => row?.header?.type === 'META');
+	if (metas.length !== 1) throw new Error('有效Device关联DEVICE META缺失或不唯一');
+	const attrs = metas[0].data?.attributes ?? metas[0].data?.attrs ?? {};
+	const symbolRef = attrs.Symbol, footprintRef = attrs.Footprint;
+	const uuidOf = (raw: any) => { if (typeof raw !== 'string') return raw?.uuid; try { return JSON.parse(raw)?.uuid ?? raw; } catch { return raw; } };
+	if (uuidOf(symbolRef) !== input.symbolUuid || uuidOf(footprintRef) !== proof.footprintUuid
+		|| !symbol.effectiveRecords.some((row: any) => row?.header?.type === 'PART' && row.header.id === input.partId)) throw new Error('有效Device关联DEVICE/SYMBOL/PART/FOOTPRINT闭包不符');
+	return { projectedExpected: projected, deviceTitle: metas[0].data?.title };
+}
+/** Reads fresh SDK objects; callers must pass the frozen resource closure identities for this candidate. */
+export async function assertFreshEffectiveDeviceAssociation(api: any, proof: Json, resourceDocuments: any[]): Promise<Json> {
+	if (!proof || proof.projection !== 'device-attr-uuid-to-empty' || typeof proof.candidateId !== 'string'
+		|| typeof proof.attrId !== 'string' || typeof proof.deviceUuid !== 'string' || typeof proof.projectUuid !== 'string'
+		|| typeof proof.pageUuid !== 'string' || typeof proof.symbolUuid !== 'string' || typeof proof.footprintUuid !== 'string'
+		|| proof.rawUuid !== proof.deviceUuid || proof.actualRawUuid !== '') throw new Error('fresh typed Device关联证明结构无效');
+	const assertContext = async () => {
+		const project = await api.dmt_Project.getCurrentProjectInfo(), info = await api.dmt_SelectControl.getCurrentDocumentInfo();
+		if (project?.uuid !== proof.projectUuid || info?.uuid !== proof.pageUuid || info?.parentProjectUuid !== proof.projectUuid || info?.documentType !== 1)
+			throw new Error('fresh typed Device关联当前工程/原理图页上下文不符');
+	};
+	await assertContext();
+	if (!Array.isArray(resourceDocuments)) throw new Error('fresh typed Device关联缺少当前资源闭包');
+	const deviceDocs = resourceDocuments.filter((doc: any) => doc?.docType === 'DEVICE' && doc.uuid === proof.deviceUuid);
+	if (deviceDocs.length !== 1 || !Array.isArray(deviceDocs[0].effectiveRecords)) throw new Error('fresh typed Device关联DEVICE资源缺失或不唯一');
+	const metas = deviceDocs[0].effectiveRecords.filter((row: any) => row?.header?.type === 'META');
+	if (metas.length !== 1) throw new Error('fresh typed Device关联DEVICE META缺失或不唯一');
+	const metaData = metas[0].data, metaAttrs = object(metaData?.attributes ?? metaData?.attrs, 'fresh DEVICE META attributes');
+	const sourceParts = (typeof metaData?.source === 'string' ? metaData.source : '').split('|');
+	const sourceOwner = sourceParts.length > 1 && sourceParts.at(-1) ? sourceParts.at(-1) : undefined;
+	const symbolDocs = resourceDocuments.filter((doc: any) => doc?.docType === 'SYMBOL' && doc.uuid === proof.symbolUuid);
+	const footprintDocs = resourceDocuments.filter((doc: any) => doc?.docType === 'FOOTPRINT' && doc.uuid === proof.footprintUuid);
+	const uuidOf = (raw: any) => { if (typeof raw !== 'string') return raw?.uuid; try { return JSON.parse(raw)?.uuid ?? raw; } catch { return raw; } };
+	if (proof.sourceLibraryUuid !== sourceOwner || uuidOf(metaAttrs.Symbol) !== proof.symbolUuid || uuidOf(metaAttrs.Footprint) !== proof.footprintUuid
+		|| symbolDocs.length !== 1 || footprintDocs.length !== 1 || !symbolDocs[0].effectiveRecords?.some((row: any) => row?.header?.type === 'PART' && row.header.id === proof.partId))
+		throw new Error('fresh typed Device关联资源来源库/SYMBOL/PART/FOOTPRINT不符');
+	const attr = await api.sch_PrimitiveAttribute.get(proof.attrId);
+	if (!attr) throw new Error('fresh typed Device ATTR不存在');
+	const typedAttr = { primitiveId: state(attr, 'getState_PrimitiveId'), parentPrimitiveId: state(attr, 'getState_ParentPrimitiveId'), key: state(attr, 'getState_Key'), value: state(attr, 'getState_Value') };
+	if (typedAttr.primitiveId !== proof.attrId || typedAttr.parentPrimitiveId !== proof.candidateId || typedAttr.key !== 'Device' || typedAttr.value !== proof.deviceUuid)
+		throw new Error('fresh typed Device ATTR身份、父级、键或值不符');
+	const component = await api.sch_PrimitiveComponent.get(proof.candidateId);
+	if (!component || state(component, 'getState_PrimitiveId') !== proof.candidateId) throw new Error('fresh SCH候选COMPONENT不存在或ID不符');
+	const reference = object(state(component, 'getState_Component'), 'fresh SCH候选DEVICE引用');
+	if (reference.uuid !== proof.deviceUuid || (reference.libraryUuid !== proof.projectUuid && (!sourceOwner || reference.libraryUuid !== sourceOwner))) throw new Error('fresh SCH候选DEVICE引用与当前资源绑定不符');
+	await assertContext();
+	return { typedAttr, typedReference: { libraryUuid: reference.libraryUuid, uuid: reference.uuid } };
+}
 async function checkPartPins(api: any, projectUuid: string, replacement: Prepared['replacements'][number], part: Part, candidateId: string, candidate: any, candidateResult: Json): Promise<Json> {
 	if (id(state(candidate, 'getState_PrimitiveId'), 'SCH候选PrimitiveId') !== candidateId) throw new Error('SCH候选ID/实际对象绑定不符');
 	const candidateTyped = state(candidate, 'getState_Component');
@@ -556,6 +635,7 @@ function attributeUpdates(part: Part, candidateRecords: Array<{ type: string; id
 
 /** Executes one readback-verified SCH replacement stage. Each mutating stage is single-shot. */
 export async function performSchematicReplacementStage(api: any, prepared: Prepared, replacementIndex: number, stage: string, context: Context): Promise<Json> {
+	context.assertActive?.();
 	const replacement = prepared.replacements[replacementIndex];
 	if (!replacement) throw new Error(`replacement索引无效：${replacementIndex}`);
 	const partIndex = context.partIndex;
@@ -593,10 +673,12 @@ export async function performSchematicReplacementStage(api: any, prepared: Prepa
 		const createEvidence: Json = { stage, replacementIndex, partIndex, oldComponentId: part.componentId, candidateId: null, deviceReference: ref,
 			beforeSource: source, afterCreateSource: null, cleanupClassification: null, cleanupAttempt: null, afterCleanupSource: null, reason: null };
 		try {
+			context.assertActive?.();
 			createEvidence.createAttempted = true;
 			const created = await api.sch_PrimitiveComponent.create(ref, pose.x, pose.y,
 				part.newSubPartName, pose.rotation, pose.mirror,
 				Boolean(state(old, 'getState_AddIntoBom')), Boolean(state(old, 'getState_AddIntoPcb')));
+			context.assertActive?.();
 			if (!created) throw new Error('SCH候选create未返回对象');
 			const candidateId = id(state(created, 'getState_PrimitiveId'), 'SCH候选ID');
 			createEvidence.candidateId = candidateId;
@@ -625,7 +707,7 @@ export async function performSchematicReplacementStage(api: any, prepared: Prepa
 				const wireIds = classification.groups.map(group => group.wireId);
 				createEvidence.cleanupAttempt = { wireIds, acknowledged: null, error: null };
 				let deleteError: unknown;
-				try { createEvidence.cleanupAttempt.acknowledged = await api.sch_PrimitiveWire.delete(wireIds); }
+				try { context.assertActive?.(); createEvidence.cleanupAttempt.acknowledged = await api.sch_PrimitiveWire.delete(wireIds); context.assertActive?.(); }
 				catch (error) { deleteError = error; createEvidence.cleanupAttempt.error = error instanceof Error ? error.message : String(error); }
 				const afterCleanupSource = await api.sys_FileManager.getDocumentSource();
 				createEvidence.afterCleanupSource = typeof afterCleanupSource === 'string' ? afterCleanupSource : null;
@@ -649,7 +731,7 @@ export async function performSchematicReplacementStage(api: any, prepared: Prepa
 			}
 			const businessAttrs = ensureCandidateBusinessAttrs(afterCreateSource, part.pageUuid, part.componentId, candidateId);
 			if (businessAttrs.added.length) {
-				if (await api.sys_FileManager.setDocumentSource(businessAttrs.source) !== true) throw new Error('SCH候选业务关联ATTR新增未确认');
+				context.assertActive?.(); const attrsAck = await api.sys_FileManager.setDocumentSource(businessAttrs.source); context.assertActive?.(); if (attrsAck !== true) throw new Error('SCH候选业务关联ATTR新增未确认');
 				afterCreateSource = await api.sys_FileManager.getDocumentSource();
 				if (typeof afterCreateSource !== 'string') throw new Error('SCH候选业务关联ATTR新增后读回失败');
 				afterCreate = parseReplacementNativeSource(afterCreateSource, part.pageUuid, 'SCH_PAGE');
@@ -694,7 +776,7 @@ export async function performSchematicReplacementStage(api: any, prepared: Prepa
 		if (verified.candidateId !== candidateId || verified.candidateDeviceUuid !== refreshedProof.candidateDeviceReference.uuid
 			|| verified.candidateLibraryUuid !== refreshedProof.candidateDeviceReference.libraryUuid || verified.subPartName !== refreshedProof.subPartName
 			|| stable(verified.mappedPairs) !== stable(refreshedProof.mappedPairs) || stable(verified.pins) !== stable(refreshedProof.pins)) throw new Error('SCH候选在删除前与冻结验证不一致');
-		if (await api.sch_PrimitiveComponent.delete([part.componentId]) !== true) throw new Error('删除旧SCH part未确认');
+		context.assertActive?.(); const deleteAck = await api.sch_PrimitiveComponent.delete([part.componentId]); context.assertActive?.(); if (deleteAck !== true) throw new Error('删除旧SCH part未确认');
 		const afterSource = await api.sys_FileManager.getDocumentSource();
 		if (typeof afterSource !== 'string') throw new Error('删除旧SCH part后源码读回失败');
 		const after = parseReplacementNativeSource(afterSource, part.pageUuid, 'SCH_PAGE');
@@ -704,7 +786,7 @@ export async function performSchematicReplacementStage(api: any, prepared: Prepa
 	if (stage === 'schematic_restore_properties') {
 		stageResult(context.previousResults, 'schematic_delete_old_part', replacementIndex, partIndex!);
 		const expected = mergedProperties(candidate, part, poseFor(replacement, partIndex!, part));
-		if (!await api.sch_PrimitiveComponent.modify(candidateId, expected)) throw new Error('SCH候选完整属性恢复未返回对象');
+		context.assertActive?.(); const modifyAck = await api.sch_PrimitiveComponent.modify(candidateId, expected); context.assertActive?.(); if (!modifyAck) throw new Error('SCH候选完整属性恢复未返回对象');
 		const restored = await api.sch_PrimitiveComponent.get(candidateId);
 		if (!restored) throw new Error('SCH候选完整属性恢复后对象缺失');
 		for (const [key, value] of Object.entries(expected)) if (!equal(state(restored, `getState_${key[0].toUpperCase()}${key.slice(1)}`), value)) throw new Error(`SCH候选属性读回不符：${key}`);
@@ -740,19 +822,20 @@ export async function performSchematicReplacementStage(api: any, prepared: Prepa
 		};
 		try {
 			failureEvidence.failurePosition = 'prewrite-resource-validation';
-			validateCandidateResourceBinding(prepared.projectUuid, candidateResult, state(candidate, 'getState_Component'),
+			const candidateBinding = validateCandidateResourceBinding(prepared.projectUuid, candidateResult, state(candidate, 'getState_Component'),
 				candidateComponentData, candidateAttributes, candidateId, part.newSubPartName);
 			const normalized = normalizeCandidateSchNative({ candidateComponent: { id: candidateId, data: candidateComponentData },
 				candidateAttributes, symbolEffectiveRecords: closure.symbolEffectiveRecords, selectedPartId: part.newSubPartName,
 				deviceMetaAttributes: closure.deviceMetaAttributes,
 				deviceDisplay: { uuid: closure.effectiveReference.uuid, title: closure.deviceTitle } });
 			const wireExpected = normalized.immediateWireExpected, persistedExpected = normalized.persistedExpected;
-			const persistenceModels = predictCandidateSchPersistenceModels({ wireCandidate: wireExpected, resources: {
+			let effectiveWireExpected = wireExpected;
+			let persistenceModels = predictCandidateSchPersistenceModels({ wireCandidate: wireExpected, resources: {
 				symbolEffectiveRecords: closure.symbolEffectiveRecords, selectedPartId: part.newSubPartName,
 				deviceMetaAttributes: closure.deviceMetaAttributes,
 				deviceDisplay: { uuid: closure.effectiveReference.uuid, title: closure.deviceTitle },
 			} });
-			failureEvidence.wireExpected = wireExpected;
+				failureEvidence.wireExpected = wireExpected;
 			failureEvidence.persistedExpected = persistedExpected;
 			failureEvidence.persistenceModels = persistenceModels;
 			failureEvidence.defaultTransitions = normalized.defaultTransitions;
@@ -774,7 +857,7 @@ export async function performSchematicReplacementStage(api: any, prepared: Prepa
 			failureEvidence.failurePosition = 'setDocumentSource';
 			if (patched !== source) {
 				failureEvidence.writeAttempted = true;
-				failureEvidence.writeAck = await api.sys_FileManager.setDocumentSource(patched);
+				context.assertActive?.(); failureEvidence.writeAck = await api.sys_FileManager.setDocumentSource(patched); context.assertActive?.();
 				if (failureEvidence.writeAck !== true) throw new Error('SCH原生关联属性写入未确认');
 			} else failureEvidence.writeAck = 'not-needed-source-unchanged';
 			failureEvidence.failurePosition = 'getDocumentSource';
@@ -782,14 +865,49 @@ export async function performSchematicReplacementStage(api: any, prepared: Prepa
 			failureEvidence.readbackSource = typeof readbackSource === 'string' ? readbackSource : null;
 			if (typeof readbackSource !== 'string') throw new Error('SCH原生关联属性读回失败');
 			const readback = parseReplacementNativeSource(readbackSource, part.pageUuid, 'SCH_PAGE');
+			const targetIds = new Set([candidateId, ...attrRecords(submittedParsed.records, candidateId).map(row => row.id)]);
+			const strictTypedRecords = (rows: typeof submittedParsed.records) => rows.filter(row => row.type === 'COMPONENT' || row.type === 'ATTR')
+				.filter(row => !targetIds.has(row.id)).map(row => ({ type: row.type, id: row.id, header: row.header, data: row.data })).sort((a,b) => `${a.type}\0${a.id}`.localeCompare(`${b.type}\0${b.id}`));
+			if (stable(strictTypedRecords(submittedParsed.records)) !== stable(strictTypedRecords(readback.records))) throw new Error('SCH写入改变候选以外COMPONENT/ATTR数据或headers');
 			failureEvidence.failurePosition = 'readback-COMPONENT';
 			const target = readback.records.filter(row => row.type === 'COMPONENT' && row.id === candidateId);
 			if (target.length !== 1) throw new Error('SCH目标原生COMPONENT读回不唯一');
 			const data = object(target[0].data, 'SCH目标原生COMPONENT');
 			failureEvidence.actualComponent = { id: candidateId, data };
 			failureEvidence.componentDiff = dataDiffPaths(wireExpected.component, { id: candidateId, data });
-			if (stable({ id: candidateId, data }) !== stable(wireExpected.component)) throw new Error('SCH目标COMPONENT完整DATA即时读回不符');
 			const actualTargetAttributes = attrRecords(readback.records, candidateId);
+			let effectiveDeviceAssociation: Json | undefined;
+			const rawDeviceRows = candidateAttributes.filter(row => row.data.key === 'Device' && row.data.parentId === candidateId);
+			const readbackDeviceRows = attrRecords(readback.records, candidateId).filter(row => row.data.key === 'Device' && row.data.parentId === candidateId);
+			if (rawDeviceRows.length === 1 && readbackDeviceRows.length === 1 && rawDeviceRows[0].data.value === closure.effectiveReference.uuid
+				&& readbackDeviceRows[0].id === rawDeviceRows[0].id && readbackDeviceRows[0].data.value === '') {
+				const deviceMetaAttrs = closure.deviceMetaAttributes;
+				const footprintRaw = deviceMetaAttrs.Footprint;
+				let footprintRef: any = footprintRaw;
+				if (typeof footprintRef === 'string') { try { footprintRef = JSON.parse(footprintRef); } catch { footprintRef = { uuid: footprintRef }; } }
+				const footprintUuid = typeof footprintRef?.uuid === 'string' ? footprintRef.uuid : typeof footprintRef === 'string' ? footprintRef : '';
+				if (!footprintUuid || !candidateResult.resourceDocuments.some((doc: any) => doc?.docType === 'FOOTPRINT' && doc.uuid === footprintUuid)) throw new Error('effective Device关联证明缺少确切FOOTPRINT资源闭包');
+				const candidateProof: Json = { projection: 'device-attr-uuid-to-empty', candidateId, attrId: rawDeviceRows[0].id, pageUuid: part.pageUuid, partId: part.newSubPartName,
+					projectUuid: prepared.projectUuid, sourceLibraryUuid: candidateBinding.sourceLibraryUuid, deviceUuid: closure.effectiveReference.uuid,
+					symbolUuid: closure.symbolUuid, footprintUuid, rawUuid: rawDeviceRows[0].data.value, actualRawUuid: '',
+					submittedRawUuid: ((failureEvidence.submittedTarget as Json)?.attributes ?? []).find((row: any) => row.id === rawDeviceRows[0].id)?.data?.value };
+				if (candidateProof.submittedRawUuid !== closure.effectiveReference.uuid) throw new Error('有效Device关联提交前原始UUID不符');
+				const actualProjectionTarget = { component: { id: candidateId, data }, attributes: actualTargetAttributes };
+				const projectionValidation = assertEffectiveDeviceRawProjection({ expected: wireExpected, actual: actualProjectionTarget,
+					submitted: failureEvidence.submittedTarget as Json, proof: candidateProof, resourceDocuments: candidateResult.resourceDocuments,
+					projectUuid: prepared.projectUuid, pageUuid: part.pageUuid, candidateId, deviceUuid: closure.effectiveReference.uuid,
+					symbolUuid: closure.symbolUuid, partId: part.newSubPartName });
+				const projectedExpected = projectionValidation.projectedExpected;
+				const fresh = await assertFreshEffectiveDeviceAssociation(api, candidateProof, candidateResult.resourceDocuments);
+			Object.assign(candidateProof, fresh);
+			effectiveDeviceAssociation = candidateProof;
+			effectiveWireExpected = projectedExpected;
+			persistenceModels = predictCandidateSchPersistenceModels({ wireCandidate: effectiveWireExpected, resources: {
+				symbolEffectiveRecords: closure.symbolEffectiveRecords, selectedPartId: part.newSubPartName,
+				deviceMetaAttributes: closure.deviceMetaAttributes,
+				deviceDisplay: { uuid: closure.effectiveReference.uuid, title: closure.deviceTitle },
+			} });
+			} else if (stable({ id: candidateId, data }) !== stable(wireExpected.component)) throw new Error('SCH目标COMPONENT完整DATA即时读回不符');
 			failureEvidence.failurePosition = 'readback-ATTR';
 			failureEvidence.actualAttributes = actualTargetAttributes;
 			failureEvidence.attributeDiff = dataDiffPaths(wireExpected.attributes, actualTargetAttributes);
@@ -800,7 +918,12 @@ export async function performSchematicReplacementStage(api: any, prepared: Prepa
 			};
 			failureEvidence.readbackHeaders = actualHeaders;
 			failureEvidence.headerDiff = dataDiffPaths(expectedHeaders, actualHeaders);
-			if (stable(actualTargetAttributes) !== stable(wireExpected.attributes)) throw new Error('SCH目标全部直属ATTR DATA即时读回不符');
+			if (effectiveDeviceAssociation) {
+				const submittedHeaders = { component: submittedComponents[0].header,
+					attributes: submittedParsed.records.filter(row => row.type === 'ATTR' && (row.data as Json)?.parentId === candidateId).map(row => ({ id: row.id, header: row.header })) };
+				if (stable(submittedHeaders) !== stable(actualHeaders)) throw new Error('raw Device投影路径的目标COMPONENT/ATTR headers与提交不符');
+			}
+			if (stable(actualTargetAttributes) !== stable(effectiveWireExpected.attributes)) throw new Error('SCH目标全部直属ATTR DATA即时读回不符');
 			const oldAssociations = attrRecords(part.native.records, part.componentId).filter(row => ['Reuse Block','Group ID','Channel ID','Multi-Part Group'].includes(String(row.data.key)));
 			const newAssociations = actualTargetAttributes.filter(row => ['Reuse Block','Group ID','Channel ID','Multi-Part Group'].includes(String(row.data.key)));
 			for (const key of ['Reuse Block','Group ID','Channel ID','Multi-Part Group']) {
@@ -819,7 +942,8 @@ export async function performSchematicReplacementStage(api: any, prepared: Prepa
 					orderedChildrenProof: normalized.orderedChildrenProof, componentPatch: normalized.componentPatch,
 					attributePatches: normalized.attributePatches, defaultTransitions: normalized.defaultTransitions,
 					inputWireTransitions: normalized.inputWireTransitions, deviceNameProof: normalized.deviceNameProof,
-					submittedTarget: failureEvidence.submittedTarget, immediateWireExpected: wireExpected, persistedExpected, persistenceModels },
+					submittedTarget: failureEvidence.submittedTarget, immediateWireExpected: wireExpected,
+					...(effectiveDeviceAssociation ? { effectiveDeviceAssociation, effectiveWireExpected } : {}), persistedExpected, persistenceModels },
 				preservedOldAssociation: oldAssociations.map((row, occurrence) => ({ key: row.data.key, occurrence, value: row.data.value })) };
 		} catch (error) {
 			failureEvidence.reason = error instanceof Error ? error.message : String(error);

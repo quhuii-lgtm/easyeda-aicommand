@@ -52,7 +52,7 @@ export type ReplacementHost<Prepared = unknown> = {
 	/** Each stage is one write boundary; implementations must return only after readback. */
 	performStage: (prepared: Prepared, replacementIndex: number, stage: ReplacementStage, context: ReplacementStageContext) => Promise<unknown>;
 	/** Save, close, verify tab absence, reopen, and read back; a failure is an unknown write outcome. */
-	saveCloseReopen: (prepared: Prepared, priorResults: unknown[]) => Promise<unknown>;
+	saveCloseReopen: (prepared: Prepared, priorResults: unknown[], context?: Pick<ReplacementStageContext, 'assertActive'>) => Promise<unknown>;
 	verifyFinal: (prepared: Prepared, priorResults: unknown[]) => Promise<unknown>;
 };
 
@@ -62,6 +62,7 @@ export type ReplacementStage = 'pcb_create_candidate' | 'pcb_verify_candidate' |
 	| 'schematic_restore_association';
 export type ReplacementStageContext = {
 	operationId: string;
+	assertActive?: () => void;
 	partIndex?: number;
 	partCount?: number;
 	previousResults: unknown[];
@@ -197,7 +198,7 @@ export function createComponentReplacementService<Prepared>(host: ReplacementHos
 				error: '持久记录仍为运行中，但当前服务没有对应执行；需先核实现场，不会重放写入' };
 		return record;
 	}
-	function executeReplacement(raw: unknown): Promise<ReplacementOperation> {
+	function executeReplacement(raw: unknown, stopSignal?: { assertActive(): void }): Promise<ReplacementOperation> {
 		if (!object(raw)) fail('换件执行参数必须是对象');
 		const planId = requireId(raw.planId, 'planId'), operationId = requireId(raw.operationId, 'operationId');
 		const active = inFlight.get(operationId);
@@ -205,11 +206,11 @@ export function createComponentReplacementService<Prepared>(host: ReplacementHos
 			if (active.planId !== planId) fail('operationId 已并发用于不同换件计划');
 			return active.promise;
 		}
-		const promise = executeReplacementOnce(planId, operationId);
+		const promise = executeReplacementOnce(planId, operationId, stopSignal);
 		inFlight.set(operationId, { planId, promise });
 		return promise.finally(() => { if (inFlight.get(operationId)?.promise === promise) inFlight.delete(operationId); });
 	}
-	async function executeReplacementOnce(planId: string, operationId: string): Promise<ReplacementOperation> {
+	async function executeReplacementOnce(planId: string, operationId: string, stopSignal?: { assertActive(): void }): Promise<ReplacementOperation> {
 		const plan = await host.readPlan(planId);
 		if (!plan || plan.schema !== 1 || plan.planId !== planId || !object(plan.prepared)) fail('换件计划不存在或结构无效');
 		deepFreeze(plan);
@@ -229,13 +230,17 @@ export function createComponentReplacementService<Prepared>(host: ReplacementHos
 		const results: unknown[] = operation.stageResults.map(item => item.result);
 		let currentStageMayHaveWritten = false;
 		const run = async (replacementIndex: number, stage: ReplacementStage, context: ReplacementStageContext = { operationId, previousResults: results }) => {
+			stopSignal?.assertActive();
 			await host.assertPlanStillCurrent(plan);
+			stopSignal?.assertActive();
 			const phase = `${replacementIndex}:${stage}${context.partIndex === undefined ? '' : `:${context.partIndex}`}`;
-			const stageContext = { ...context, previousResults: deepFreeze(jsonClone(results)) };
+			const stageContext = { ...context, assertActive: stopSignal?.assertActive, previousResults: deepFreeze(jsonClone(results)) };
 			currentStageMayHaveWritten = isWriteStage(stage);
 			await persist(operation, { status: 'running', phase, writeAttempted: currentStageMayHaveWritten });
+			stopSignal?.assertActive();
 			try {
 				const result = await host.performStage(plan.prepared as Prepared, replacementIndex, stage, stageContext);
+				stopSignal?.assertActive();
 				// Stage results are operation evidence, so store a JSON snapshot rather than a live SDK object.
 				const resultSnapshot = result === undefined ? null : jsonClone(result);
 				results.push(resultSnapshot);
@@ -267,11 +272,15 @@ export function createComponentReplacementService<Prepared>(host: ReplacementHos
 						await run(index, stage, { operationId, partIndex, partCount: parts.length, previousResults: results });
 				}
 			}
+			stopSignal?.assertActive();
 			await host.assertPlanStillCurrent(plan);
+			stopSignal?.assertActive();
 			const finalPhase = 'save_close_reopen';
 			await persist(operation, { status: 'running', phase: finalPhase, writeAttempted: true });
 			try {
-				const closeReadback = await host.saveCloseReopen(plan.prepared as Prepared, deepFreeze(jsonClone(results)));
+				stopSignal?.assertActive();
+				const closeReadback = await host.saveCloseReopen(plan.prepared as Prepared, deepFreeze(jsonClone(results)), { assertActive: stopSignal?.assertActive });
+				stopSignal?.assertActive();
 				const snapshot = closeReadback === undefined ? null : jsonClone(closeReadback);
 				results.push(snapshot);
 				await persist(operation, { writeAttempted: false, completed: [...operation.completed, finalPhase],
@@ -284,13 +293,18 @@ export function createComponentReplacementService<Prepared>(host: ReplacementHos
 				throw error;
 			}
 			await host.assertPlanStillCurrent(plan);
+			stopSignal?.assertActive();
 			const result = await host.verifyFinal(plan.prepared as Prepared, deepFreeze(jsonClone(results)));
+			stopSignal?.assertActive();
 			finalDesignVerified = true;
 			const resultSnapshot = finalVerificationResult = jsonClone(result);
 			await persist(operation, { phase: 'verified', writeAttempted: false, designVerified: true, operationRecordConfirmed: false, result: resultSnapshot });
+			stopSignal?.assertActive();
 			try {
-				return await persist(operation, { status: 'confirmed', phase: 'verified', writeAttempted: false,
+				const confirmed = await persist(operation, { status: 'confirmed', phase: 'verified', writeAttempted: false,
 					designVerified: true, operationRecordConfirmed: true, result: resultSnapshot });
+				stopSignal?.assertActive();
+				return confirmed;
 			} catch (error) {
 				const confirmationError = `设计已通过重开读回；操作确认记录未能读回：${error instanceof Error ? error.message : String(error)}`;
 				try {

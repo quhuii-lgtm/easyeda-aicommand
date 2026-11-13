@@ -335,9 +335,12 @@ export function createLocalLibrary(rootDirectory) {
 				}
 
 				const realRoot = await realpath(rootPath);
-				const parentDirectory = dirname(targetDirectory);
+				// Keep every path passed to the containment checks under the same
+				// canonical root. rootPath may be a user-selected symlink or junction.
+				const realTargetDirectory = join(realRoot, relative(rootPath, targetDirectory));
+				const parentDirectory = dirname(realTargetDirectory);
 				await ensureDirectoryChain(realRoot, parentDirectory);
-				const stagingDirectory = `${targetDirectory}.staging-${randomUUID()}`;
+				const stagingDirectory = `${realTargetDirectory}.staging-${randomUUID()}`;
 				await ensureDirectoryChain(realRoot, join(stagingDirectory, 'files'));
 				for (const file of files) {
 					const destination = assertWithin(join(stagingDirectory, 'files'), resolve(stagingDirectory, 'files', ...file.relativePath.split('/')), 'stored file');
@@ -349,7 +352,7 @@ export function createLocalLibrary(rootDirectory) {
 						throw new LocalLibraryIntegrityError(`copied file does not match its source: ${file.relativePath}`);
 				}
 				await writeFile(join(stagingDirectory, MANIFEST_FILE), `${JSON.stringify(entry, null, 2)}\n`, { flag: 'wx' });
-				await rename(stagingDirectory, targetDirectory);
+				await rename(stagingDirectory, realTargetDirectory);
 				try {
 					await writeCatalog({ ...catalog, modules: [...catalog.modules, entry] });
 				}

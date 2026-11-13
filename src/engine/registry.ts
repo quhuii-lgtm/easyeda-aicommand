@@ -98,15 +98,18 @@ function withFuse<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
  * 心跳感知熔断（0.10.65）：与 withFuse 的区别是每次心跳（onArm 拿到的 reset 回调）重设计时窗口，
  * 只有「超过 ms 无任何心跳」才拒绝。不上报心跳的指令退化为绝对时长熔断（与 withFuse 等价）。
  */
-function withHeartbeatFuse<T>(p: Promise<T>, ms: number, label: string, onArm: (reset: () => void) => void, resetMs = ms): Promise<T> {
+function withHeartbeatFuse<T>(p: Promise<T>, ms: number, label: string, onArm: (reset: () => void) => void, resetMs = ms, stopSignal?: ICommandContext['stopSignal']): Promise<T> {
 	return new Promise<T>((resolve, reject) => {
 		// 0.10.73：熔断杀死的拒绝带 partial 标记（经 cause 透传到 error 对象）——代理侧据此区分
 		// "包装层超时返回"与"指令真实完成"，只有后者才允许解除写保护（KIMI-EDA-20261006-04 P1-3）
 		const fuseError = () => new Error(label, { cause: { partial: true, source: 'heartbeat-fuse' } })
-		let timer = setTimeout(() => reject(fuseError()), ms)
+		let tripped = false
+		const trip = () => { if (tripped) return; tripped = true; stopSignal?.stop(`heartbeat-fuse:${ms}ms`); reject(fuseError()) }
+		let timer = setTimeout(trip, ms)
 		onArm(() => {
+			if (tripped) return
 			clearTimeout(timer)
-			timer = setTimeout(() => reject(fuseError()), resetMs)
+			timer = setTimeout(trip, resetMs)
 		})
 		p.then(v => { clearTimeout(timer); resolve(v) }, e => { clearTimeout(timer); reject(e) })
 	})
@@ -177,8 +180,17 @@ export async function executeCommand(req: ICommandRequest, ctx?: ICommandContext
 	if (!cmd || typeof cmd !== 'string')
 		return errorResult(String(cmd), new Error('缺少 cmd 字段'), '请求格式为 { cmd: string, params?: object }')
 
+	let localStopReason: string | undefined
+	const stopSignal = {
+		stop(reason: string) { if (!localStopReason) { localStopReason = reason; ctx?.stopSignal?.stop(reason); } },
+		assertActive() {
+			if (localStopReason) throw new Error(`指令已停止后续写入：${localStopReason}`, { cause: { partial: true, source: 'command-stop-signal' } });
+			ctx?.stopSignal?.assertActive();
+		},
+	}
+	const context: ICommandContext = { ...(ctx ?? { vars: {} }), stopSignal }
 	if (cmd === 'macro')
-		return executeMacro(req.params ?? {}, ctx)
+		return executeMacro(req.params ?? {}, context)
 
 	const def = registry.get(cmd)
 	if (!def) {
@@ -189,7 +201,6 @@ export async function executeCommand(req: ICommandRequest, ctx?: ICommandContext
 		)
 	}
 
-	const context = ctx ?? { vars: {} }
 	try {
 		const params = resolveRefs(req.params ?? {}, context)
 		// Native timers overflow above the signed 32-bit range; reject before any SDK or handler starts.
@@ -269,6 +280,7 @@ export async function executeCommand(req: ICommandRequest, ctx?: ICommandContext
 				}
 				if (context.onProgress) {
 					resetFuse()
+					context.stopSignal?.assertActive()
 					context.onProgress(patch)
 				}
 			}
@@ -283,6 +295,7 @@ export async function executeCommand(req: ICommandRequest, ctx?: ICommandContext
 					`指令 ${cmd} 执行超时（${handlerFuseMs}ms 无进度心跳）——官方调用可能仍在后台执行，重发前先用只读指令确认现场`,
 					(r) => { resetFuse = r },
 					fuseMs,
+					context.stopSignal,
 				)
 			}
 			catch (error) {
@@ -336,7 +349,7 @@ async function executeMacro(
 		} as TCommandResult
 	}
 	// onProgress 必须穿透给子指令（batchWire/delete 等长指令才有心跳通道）
-	const ctx: ICommandContext = { vars: { ...(parentCtx?.vars ?? {}) }, onProgress: parentCtx?.onProgress }
+	const ctx: ICommandContext = { vars: { ...(parentCtx?.vars ?? {}) }, onProgress: parentCtx?.onProgress, stopSignal: parentCtx?.stopSignal }
 	const results: Array<TCommandResult> = []
 
 	for (const [index, step] of steps.entries()) {

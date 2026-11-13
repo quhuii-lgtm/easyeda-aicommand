@@ -35,6 +35,8 @@ export type TCommandResult<T = any> = ICommandSuccess<T> | ICommandFailure
 /** 宏指令执行上下文：存放各步骤输出，供 `$stepId.path` 引用 */
 export interface ICommandContext {
 	vars: Record<string, any>
+	/** Latched stop signal for commands with dependent host writes. It cannot cancel an SDK call already dispatched. */
+	stopSignal?: { stop(reason: string): void; assertActive(): void }
 	/**
 	 * 0.10.49：进度心跳上报通道（桥层注入）。长指令（批量删除/batchWire/macro）处理过程中
 	 * 周期性调用，桥层转成 { type:'progress', id } 消息发给代理，代理重置该指令的超时计时器。

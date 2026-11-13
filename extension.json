@@ -3,7 +3,7 @@
   "uuid": "29aa51f0bed4411d866cb7a7a249231a",
   "displayName": "AI 指令引擎",
   "description": "AI 指令引擎：为 AI 编程工具提供简易 JSON 指令接口，内部封装嘉立创 EDA 专业版扩展 API，支持宏指令组合与布线知识库",
-  "version": "0.21.2",
+  "version": "0.21.6",
   "publisher": "ai-command-engine",
   "engines": {
     "eda": "^3.2.0"
@@ -170,8 +170,18 @@
             "registerFn": "padSpacingMenu"
           },
           {
+            "id": "PcbMarkSchematicRegions",
+            "title": "标记功能区（不移动元件）…",
+            "registerFn": "pcbMarkSchematicRegionsMenu"
+          },
+          {
+            "id": "PcbLocateSchematicRegion",
+            "title": "定位／高亮功能区…",
+            "registerFn": "pcbLocateSchematicRegionMenu"
+          },
+          {
             "id": "PcbGroupByRegions",
-            "title": "按原理图功能区分组…",
+            "title": "按原理图功能区分组（移动元件）…",
             "registerFn": "pcbGroupBySchematicRegionsMenu"
           },
           {

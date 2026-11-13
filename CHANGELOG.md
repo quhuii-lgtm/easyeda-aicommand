@@ -1,5 +1,9 @@
 # Change log
 
+## 0.21.6
+
+- Device replacement now verifies the effective Device association, including inherited association data. This release also includes replacement stop protection, unknown-result replay handling, routing-layer continuity checks and linked module-library root support developed after v0.21.2.
+
 ## 0.21.2
 
 - Module reuse is integrated into AI Command Engine with 27 module.* commands. The release includes extraction, library management, restoration, PCB composition and component replacement interfaces, plus the follow-up routing-state fixes from v0.21.1. Query the connected instance’s help and follow the module-reuse guide before using a command.

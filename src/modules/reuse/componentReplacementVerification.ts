@@ -3,7 +3,7 @@ import { createNativeInspector } from './native-analysis/inspector-core.mjs';
 import type { PreparedReplacement } from './componentReplacementHost';
 import type { ReplacementStage, ReplacementStageContext } from './componentReplacement';
 import { assertReplacementComponentIdentity, parseReplacementNativeSource, type ReplacementNativeRecord } from './componentReplacementNative';
-import { predictCandidateSchPersistenceModels } from './componentReplacementSchematic';
+import { assertFreshEffectiveDeviceAssociation, predictCandidateSchPersistenceModels, projectEffectiveDeviceRawExpected } from './componentReplacementSchematic';
 import { activateOrOpenReplacementDocument } from './componentReplacementNavigation';
 
 type ObjectValue = Record<string, any>;
@@ -179,7 +179,7 @@ function applyDefaultTransitions(expected:NativeTargetExpected,transitions:unkno
 	}
 	return output;
 }
-function assertSubmittedWireProof(submitted:unknown,wire:unknown,inputTransitions:unknown,defaultTransitions:unknown,deviceNameProof:unknown,candidateId:string,deviceTitle:unknown,deviceUuid:string):void{
+export function assertSubmittedWireProof(submitted:unknown,wire:unknown,inputTransitions:unknown,defaultTransitions:unknown,deviceNameProof:unknown,candidateId:string,deviceTitle:unknown,deviceUuid:string,effectiveDeviceAssociation?:ObjectValue):void{
 	const submittedTarget=submitted as NativeTargetExpected,wireTarget=wire as NativeTargetExpected;
 	assertNativeTargetExpected(submittedTarget,submitted,candidateId,'已提交');
 	assertNativeTargetExpected(wireTarget,wire,candidateId,'wire');
@@ -201,7 +201,16 @@ function assertSubmittedWireProof(submitted:unknown,wire:unknown,inputTransition
 			delete attr.data.strikeout;
 		}
 	}
-	if(stable(output)!==stable(wireTarget))throw new Error('已提交候选与实际wire差异超出DeviceName/声明输入迁移');
+	let expectedWire=output;
+	if(effectiveDeviceAssociation){
+		if(effectiveDeviceAssociation.candidateId!==candidateId||effectiveDeviceAssociation.deviceUuid!==deviceUuid)throw new Error('有效Device关联证明与候选/DEVICE不符');
+		const typedAttr=effectiveDeviceAssociation.typedAttr,typedReference=effectiveDeviceAssociation.typedReference;
+		if(!typedAttr||typedAttr.primitiveId!==effectiveDeviceAssociation.attrId||typedAttr.parentPrimitiveId!==candidateId||typedAttr.key!=='Device'||typedAttr.value!==deviceUuid
+			||!typedReference||typedReference.uuid!==deviceUuid||(typedReference.libraryUuid!==undefined&&typedReference.libraryUuid!==null&&typedReference.libraryUuid!==''
+				&&typedReference.libraryUuid!==effectiveDeviceAssociation.projectUuid&&typedReference.libraryUuid!==effectiveDeviceAssociation.sourceLibraryUuid))throw new Error('有效Device关联缺少即时fresh typed属性/引用证明');
+		expectedWire=projectEffectiveDeviceRawExpected(output,effectiveDeviceAssociation) as NativeTargetExpected;
+	}
+	if(stable(expectedWire)!==stable(wireTarget))throw new Error('已提交候选与实际wire差异超出DeviceName/声明输入迁移');
 	if(!deviceNameProof||typeof deviceNameProof!=='object'||Array.isArray(deviceNameProof))throw new Error('DeviceName规范化证明无效');
 	const nameProof=deviceNameProof as ObjectValue;
 	if(nameProof.deviceUuid!==deviceUuid||typeof deviceTitle!=='string'||nameProof.title!==deviceTitle||nameProof.source!==''
@@ -358,13 +367,14 @@ export function createReplacementVerification(api: typeof eda = eda) {
 			if(ticketReindexProofs.length&&output&&typeof output==='object')output.ticketReindexProofs=ticketReindexProofs;
 			accepted=after;
 		},
-		async saveCloseReopen(prepared: PreparedReplacement, prior: unknown[]): Promise<CloseReadback> {
+		async saveCloseReopen(prepared: PreparedReplacement, prior: unknown[], context?: { assertActive?: () => void }): Promise<CloseReadback> {
 			selectPrepared(prepared);
 			const before: DocumentSnapshot[] = [], after: DocumentSnapshot[] = [], closedTabIds: string[] = [], closeAcknowledgements:CloseAcknowledgement[]=[];
-			const closeTreePolls:CloseTreePoll[]=[], targetTabIds:string[]=[],candidateDefaultPersistenceProofs:ObjectValue[]=[],expectedRowsByPage=new Map<string,ReplacementNativeRecord[]>(),persistenceChoicesByPage=new Map<string,Array<{candidateId:string;models:SchPersistenceModel[];beforeRows:ReplacementNativeRecord[];beforeMode:'immediate-wire'|'already-persisted';lockedModel?:SchPersistenceModel;proof:ObjectValue;output:ObjectValue}>>();
+			const closeTreePolls:CloseTreePoll[]=[], targetTabIds:string[]=[],candidateDefaultPersistenceProofs:ObjectValue[]=[],expectedRowsByPage=new Map<string,ReplacementNativeRecord[]>(),persistenceChoicesByPage=new Map<string,Array<{candidateId:string;models:SchPersistenceModel[];beforeRows:ReplacementNativeRecord[];beforeMode:'immediate-wire'|'already-persisted';lockedModel?:SchPersistenceModel;proof:ObjectValue;output:ObjectValue;resourceDocuments:any[]}>>();
 			let failedDocument:ObjectValue|undefined;
 			const closeEvidence=()=>({targetTabIds:[...targetTabIds],before:[...before],after:[...after],closeAcknowledgements:[...closeAcknowledgements],closeTreePolls:[...closeTreePolls],candidateDefaultPersistenceProofs:[...candidateDefaultPersistenceProofs],failedDocument:failedDocument?{...failedDocument}:null});
 			for (const doc of documentList(prepared)) {
+				context?.assertActive?.();
 				let info:Awaited<ReturnType<typeof activate>>;
 				try{info=await activate(prepared,doc);}catch(error){failedDocument={uuid:doc.uuid,type:doc.type,stage:'activate-before-save',error:error instanceof Error?error.message:String(error)};throw new CloseVerificationError(`保存前激活文档失败：${doc.uuid}`,closeEvidence());}
 				let snapshot:DocumentSnapshot;
@@ -397,21 +407,35 @@ export function createReplacementVerification(api: typeof eda = eda) {
 							const metas=deviceDocs[0].effectiveRecords?.filter((row:any)=>row.header?.type==='META')??[];
 							if(metas.length!==1)throw new Error('SCH默认持久化证明 DEVICE META 不唯一');
 							const metaAttrs=metas[0].data?.attributes??metas[0].data?.attrs??{};
+							const sourceParts=(typeof metas[0].data?.source==='string'?metas[0].data.source:'').split('|');
+							const sourceOwner=sourceParts.length>1&&sourceParts.at(-1)?sourceParts.at(-1):undefined;
 							if(typeof metaAttrs.Symbol!=='string'||metaAttrs.Symbol!==proof.symbolUuid)throw new Error('SCH默认持久化证明 SYMBOL 与 DEVICE META 不符');
 							const symbolDocs=docs.filter((resource:any)=>resource.docType==='SYMBOL'&&resource.uuid===proof.symbolUuid);
 							if(symbolDocs.length!==1||!symbolDocs[0].effectiveRecords?.some((row:any)=>row.header?.type==='PART'&&row.header.id===proof.partId))throw new Error('SCH默认持久化证明未绑定实际 SYMBOL/PART');
+							if(proof.effectiveDeviceAssociation){
+								const association=proof.effectiveDeviceAssociation;
+								if(association.pageUuid!==doc.uuid||association.projectUuid!==prepared.projectUuid||association.candidateId!==proof.candidateId
+									||association.deviceUuid!==deviceUuid||association.symbolUuid!==proof.symbolUuid||association.rawUuid!==deviceUuid||association.actualRawUuid!==''
+									||association.sourceLibraryUuid!==sourceOwner)throw new Error('有效Device关联证明未绑定当前页面/工程/候选/资源或来源库');
+								const footprintDocs=docs.filter((resource:any)=>resource.docType==='FOOTPRINT'&&resource.uuid===association.footprintUuid);
+								const footprintRef=metaAttrs.Footprint;
+								let parsedFootprint:any=footprintRef;if(typeof parsedFootprint==='string'){try{parsedFootprint=JSON.parse(parsedFootprint)}catch{parsedFootprint={uuid:parsedFootprint}}}
+								if(typeof association.attrId!=='string'||typeof association.footprintUuid!=='string'||footprintDocs.length!==1
+									||(typeof parsedFootprint?.uuid==='string'?parsedFootprint.uuid:parsedFootprint)!==association.footprintUuid)throw new Error('有效Device关联证明缺少DEVICE META指定的唯一FOOTPRINT资源');
+							}
 							if(typeof proof.deviceUuid!=='string'||typeof proof.symbolUuid!=='string')throw new Error('SCH默认持久化证明资源 UUID 无效');
 							const hasSubmittedWireProof=['submittedTarget','inputWireTransitions','deviceNameProof'].some(key=>Object.hasOwn(proof,key));
-							if(hasSubmittedWireProof)assertSubmittedWireProof(proof.submittedTarget,proof.immediateWireExpected,proof.inputWireTransitions,proof.defaultTransitions,proof.deviceNameProof,String(proof.candidateId),metas[0].data?.title,deviceUuid);
+							if(hasSubmittedWireProof)assertSubmittedWireProof(proof.submittedTarget,proof.effectiveWireExpected??proof.immediateWireExpected,proof.inputWireTransitions,proof.defaultTransitions,proof.deviceNameProof,String(proof.candidateId),metas[0].data?.title,deviceUuid,proof.effectiveDeviceAssociation);
 							if(Object.hasOwn(proof,'persistenceModels')){
 								assertNativeTargetExpected(proof.immediateWireExpected as NativeTargetExpected,proof.immediateWireExpected,String(proof.candidateId),'两模型wire输入');
-								computedModels=predictCandidateSchPersistenceModels({wireCandidate:proof.immediateWireExpected as NativeTargetExpected,resources:{symbolEffectiveRecords:symbolDocs[0].effectiveRecords,selectedPartId:String(proof.partId),deviceMetaAttributes:metaAttrs,deviceDisplay:{uuid:deviceUuid,title:String(metas[0].data?.title)}}}) as SchPersistenceModel[];
+								computedModels=predictCandidateSchPersistenceModels({wireCandidate:(proof.effectiveWireExpected??proof.immediateWireExpected) as NativeTargetExpected,resources:{symbolEffectiveRecords:symbolDocs[0].effectiveRecords,selectedPartId:String(proof.partId),deviceMetaAttributes:metaAttrs,deviceDisplay:{uuid:deviceUuid,title:String(metas[0].data?.title)}}}) as SchPersistenceModel[];
 								if(computedModels.length!==2||computedModels[0].model!=='associated-template'||computedModels[1].model!=='plain-template'||stable(proof.persistenceModels)!==stable(computedModels))throw new Error('SCH完整持久化模型与实际候选资源独立重算结果不符');
 							}
 						}catch(error){failedDocument={uuid:doc.uuid,type:doc.type,stage:'default-proof-binding',error:error instanceof Error?error.message:String(error),differenceSummary:{count:1,identities:[]}};throw new CloseVerificationError(`SCH默认持久化证明无效：${doc.uuid}`,closeEvidence());}
 						const proof=association.normalizationProof as ObjectValue,candidateId=String(proof.candidateId);
 						let actualTarget:NativeTargetExpected,sourceMode:'immediate-wire'|'already-persisted';
-						try{actualTarget=targetNativeExpected(actualRows,candidateId);assertNativeTargetExpected(actualTarget,proof.immediateWireExpected,candidateId,'立即wire');sourceMode='immediate-wire';}
+						const expectedWire=proof.effectiveWireExpected??proof.immediateWireExpected;
+						try{actualTarget=targetNativeExpected(actualRows,candidateId);assertNativeTargetExpected(actualTarget,expectedWire,candidateId,'立即wire');sourceMode='immediate-wire';}
 						catch(wireError){actualTarget=targetNativeExpected(actualRows,candidateId);sourceMode='already-persisted';}
 						if(computedModels){
 							const priorCloseStages=prior.filter((row:any)=>row?.stage==='save_close_reopen');
@@ -422,7 +446,6 @@ export function createReplacementVerification(api: typeof eda = eda) {
 								const priorMatches=Array.isArray(priorProofs)?priorProofs.filter((row:any)=>row?.pageUuid===doc.uuid&&row?.replacementIndex===item.replacementIndex&&row?.partIndex===item.partIndex&&row?.candidateId===candidateId):[];
 								if(priorMatches.length>1)throw new CloseVerificationError(`SCH持久化锁定快照不唯一：${candidateId}`,closeEvidence());
 								if(priorMatches.length===1&&priorMatches[0].selectedModel!==undefined){
-									if(!['associated-template','plain-template'].includes(priorMatches[0].selectedModel)||!priorMatches[0].persistedTargetExpected)throw new CloseVerificationError(`SCH持久化锁定快照无效：${candidateId}`,closeEvidence());
 									lockedModel=computedModels.find(model=>model.model===priorMatches[0].selectedModel);
 									if(!lockedModel||stable(lockedModel.persistedExpected)!==stable(priorMatches[0].persistedTargetExpected))throw new CloseVerificationError(`SCH持久化锁定模型与当前冻结预期不同：${candidateId}`,closeEvidence());
 									assertNativeTargetExpected(actualTarget,lockedModel.persistedExpected,candidateId,'已锁定持久化');sourceMode='already-persisted';
@@ -435,7 +458,7 @@ export function createReplacementVerification(api: typeof eda = eda) {
 							const output:ObjectValue={pageUuid:doc.uuid,replacementIndex:item.replacementIndex,partIndex:item.partIndex,candidateId,partId:proof.partId,deviceUuid:proof.deviceUuid,symbolUuid:proof.symbolUuid,beforeRepresentation:sourceMode,modelCandidates:computedModels.map(model=>model.model),defaultTransitions:proof.defaultTransitions??[],wireTargetMatched:sourceMode==='immediate-wire'};
 							if(chosenBefore){output.selectedModel=chosenBefore.model;output.matchingModels=beforeMatches.map(model=>model.model);output.persistedTargetExpected=chosenBefore.persistedExpected;}
 							candidateDefaultPersistenceProofs.push(output);
-							const choices=persistenceChoicesByPage.get(doc.uuid)??[];choices.push({candidateId,models:computedModels,beforeRows:actualRows,beforeMode:sourceMode,...(chosenBefore?{lockedModel:chosenBefore}:{}),proof,output});persistenceChoicesByPage.set(doc.uuid,choices);
+						const choices=persistenceChoicesByPage.get(doc.uuid)??[];choices.push({candidateId,models:computedModels,beforeRows:actualRows,beforeMode:sourceMode,...(chosenBefore?{lockedModel:chosenBefore}:{}),proof,output,resourceDocuments:candidate.resourceDocuments as any[]});persistenceChoicesByPage.set(doc.uuid,choices);
 						}else{
 							let wireTarget:NativeTargetExpected,persistedTarget:NativeTargetExpected,derivedPersisted:NativeTargetExpected;
 							try{assertNativeTargetExpected(actualTarget,proof.immediateWireExpected,candidateId,'立即wire');wireTarget=proof.immediateWireExpected as NativeTargetExpected;derivedPersisted=applyDefaultTransitions(wireTarget,proof.defaultTransitions,candidateId);assertNativeTargetExpected(derivedPersisted,proof.persistedExpected,candidateId,'持久化');sourceMode='immediate-wire';}
@@ -448,12 +471,12 @@ export function createReplacementVerification(api: typeof eda = eda) {
 					if(!persistenceChoicesByPage.has(doc.uuid))expectedRowsByPage.set(doc.uuid,persistedRows);
 				}
 				let saveAck:boolean;
-				try{saveAck=(doc.type===3?await api.pcb_Document.save():await api.sch_Document.save())===true;}
+				try{context?.assertActive?.(); saveAck=(doc.type===3?await api.pcb_Document.save():await api.sch_Document.save())===true; context?.assertActive?.();}
 				catch(error){failedDocument={uuid:doc.uuid,type:doc.type,stage:'save',error:error instanceof Error?error.message:String(error)};throw new CloseVerificationError(`保存未确认：${doc.uuid}`,closeEvidence());}
 				if(!saveAck){failedDocument={uuid:doc.uuid,type:doc.type,stage:'save',error:'保存未确认'};throw new CloseVerificationError(`保存未确认：${doc.uuid}`,closeEvidence());}
 				targetTabIds.push(info.tabId);
 				let closeAck:unknown;
-				try { closeAck=await api.dmt_EditorControl.closeDocument(info.tabId); }
+			try { context?.assertActive?.(); closeAck=await api.dmt_EditorControl.closeDocument(info.tabId); context?.assertActive?.(); }
 				catch(error) {
 					closeAcknowledgements.push({docUuid:doc.uuid,tabId:info.tabId,closeAck:null,error:error instanceof Error?error.message:String(error)});
 					failedDocument={uuid:doc.uuid,type:doc.type,stage:'close',error:error instanceof Error?error.message:String(error)};
@@ -496,6 +519,13 @@ export function createReplacementVerification(api: typeof eda = eda) {
 					const afterRows=records(snapshot.source,doc.uuid,doc.type),choices=persistenceChoicesByPage.get(doc.uuid)??[];
 					let expectedRows=expectedRowsByPage.get(doc.uuid)??records(prior.source,doc.uuid,doc.type);
 					for(const choice of choices){
+						if(choice.proof.effectiveDeviceAssociation){
+							const association=choice.proof.effectiveDeviceAssociation;
+						const rawTarget=targetNativeExpected(afterRows,choice.candidateId),rawDevice=rawTarget.attributes.filter(row=>row.id===association.attrId);
+						if(rawDevice.length!==1||rawDevice[0].data.parentId!==choice.candidateId||rawDevice[0].data.key!=='Device'||rawDevice[0].data.value!=='')throw new Error(`重开 SCH raw Device ATTR 不再是唯一空值投影：${choice.candidateId}`);
+						const freshTyped=await assertFreshEffectiveDeviceAssociation(api,association,choice.resourceDocuments);
+						Object.assign(choice.output,{reopenTypedAttr:freshTyped.typedAttr,reopenTypedReference:freshTyped.typedReference});
+						}
 						const actualTarget=targetNativeExpected(afterRows,choice.candidateId),matches=choice.models.filter(model=>stable(model.persistedExpected)===stable(actualTarget));
 						if(!matches.length)throw new Error(`重开 SCH候选目标未命中任一完整持久化模型：${choice.candidateId}`);
 						const selected=choice.lockedModel??matches[0];

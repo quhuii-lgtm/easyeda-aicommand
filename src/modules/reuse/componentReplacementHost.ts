@@ -109,7 +109,7 @@ export type ComponentReplacementRuntime<Prepared> = {
 	readAndPrepare: (input: ReplacementInput) => Promise<Prepared>;
 	assertPlanStillCurrent: (plan: ReplacementPlan) => Promise<void>;
 	performStage: (prepared: Prepared, replacementIndex: number, stage: ReplacementStage, context: ReplacementStageContext) => Promise<unknown>;
-	saveCloseReopen: (prepared: Prepared, priorResults: unknown[]) => Promise<unknown>;
+	saveCloseReopen: (prepared: Prepared, priorResults: unknown[], context?: Pick<ReplacementStageContext, 'assertActive'>) => Promise<unknown>;
 	verifyFinal: (prepared: Prepared, priorResults: unknown[]) => Promise<unknown>;
 };
 
@@ -422,6 +422,139 @@ export function verifyPadCopperContact(pad: JsonObject, point: [number, number])
 	}
 	throw new Error(`PAD ${pad.number} 使用未核验的铜形 ${String(kind)}`);
 }
+function routeLayer(route: NonNullable<ReplacementInput['replacements'][number]['localRoutes']>[number]): number {
+	return typeof route.layer === 'number' ? route.layer : route.layer === 'top' ? 1 : 2;
+}
+export function padHasCopperLayer(pad: JsonObject, layer: number, copperLayers: Set<number> = new Set([1, 2])): boolean {
+	if (pad.layer === layer) return true;
+	// Layer 12 is the SDK's through-hole/multilayer pad layer. Require a verified hole record
+	// before treating it as contacting either outer copper layer.
+	const hole = pad.hole;
+	if (pad.layer !== 12 || !Array.isArray(hole) || !copperLayers.has(layer)) return false;
+	if (hole[0] === 'ROUND') return hole.length === 2 && typeof hole[1] === 'number' && Number.isFinite(hole[1]) && hole[1] > 0;
+	if (hole[0] === 'SLOT') return hole.length === 3 && typeof hole[1] === 'number' && Number.isFinite(hole[1]) && hole[1] > 0
+		&& typeof hole[2] === 'number' && Number.isFinite(hole[2]) && hole[2] > 0;
+	return false;
+}
+function recordLayer(data: JsonObject, label: string): number {
+	const layer = data.layerId ?? data.layer;
+	if (typeof layer !== 'number' || !Number.isInteger(layer)) throw new Error(`${label}缺少可核验的铜层`);
+	return layer;
+}
+function finiteCoordinate(data: JsonObject, field: string, label: string): number {
+	const value = data[field];
+	if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`${label}.${field} 缺少有效数值坐标`);
+	return value;
+}
+export function assertRouteContactInputs(route: NonNullable<ReplacementInput['replacements'][number]['localRoutes']>[number],
+	anchors: Array<{ type: string; id: string; data: unknown }>, pads: JsonObject[], copperLayers: Set<number> = new Set([1, 2]),
+	layerRecords: Array<{ type: string; id: string; data: unknown }> = anchors): JsonObject {
+	const layer = routeLayer(route), matchingAnchors = anchors.filter(record => record.type === 'LINE' && record.id === route.anchor.primitiveId);
+	if (!copperLayers.has(layer)) throw new Error(`路线层 ${layer} 在本板实际铜层集合中不存在`);
+	if (matchingAnchors.length !== 1) throw new Error(`路线锚点LINE不存在或不唯一：${route.anchor.primitiveId}`);
+	const anchor = obj(matchingAnchors[0].data, '路线锚点LINE');
+	if (recordLayer(anchor, '路线锚点LINE') !== layer) throw new Error('路线铜层与锚点铜层不一致；拒绝创建跨层无过孔连接');
+	const ax = finiteCoordinate(anchor, route.anchor.endpoint === 'start' ? 'startX' : 'endX', '路线锚点LINE');
+	const ay = finiteCoordinate(anchor, route.anchor.endpoint === 'start' ? 'startY' : 'endY', '路线锚点LINE');
+	if (Math.hypot(route.points[0][0] - ax, route.points[0][1] - ay) > 0.00254 || anchor.netName !== route.net) throw new Error('路线首点未精确接触同层同网锚点');
+	const candidates = pads.filter(pad => String(pad.number) === route.targetPadNumber && pad.net === route.net && padHasCopperLayer(pad, layer, copperLayers));
+	const contacts: JsonObject[] = [];
+	for (const pad of candidates) {
+		const shape = padShapeForCopperLayer(pad, layer, copperLayers, layerRecords);
+		try {
+			verifyPadCopperContact({ ...pad, shape }, route.points[route.points.length - 1]);
+			contacts.push(pad);
+		} catch (error) {
+			if (!(error instanceof Error) || !error.message.startsWith('路线端点未接触 PAD ')) throw error;
+		}
+	}
+	if (contacts.length !== 1) throw new Error(`路线目标 PAD ${route.targetPadNumber} 在同网络及路线铜层上没有唯一可证明的铜接触`);
+	return contacts[0];
+}
+export function physicalCopperLayerOrder(records: Array<{ type: string; id: string; data: unknown }>, copperLayers: Set<number>): number[] | undefined {
+	const physicalByLayer = new Map<number, Array<{ layerId: number; zIndex: number }>>();
+	for (const row of records.filter(record => record.type === 'LAYER_PHYS')) {
+		let identity: unknown;
+		try { identity = JSON.parse(row.id); } catch { continue; }
+		if (!Array.isArray(identity) || identity.length !== 2 || identity[0] !== 'LAYER_PHYS'
+			|| !Number.isSafeInteger(identity[1]) || !copperLayers.has(identity[1] as number)) continue;
+		const layerId = identity[1] as number, data = obj(row.data, `LAYER_PHYS/${row.id}`), zIndex = data.zIndex;
+		if (typeof zIndex !== 'number' || !Number.isFinite(zIndex)) return undefined;
+		physicalByLayer.set(layerId, [...(physicalByLayer.get(layerId) ?? []), { layerId, zIndex }]);
+	}
+	const layers: Array<{ layerId: number; zIndex: number }> = [];
+	for (const layerId of copperLayers) {
+		const matches = physicalByLayer.get(layerId) ?? [];
+		if (matches.length !== 1) return undefined;
+		layers.push(matches[0]);
+	}
+	if (new Set(layers.map(item => item.zIndex)).size !== layers.length) return undefined;
+	return layers.sort((a, b) => a.zIndex - b.zIndex).map(item => item.layerId);
+}
+function padShapeForCopperLayer(pad: JsonObject, layer: number, copperLayers: Set<number>, records: Array<{ type: string; id: string; data: unknown }>): unknown {
+	if (!Array.isArray(pad.specialPad) || pad.specialPad.length === 0) return pad.shape;
+	const shapes: unknown[] = [];
+	for (const tuple of pad.specialPad) {
+		if (!Array.isArray(tuple) || tuple.length !== 3 || !Number.isInteger(tuple[0]) || !Number.isInteger(tuple[1]) || !Array.isArray(tuple[2]))
+			throw new Error(`PAD ${pad.number} specialPad tuple 无法解释`);
+		const [start, end, shape] = tuple as [number, number, unknown];
+		if (start === end && start === layer) shapes.push(shape);
+		else if (start === end && copperLayers.has(start)) continue;
+		else if (start === 1 && end === 2 && copperLayers.has(layer)) shapes.push(shape);
+		else {
+			if (!copperLayers.has(start) || !copperLayers.has(end)) throw new Error(`PAD ${pad.number} specialPad 范围不是实际铜层`);
+			const order = physicalCopperLayerOrder(records, copperLayers);
+			if (!order) throw new Error(`PAD ${pad.number} specialPad 部分层范围缺少唯一且完整的 LAYER_PHYS zIndex 顺序`);
+			const startIndex = order.indexOf(start), endIndex = order.indexOf(end), layerIndex = order.indexOf(layer);
+			if (startIndex < 0 || endIndex < 0 || layerIndex < 0) throw new Error(`PAD ${pad.number} specialPad 范围层序无法对应当前铜层`);
+			if (layerIndex >= Math.min(startIndex, endIndex) && layerIndex <= Math.max(startIndex, endIndex)) shapes.push(shape);
+		}
+	}
+	if (shapes.length > 1) throw new Error(`PAD ${pad.number} 在路线铜层上有多个 specialPad 外形`);
+	return shapes[0] ?? pad.shape;
+}
+export function actualCopperLayers(records: Array<{ type: string; id: string; data: unknown }>): Set<number> {
+	const layers = new Set<number>();
+	for (const row of records.filter(record => record.type === 'LAYER')) {
+		const data = obj(row.data, `LAYER/${row.id}`);
+		const type = data.layerType;
+		if (type !== 'TOP' && type !== 'BOTTOM' && !(typeof type === 'string' && /^INNER(?:_|$)/.test(type))) continue;
+		let identity: unknown;
+		try { identity = JSON.parse(row.id); } catch { continue; }
+		if (Array.isArray(identity) && identity[0] === 'LAYER' && Number.isInteger(identity[1])) layers.add(identity[1] as number);
+	}
+	return layers;
+}
+export function assertCreatedRouteLine(data: JsonObject, route: NonNullable<ReplacementInput['replacements'][number]['localRoutes']>[number], segment: number): void {
+	const layer = routeLayer(route);
+	const startX = finiteCoordinate(data, 'startX', '新建LINE'), startY = finiteCoordinate(data, 'startY', '新建LINE');
+	const endX = finiteCoordinate(data, 'endX', '新建LINE'), endY = finiteCoordinate(data, 'endY', '新建LINE');
+	if (recordLayer(data, '新建LINE') !== layer || data.netName !== route.net
+		|| Math.hypot(startX - route.points[segment - 1][0], startY - route.points[segment - 1][1]) > 0.00254
+		|| Math.hypot(endX - route.points[segment][0], endY - route.points[segment][1]) > 0.00254)
+		throw new Error('本地走线 LINE 的实际层、网络或端点与请求不符');
+}
+export async function writeVerifiedLocalRoutes(routes: NonNullable<ReplacementInput['replacements'][number]['localRoutes']>,
+	anchors: Array<{ type: string; id: string; data: unknown }>, pads: JsonObject[], copperLayers: Set<number>,
+	assertActive: () => void, createLine: (route: NonNullable<ReplacementInput['replacements'][number]['localRoutes']>[number], segment: number) => Promise<string>,
+	readLines: () => Promise<Array<{ type: string; id: string; data: unknown }>>): Promise<string[]> {
+	for (const route of routes) assertRouteContactInputs(route, anchors, pads, copperLayers);
+	const segmentIds: string[] = [];
+	for (const route of routes) for (let segment = 1; segment < route.points.length; segment++) {
+		assertActive();
+		const id = await createLine(route, segment);
+		assertActive();
+		segmentIds.push(requiredString(id, '新建铜线ID'));
+	}
+	const records = await readLines(), byId = new Map(records.filter(record => record.type === 'LINE').map(record => [record.id, record]));
+	let index = 0;
+	for (const route of routes) for (let segment = 1; segment < route.points.length; segment++) {
+		const record = byId.get(segmentIds[index++]);
+		if (!record) throw new Error('本地走线未通过原生记录读回');
+		assertCreatedRouteLine(obj(record.data, `新建LINE/${record.id}`), route, segment);
+	}
+	return segmentIds;
+}
 function rotateXY(x: number, y: number, degrees: number): [number, number] {
 	const radians = degrees * Math.PI / 180; return [x * Math.cos(radians) - y * Math.sin(radians), x * Math.sin(radians) + y * Math.cos(radians)];
 }
@@ -721,6 +854,7 @@ export function createEdaComponentReplacementRuntime(api: typeof eda = eda): Com
 	};
 	const candidateFrom = (previous: unknown[], index: number) => priorStage<PcbCandidateResult>(previous, 'pcb_create_candidate', index);
 	const performStageCore = async (prepared: PreparedReplacement, replacementIndex: number, stage: ReplacementStage, context: ReplacementStageContext): Promise<unknown> => {
+			context.assertActive?.();
 			if (stage.startsWith('schematic_')) return performSchematicReplacementStage(api, prepared, replacementIndex, stage, context);
 			const replacement = prepared.replacements[replacementIndex];
 			if (!replacement) throw new Error(`换件目标索引无效：${replacementIndex}`);
@@ -731,8 +865,10 @@ export function createEdaComponentReplacementRuntime(api: typeof eda = eda): Com
 				assertReplacementComponentIdentity(current.native.records, originalId, replacement.input.oldUid,
 					requiredString(replacement.oldPcb.typed.getState_Designator, '冻结旧 PCB 位号'), 'PCB');
 				const pose = replacement.input.pcbPose ?? { x: Number(replacement.oldPcb.typed.getState_X), y: Number(replacement.oldPcb.typed.getState_Y), rotation: Number(replacement.oldPcb.typed.getState_Rotation) };
+				context.assertActive?.();
 				const created = await api.pcb_PrimitiveComponent.create(replacement.newDevice.reference, Number(replacement.oldPcb.typed.getState_Layer) as any,
 					pose.x, pose.y, pose.rotation, false);
+				context.assertActive?.();
 				if (!created) throw new Error('PCB 候选create未返回对象');
 				const identity = pcbIdentity(created);
 				if (identity.id === originalId || identity.uid === replacement.input.oldUid) throw new Error('PCB create候选抢占旧件身份或ID');
@@ -825,9 +961,10 @@ export function createEdaComponentReplacementRuntime(api: typeof eda = eda): Com
 				const mapping = new Map(replacement.input.pinMap.map(pair => [pair.newNumber, oldNets.get(pair.oldNumber)!]));
 				const written: string[] = [];
 				for (const pad of typedPads) {
+					context.assertActive?.();
 					if (!mapping.has(String(pad.number))) throw new Error(`新候选焊盘没有pinMap：${String(pad.number)}`);
 					const padId = String(pad.id), net = mapping.get(String(pad.number))!;
-					const result = await api.pcb_PrimitivePad.modify(padId, { net }); if (!result) throw new Error(`候选PAD ${padId} 网络修改未返回对象`); written.push(padId);
+					const result = await api.pcb_PrimitivePad.modify(padId, { net }); context.assertActive?.(); if (!result) throw new Error(`候选PAD ${padId} 网络修改未返回对象`); written.push(padId);
 				}
 				const readback = await readTypedPads(api, candidateId);
 				for (const pad of readback) if (pad.net !== mapping.get(String(pad.number))) throw new Error(`候选PAD ${pad.id} 网络读回不符`);
@@ -840,32 +977,37 @@ export function createEdaComponentReplacementRuntime(api: typeof eda = eda): Com
 				const data = obj(candidateRecord.data, '候选COMPONENT'), attrs = obj(data.attrs, '候选COMPONENT attrs');
 				const props = { ...(getState(component, 'getState_OtherProperty') as JsonObject ?? {}) };
 				for (const key of ['Reuse Block', 'Group ID', 'Channel ID']) if (Object.hasOwn(oldAttrs, key)) props[key] = oldAttrs[key];
-				const changed = await api.pcb_PrimitiveComponent.modify(candidateId, { groupId: oldData.groupId, otherProperty: props } as any);
+				context.assertActive?.();
+				const changed = await api.pcb_PrimitiveComponent.modify(candidateId, { groupId: oldData.groupId, otherProperty: props } as any); context.assertActive?.();
 				if (!changed) throw new Error('PCB候选关联属性修改未返回对象');
 				const freshSource = await openPcb(prepared);
 				const patched = patchReplacementNativeSource(freshSource.source, prepared.pcbUuid, 'PCB', [{ type: 'COMPONENT', id: candidateId,
 					patch: { groupId: oldData.groupId, attrs: { ...attrs, ...Object.fromEntries(['Reuse Block','Group ID','Channel ID'].filter(key => Object.hasOwn(oldAttrs, key)).map(key => [key, oldAttrs[key]])) } } }]);
-				if (patched !== freshSource.source && await api.sys_FileManager.setDocumentSource(patched) !== true) throw new Error('候选关联native patch未确认');
+				if (patched !== freshSource.source) { context.assertActive?.(); const patchedAck = await api.sys_FileManager.setDocumentSource(patched); context.assertActive?.(); if (patchedAck !== true) throw new Error('候选关联native patch未确认'); }
 				const after = await openPcb(prepared), readCandidate = after.native.records.find(record => record.type === 'COMPONENT' && record.id === candidateId);
 				if (!readCandidate || stableJson(obj(readCandidate.data, '关联读回').groupId) !== stableJson(oldData.groupId)) throw new Error('PCB候选native groupId读回不符');
 				for (const key of ['Reuse Block','Group ID','Channel ID']) if (Object.hasOwn(oldAttrs, key) && obj(readCandidate.data, '关联读回').attrs && (obj(readCandidate.data, '关联读回').attrs as JsonObject)[key] !== oldAttrs[key]) throw new Error(`候选${key}业务属性读回不符`);
 				return { stage, replacementIndex, candidateId, groupId: oldData.groupId, moduleAttributes: Object.fromEntries(['Reuse Block','Group ID','Channel ID'].filter(key => Object.hasOwn(oldAttrs,key)).map(key => [key,oldAttrs[key]])) };
 			}
 			if (stage === 'pcb_local_routes') {
-				const routes = replacement.localRoutes, segmentIds: string[] = [];
-				for (const route of routes) for (let i = 1; i < route.points.length; i++) {
-					const layer = typeof route.layer === 'number' ? route.layer : route.layer === 'top' ? 1 : 2;
-					const line = await api.pcb_PrimitiveLine.create(route.net, layer as any, route.points[i - 1][0], route.points[i - 1][1], route.points[i][0], route.points[i][1], route.width, false);
-					segmentIds.push(requiredString(getState(line, 'getState_PrimitiveId'), '新建铜线ID'));
-				}
-			const after = await openPcb(prepared), ids = new Set(after.native.records.filter(record => record.type === 'LINE').map(record => record.id));
-			if (segmentIds.some(id => !ids.has(id))) throw new Error('本地走线未通过原生记录读回');
+				const routes = replacement.localRoutes;
+				const typedPads = await readTypedPads(api, candidateId);
+				const copperLayers = actualCopperLayers(current.native.records);
+			const segmentIds = await writeVerifiedLocalRoutes(routes, current.native.records, typedPads, copperLayers,
+				() => context.assertActive?.(),
+				async (route, segment) => {
+					const layer = routeLayer(route), start = route.points[segment - 1], end = route.points[segment];
+					const line = await api.pcb_PrimitiveLine.create(route.net, layer as any, start[0], start[1], end[0], end[1], route.width, false);
+					return requiredString(getState(line, 'getState_PrimitiveId'), '新建铜线ID');
+				},
+				async () => (await openPcb(prepared)).native.records.filter(record => record.type === 'LINE'));
 			return { stage, replacementIndex, candidateId, segmentIds };
 			}
 			if (stage === 'pcb_verify_contact') {
 				assertCandidateStageBindings(context.previousResults, replacementIndex, candidateId, ['pcb_verify_candidate']);
-				const pads = await readTypedPads(api, candidateId), byNumber = new Map(pads.map(pad => [String(pad.number), pad]));
+				const pads = await readTypedPads(api, candidateId);
 				const native = (await openPcb(prepared)).native;
+				const copperLayers = actualCopperLayers(native.records);
 				if (replacement.localRoutes.length === 0) {
 					assertComponentPosePreserved(component, replacement.oldPcb.typed);
 					const oldFootprintUuid = resourceUuid(replacement.oldDevice.defaults.Footprint, '旧DEVICE Footprint');
@@ -883,20 +1025,14 @@ export function createEdaComponentReplacementRuntime(api: typeof eda = eda): Com
 				const routesResult = priorStage<PcbCandidateResult>(context.previousResults, 'pcb_local_routes', replacementIndex);
 				const lines = routesResult.segmentIds ?? [];
 				for (const route of replacement.localRoutes) {
-					const target = byNumber.get(route.targetPadNumber); if (!target) throw new Error(`路线目标 PAD 不存在：${route.targetPadNumber}`);
-					verifyPadCopperContact(target, route.points[route.points.length - 1]);
-					if (target.net !== route.net) throw new Error(`路线目标 PAD ${route.targetPadNumber} 网络与路线不符`);
-					const first = route.points[0], anchor = native.records.filter(record => record.type === 'LINE' && record.id === route.anchor.primitiveId);
-					if (anchor.length !== 1) throw new Error(`路线锚点LINE不存在或不唯一：${route.anchor.primitiveId}`);
-					const a = obj(anchor[0].data, '锚点LINE'), ax = Number(route.anchor.endpoint === 'start' ? a.startX : a.endX), ay = Number(route.anchor.endpoint === 'start' ? a.startY : a.endY);
-					if (Math.hypot(first[0] - ax, first[1] - ay) > 0.00254 || a.netName !== route.net) throw new Error('路线首点未精确接触同网锚点');
+					assertRouteContactInputs(route, native.records, pads, copperLayers);
 				}
 			return { stage, replacementIndex, candidateId, contactVerified: true, segmentIds: lines };
 			}
 			if (stage === 'pcb_delete_old') {
 				assertCandidateStageBindings(context.previousResults, replacementIndex, candidateId, ['pcb_verify_candidate', 'pcb_verify_contact']);
 				const before = current.native.records;
-				if (await api.pcb_PrimitiveComponent.delete([originalId]) !== true) throw new Error('删除旧PCB器件未返回true');
+				context.assertActive?.(); const deleteAck = await api.pcb_PrimitiveComponent.delete([originalId]); context.assertActive?.(); if (deleteAck !== true) throw new Error('删除旧PCB器件未返回true');
 				const after = await openPcb(prepared), allowed = (record: any) => {
 					if (record.type === 'COMPONENT' && record.id === originalId) return true;
 					if (record.type === 'ATTR') return obj(record.data, 'ATTR').parentId === originalId;
@@ -918,7 +1054,7 @@ export function createEdaComponentReplacementRuntime(api: typeof eda = eda): Com
 				const designator = requiredString(replacement.oldPcb.typed.getState_Designator, '冻结旧 PCB 位号');
 				const primitiveLock = replacement.oldPcb.typed.getState_PrimitiveLock;
 				if (typeof primitiveLock !== 'boolean') throw new Error('旧件 PrimitiveLock 读回不是布尔值');
-				const result = await api.pcb_PrimitiveComponent.modify(candidateId, { uniqueId: replacement.input.oldUid, designator, primitiveLock });
+				context.assertActive?.(); const result = await api.pcb_PrimitiveComponent.modify(candidateId, { uniqueId: replacement.input.oldUid, designator, primitiveLock }); context.assertActive?.();
 				if (!result) throw new Error('候选最终UID/位号修改未返回对象');
 				const after = await openPcb(prepared), component = await api.pcb_PrimitiveComponent.get(candidateId);
 				if (!component || getState(component, 'getState_UniqueId') !== replacement.input.oldUid || getState(component, 'getState_Designator') !== designator
@@ -941,7 +1077,7 @@ export function createEdaComponentReplacementRuntime(api: typeof eda = eda): Com
 			await verification.acceptStageDelta(prepared, replacementIndex, stage, context, result);
 			return result;
 		},
-		saveCloseReopen: (prepared, priorResults) => verification.saveCloseReopen(prepared, priorResults),
+		saveCloseReopen: (prepared, priorResults, context) => verification.saveCloseReopen(prepared, priorResults, context),
 		verifyFinal: (prepared, priorResults) => verification.verifyFinal(prepared, priorResults),
 	};
 }

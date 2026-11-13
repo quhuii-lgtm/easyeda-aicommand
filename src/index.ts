@@ -33,6 +33,8 @@ import { padExpansionCommands } from './commands/padExpand';
 import { padHoleCommands } from './commands/padHole';
 import { pcbCommands } from './commands/pcb';
 import { pcbGroupingCommands } from './commands/pcbGrouping';
+import { pcbRegionMarkerCommands } from './commands/pcbRegionMarkers';
+import { pcbLayerColorCommands } from './commands/pcbLayerColor';
 import { libraryCommands, projectCommands } from './commands/project';
 import { schematicCommands } from './commands/schematic';
 import { silkscreenCheckCommands } from './commands/silkscreenCheck';
@@ -65,6 +67,8 @@ function registerAllCommands(): void {
 		...netSilkscreenCommands,
 		...dfmCommands,
 		...pcbGroupingCommands,
+		...pcbRegionMarkerCommands,
+		...pcbLayerColorCommands,
 		...moduleCommands,
 		...knowledgeCommands,
 		...systemCommands,
@@ -102,6 +106,12 @@ function handleBridgeOwnerRequest(request: any): unknown {
 			return openSmtQueryAtOwner();
 		case 'pcb-tools-group':
 			launchPcbToolsAction('group');
+			return { started: true };
+		case 'pcb-tools-mark-regions':
+			launchPcbToolsAction('mark-regions');
+			return { started: true };
+		case 'pcb-tools-locate-region':
+			launchPcbToolsAction('locate-region');
 			return { started: true };
 		case 'pcb-tools-route-start':
 			launchPcbToolsAction('route-start');
@@ -411,6 +421,14 @@ export async function pcbAutoRouteFetchMenu(): Promise<void> {
 
 export async function pcbAutoRouteImportMenu(): Promise<void> {
 	await startPcbMenuAction('pcb-tools-route-import', '显式导入已取回 SES');
+}
+
+export async function pcbMarkSchematicRegionsMenu(): Promise<void> {
+	await startPcbMenuAction('pcb-tools-mark-regions', '标记功能区（不移动元件）');
+}
+
+export async function pcbLocateSchematicRegionMenu(): Promise<void> {
+	await startPcbMenuAction('pcb-tools-locate-region', '定位／高亮功能区');
 }
 
 /** 打开 SMT 物料查询窗口（页面由本地指令代理提供） */
