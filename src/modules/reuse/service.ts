@@ -147,7 +147,15 @@ export function assertWriteResult(operation: string, result: unknown): void {
 			fail('换件命令未返回可核验的操作状态，结果未知；先查询原操作记录', { outcome: 'unknown', partial: true, writeAttempted: true, retryable: false })
 		return
 	}
-	const state = typeof result.status === 'string' ? result.status : typeof result.state === 'string' ? result.state : undefined
+	// Native placement operationData() persists its result in `outcome`, not
+	// `status`/`state`. On business-command replays that field is the only
+	// reliable indication that the original write was not confirmed.
+	const reportedStates = [result.status, result.state, result.outcome]
+		.filter((value): value is string => typeof value === 'string')
+	// An uncertain field must not be hidden by a conflicting `confirmed` field.
+	const state = reportedStates.find(value => value === 'partial' || value === 'unknown' || value === 'pending-verification')
+		?? reportedStates.find(value => value === 'failed' || value === 'not_started')
+		?? reportedStates[0]
 	if (operation === 'module.extractModuleArchive' && state === 'failed') {
 		fail(`模块归档提取失败：${String(result.error ?? '原因未提供')}`, {
 			operationId: result.operationId, outcome: 'not_started', partial: false, writeAttempted: false, retryable: false,
@@ -155,22 +163,23 @@ export function assertWriteResult(operation: string, result: unknown): void {
 	}
 	if (operation === 'module.executeReplacement' && state !== 'confirmed') {
 		const writeAttempted = result.writeAttempted === true
-		const partial = state !== 'not_started'
+		const partial = state !== 'not_started' || writeAttempted
 		fail(`换件操作未能确认完成（${String(state ?? '状态缺失')}${result.phase ? `/${result.phase}` : ''}）：${String(result.error ?? '需先查询原操作记录')}`, {
 			operationId: result.operationId, phase: result.phase, outcome: state ?? 'unknown', partial,
 			writeAttempted, retryable: result.retryable === true,
 		})
 	}
-	if (!queryOperations.has(operation) && (state === 'partial' || state === 'unknown')) {
+	if (!queryOperations.has(operation) && (state === 'partial' || state === 'unknown' || state === 'pending-verification' || state === 'failed' || state === 'not_started')) {
 		const writeAttempted = result.writeAttempted === true
+		const partial = state === 'partial' || state === 'unknown' || state === 'pending-verification' || writeAttempted
 		fail(`模块复用操作未能确认完成（${state}${result.phase ? `/${result.phase}` : ''}）：${String(result.error ?? '需先读取操作记录')}`, {
 			operationId: result.operationId, phase: result.phase, outcome: state,
-			partial: state === 'partial' || state === 'unknown', writeAttempted, retryable: result.retryable === true,
+			partial, writeAttempted, retryable: result.retryable === true,
 		})
 	}
 }
 
-export async function executeModuleOperation(cmd: string, params: Record<string, any>): Promise<unknown> {
+export async function executeModuleOperation(cmd: string, params: Record<string, any>, stopSignal?: { assertActive(): void }): Promise<unknown> {
 	try {
 		if (!isModuleBusinessCommand(cmd) || cmd.startsWith('module.library'))
 			fail(`未知模块复用业务指令：${cmd}`)
@@ -260,7 +269,7 @@ export async function executeModuleOperation(cmd: string, params: Record<string,
 			data = await runEntryBusy(() => componentReplacementService.prepareReplacement(params))
 		}
 		else if (operation === 'executeReplacement') {
-			data = await runEntryBusy(() => componentReplacementService.executeReplacement(params))
+			data = await runEntryBusy(() => componentReplacementService.executeReplacement(params, stopSignal))
 		}
 		else if (operation === 'getReplacementOperation') {
 			if (typeof params.operationId !== 'string' || !params.operationId.trim() || Object.keys(params).length !== 1) fail('getReplacementOperation 仅接受非空 operationId')

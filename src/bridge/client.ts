@@ -391,6 +391,11 @@ async function handleMessage(event: MessageEvent<any>, id: string, gen: number):
 		// 批量指令不会因总时长被误杀。单条指令不上报心跳，语义与旧版一致（绝对时长）。
 		const timeoutMs = COMMAND_TIMEOUT_OVERRIDES[msg.cmd] ?? COMMAND_TIMEOUT_MS;
 		let lastBeatAt = Date.now();
+		let stopReason: string | undefined;
+		const stopSignal = {
+			stop(reason: string) { stopReason ??= reason; },
+			assertActive() { if (stopReason) throw new Error(`指令已停止后续写入：${stopReason}`, { cause: { partial: true, source: 'command-stop-signal' } }); },
+		};
 		// 0.10.65：watchdog 引用提到外层，指令正常完成时由 finally 立即清理——
 		// 旧版只在超时分支 clearInterval，正常路径的 interval 会空转到超时点才自清理（每条指令泄漏一个定时器）
 		let watchdog: ReturnType<typeof setInterval> | undefined;
@@ -400,6 +405,7 @@ async function handleMessage(event: MessageEvent<any>, id: string, gen: number):
 			result = await Promise.race([
 				executeCommand({ cmd: msg.cmd, params: msg.params }, {
 					vars: {},
+					stopSignal,
 					onProgress: (patch) => {
 						lastBeatAt = Date.now();
 						// 0.10.65：连接已被重连取代时不再往新连接发旧指令的心跳
@@ -422,6 +428,7 @@ async function handleMessage(event: MessageEvent<any>, id: string, gen: number):
 				new Promise((_, reject) => {
 					watchdog = setInterval(() => {
 						if (Date.now() - lastBeatAt > timeoutMs) {
+							stopSignal.stop(`client-watchdog:${timeoutMs}ms`);
 							if (watchdog)
 								clearInterval(watchdog);
 							reject(new Error(`指令 ${msg.cmd} 执行超时（${Math.round(timeoutMs / 1000)}s 无进度心跳，底层操作可能仍在执行）。`, { cause: { partial: true, source: 'client-watchdog' } }));

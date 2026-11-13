@@ -1,4 +1,7 @@
 {
 	"About...": "About...",
-	"模块复用…": "Module Reuse..."
+	"模块复用…": "Module Reuse...",
+	"按原理图功能区分组（移动元件）…": "Group by schematic region (moves components)...",
+	"标记功能区（不移动元件）…": "Mark functional regions (without moving components)...",
+	"定位／高亮功能区…": "Locate/highlight functional region..."
 }

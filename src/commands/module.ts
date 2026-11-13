@@ -130,7 +130,7 @@ function businessParams(params: Record<string, any>): Record<string, any> {
 	return cleanTimeout(params)
 }
 
-async function handler(item: typeof definitions[number], rawParams: Record<string, any>): Promise<unknown> {
+async function handler(item: typeof definitions[number], rawParams: Record<string, any>, context?: import('../engine/types').ICommandContext): Promise<unknown> {
 	const params = businessParams(rawParams)
 	if (item.name.startsWith('module.library') || item.name === 'module.setLibraryDirectory') {
 		const action = item.name === 'module.libraryInfo' ? 'info'
@@ -142,7 +142,7 @@ async function handler(item: typeof definitions[number], rawParams: Record<strin
 	}
 	if (item.name === 'module.extractModuleArchive')
 		return runModuleExtractionWithAutoSave(params, executeModuleOperation, (saveParams) => libraryRequest('save', validateLibraryParams('save', saveParams)))
-	return executeModuleOperation(item.name, params)
+	return executeModuleOperation(item.name, params, context?.stopSignal)
 }
 
 export async function runModuleExtractionWithAutoSave(
@@ -199,7 +199,7 @@ export async function runModuleExtractionWithAutoSave(
 export const moduleCommands: ICommandDef[] = definitions.map(item => ({
 	...item,
 	...(item.name === 'module.prepareReplacement' ? { params: item.params.map(param => param.name === 'replacements' ? { ...param, description: `${param.description} ${replacementDetail}` } : param) } : {}),
-	handler: params => handler(item, params),
+	handler: (params, context) => handler(item, params, context),
 }))
 
 export { isModuleBusinessCommand, isModuleRecordQuery }
