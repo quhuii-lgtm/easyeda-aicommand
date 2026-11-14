@@ -1,5 +1,9 @@
 # Change log
 
+## 0.21.7
+
+- Design rules, native DRC, outline zoom, fanout verification and single-PCB restore workflows.
+
 ## 0.21.6
 
 - Device replacement now verifies the effective Device association, including inherited association data. This release also includes replacement stop protection, unknown-result replay handling, routing-layer continuity checks and linked module-library root support developed after v0.21.2.

@@ -1,4 +1,4 @@
-import type { ICommandDef } from '../../engine/types';
+import type { ICommandContext, ICommandDef } from '../../engine/types';
 import type { GeometryHost } from '../geometryHost';
 import type { CopperObstacle, Point, RouteRequest } from './fanout-routing';
 import { normalizeBoardOutlinePolylines } from '../boardOutline';
@@ -49,7 +49,7 @@ interface PadInfo {
 }
 
 type LayerObstacle = CopperObstacle & { copperLayers?: number[]; ownerPadId?: string };
-interface Collected { pads: PadInfo[]; obstacles: LayerObstacle[]; board: Point[][]; keepouts: Point[][]; copperLayers: number[]; warnings: string[]; complete: boolean }
+interface Collected { pads: PadInfo[]; obstacles: LayerObstacle[]; board: Point[][]; keepouts: Point[][]; copperLayers: number[]; readCounts: Record<string, number>; warnings: string[]; complete: boolean }
 
 const DIRS: Record<Exclude<Direction, 'auto' | '8directions'>, Point> = {
 	N: { x: 0, y: 1 },
@@ -593,6 +593,7 @@ async function collect(host: GeometryHost, readViaHoleSizes: boolean): Promise<C
 		for (const points of polygons) obstacles.push({ type: 'polygon', points, margin: marginRaw / 2, bounds: polygonBounds(points), net: '', copperLayers: [layer] });
 	}
 	const pourById = new Map((pours as any[]).map(pour => [requiredState<string>(pour, 'getState_PrimitiveId', '覆铜边框'), pour]));
+	let pouredFillChildren = 0;
 	for (const item of poured as any[]) {
 		const pourId = requiredState<string>(item, 'getState_PourPrimitiveId', '覆铜实填充');
 		const sourcePour = pourById.get(pourId);
@@ -617,6 +618,7 @@ async function collect(host: GeometryHost, readViaHoleSizes: boolean): Promise<C
 		for (const fill of regions) {
 			if (fill?.fill !== true)
 				continue;
+			pouredFillChildren++;
 			const rawPath = getPolygonState({ getState_ComplexPolygon: () => fill.path });
 			const normalized = normalizePouredPathSource(rawPath, { fill: fill.fill, lineWidth: fill.lineWidth, editorVersion, declaredCoordinateUnit: fill.coordinateUnit });
 			if (normalized.status !== 'normalized') {
@@ -684,7 +686,29 @@ async function collect(host: GeometryHost, readViaHoleSizes: boolean): Promise<C
 			warnings.push(`发现层 ${layer} 的未识别约束区域，无法确认是否禁止布线`);
 		}
 	}
-	return { pads: allPads, obstacles, board: boardGeometry.polygons, keepouts, copperLayers, warnings: [...new Set(warnings)], complete };
+	return {
+		pads: allPads,
+		obstacles,
+		board: boardGeometry.polygons,
+		keepouts,
+		copperLayers,
+		readCounts: {
+			standalonePads: (regularPads as any[]).length,
+			componentPins: allPads.length - (regularPads as any[]).length,
+			tracks: (lines as any[]).filter((item: any) => copperLayers.includes(layerOf(item, '走线'))).length,
+			arcs: (arcs as any[]).filter((item: any) => copperLayers.includes(layerOf(item, '圆弧'))).length,
+			vias: (vias as any[]).length,
+			fills: (fills as any[]).length,
+			pours: (pours as any[]).length,
+			pouredObjects: (poured as any[]).length,
+			pouredFillChildren,
+			boardLines: boardLines.length,
+			holeLines: (holeLines as any[]).length,
+			regions: (regions as any[]).length,
+		},
+		warnings: [...new Set(warnings)],
+		complete,
+	};
 }
 
 function selectedPads(input: FanoutInput, pads: PadInfo[]): PadInfo[] {
@@ -834,7 +858,27 @@ function makePlan(input: FanoutInput, dims: ReturnType<typeof dimensions>, colle
 		groups,
 		plannedPrimitives,
 		executable,
-		coverage: { complete: collected.complete, pads: collected.pads.length, obstacles: collected.obstacles.length, boardPolygons: collected.board.length, keepoutPolygons: collected.keepouts.length, copperLayers: collected.copperLayers, holeToHoleRule: holeRule.status === 'verified' ? { verified: true, clearanceMil: holeRule.clearanceMil } : { verified: false, status: holeRule.status }, searchLimited, checkedCandidates, sampling: 'ellipses, rounded rectangles and oblong pads use at most 10 degree steps with conservative outward chord-sagitta padding; unsupported curve polygons block execution' },
+		coverage: {
+			complete: collected.complete,
+			pads: collected.pads.length,
+			obstacles: collected.obstacles.length,
+			boardPolygons: collected.board.length,
+			keepoutPolygons: collected.keepouts.length,
+			copperLayers: collected.copperLayers,
+			holeToHoleRule: holeRule.status === 'verified' ? { verified: true, clearanceMil: holeRule.clearanceMil } : { verified: false, status: holeRule.status },
+			searchLimited,
+			checkedCandidates,
+			sampling: 'ellipses, rounded rectangles and oblong pads use at most 10 degree steps with conservative outward chord-sagitta padding; unsupported curve polygons block execution',
+			geometryReview: {
+				scope: 'local fanout geometry model; this is not native DRC or full-board clearance acceptance',
+				status: collected.complete ? 'complete-for-supported-local-geometry' : 'incomplete',
+				readCounts: collected.readCounts,
+				warnings: collected.warnings,
+				precision: 'PAD位置和外形按SDK对象getter构建，未从原始源码读取PAD几何；独立PAD与封装PAD保持各自getter来源。新建线/过孔按ID读回getter与计划值比较，当前实现容差为0.001 mil。该读回不证明原始源码精度或不同图元的统一量化。',
+				unknown: ['原生 DRC 未调用；规则违例、完整电气/制造规则以及 SDK 未公开或未读取的对象未核验'],
+				nativeDrc: { status: 'not-run' },
+			},
+		},
 		warnings: [...new Set(warnings)],
 		provenance: { algorithm: 'eext-pad-fanout/src/fanout-routing.ts', upstreamCommit: '7c88e571457e6d63463b7cb391e1e62bdbdd02d7', sdk: '@jlceda/pro-api-types 0.4.26', viaType: 'through-hole' },
 	};
@@ -855,10 +899,10 @@ function assertPlanShape(plan: any): asserts plan is ReturnType<typeof makePlan>
 		throw new Error('plan 结构不完整或 operation/units 不匹配');
 }
 
-async function getPlan(params: Record<string, any>) {
+async function getPlan(params: Record<string, any>, ctx?: ICommandContext) {
 	let host: GeometryHost | undefined;
 	try {
-		host = await createGeometryHost(eda, params);
+		host = await createGeometryHost(eda, params, undefined, ctx);
 		const input = normalizeInput(params);
 		const plan = await buildPlan(host, input);
 		await host.finish();
@@ -871,13 +915,13 @@ async function getPlan(params: Record<string, any>) {
 	}
 }
 
-async function executePlan(params: Record<string, any>) {
+async function executePlan(params: Record<string, any>, ctx?: ICommandContext) {
 	let host: GeometryHost | undefined;
 	const attemptedIndexes = new Set<number>();
 	try {
 		const plan = params.plan;
 		assertPlanShape(plan);
-		host = await createGeometryHost(eda, params, plan.documentUuid);
+		host = await createGeometryHost(eda, params, plan.documentUuid, ctx);
 		if (!plan.executable)
 			throw new Error('计划标记为不可执行');
 		await host.assertBaseline(plan.baseline);
@@ -967,7 +1011,7 @@ export const fanoutCommands: Array<ICommandDef> = [
 			{ name: 'clearance', type: 'number', description: '安全间距（mil）；当前未核实 DRC 规则字段，需要明确提供' },
 			{ name: 'staggerLength', type: 'number', description: '按目标顺序沿出口垂线正负各偏移 staggerLength/2，mil，默认 0' },
 		],
-		returns: '扇出计划，含真实目标坐标、网络、层、线宽、过孔尺寸、搜索覆盖与 executable；不写入 PCB。',
+		returns: '扇出计划，含真实目标坐标、网络、层、线宽、过孔尺寸、搜索覆盖与 executable；coverage.geometryReview 返回 readCounts（SDK 读取数量，并非逐项检查通过数）、局部模型 status、warnings、unknown、precision 及 nativeDrc.status。PAD 模型来自 SDK getter；精度来源和局部覆盖不能代替原生 DRC 或制造验收。不写入 PCB。',
 		example: { cmd: 'pcb.getFanoutPlan', params: { padIds: ['pad-id'], lineLength: 120, lineWidth: 8, viaDiameter: 24, holeDiameter: 12, clearance: 8 } },
 		handler: getPlan,
 	},

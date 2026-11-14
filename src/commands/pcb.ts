@@ -24,6 +24,7 @@ import { prepareViaEndpointRefresh, refreshViaEndpointLines } from '../engine/vi
 import { buildRoutingWidthSnapshot, checkSesWidthRules, compareDsnWidthRules } from '../engine/routingWidthRules'
 import { readEditorVersion } from '../pcb/pouredUnits'
 import { assertSesRouteBaselineMatchesDsn, buildSesRouteBaseline, resolveSesArcCoverage, type SesRouteBaseline } from '../pcb/sesArcCoverage'
+import { parseDrcResult } from '../pcb/drcResult'
 
 /** 0.10.42：给无保护 await 加超时（官方偶发永不 resolve，曾致整批删除挂死 300s 无结果） */
 async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
@@ -1714,29 +1715,52 @@ export const pcbCommands: Array<ICommandDef> = [
 	},
 	{
 		name: 'pcb.runDrc',
-		summary: '运行 PCB DRC 设计规则检查，返回违规列表',
+		summary: '运行 PCB DRC 并保留官方原始分组树；passed仅表示本次API返回中没有违规，实际规则覆盖范围仍未知',
 		params: [],
-		returns: '{ passed, violations }',
+		returns: '{ passed:仅表示本次API返回无违规, violations:官方原始分组树, totalCount:违规叶数, errorCount, fatalCount:errorCount, warnCount, unknownCount, categoryCount, unrecognizedCount, incomplete, coverage:{ruleCoverage:"unknown"}, rawCoordinateUnit, coordinateUnit }',
 		example: { cmd: 'pcb.runDrc' },
-		handler: async () => {
-			const violations = await eda.pcb_Drc.check(true, false, true)
-			if (!Array.isArray(violations))
-				throw new Error(`PCB DRC 结果不可判定：官方返回 ${violations === null ? 'null' : typeof violations}，预期为违规数组；不能按 0 项通过处理`)
-			const list = violations
-			return { passed: list.length === 0, violations: list }
+		handler: async (_params, ctx) => {
+			await ctx?.assertDocumentTarget?.()
+			const raw = await eda.pcb_Drc.check(true, false, true)
+			await ctx?.assertDocumentTarget?.()
+			let editorVersion: string | undefined
+			try {
+				const version = eda.sys_Environment?.getEditorCurrentVersion?.()
+				if (typeof version === 'string' && /^\d+\.\d+\.\d+(?:$|[-+\s])/.test(version.trim()))
+					editorVersion = version.trim()
+			}
+			catch {
+				// Keep raw coordinates and mark units unknown when the host version endpoint is unavailable.
+			}
+			const result = parseDrcResult(raw, editorVersion)
+			return {
+				passed: result.passed,
+				violations: result.rawResult,
+				totalCount: result.totalCount,
+				errorCount: result.errorCount,
+				fatalCount: result.fatalCount,
+				warnCount: result.warnCount,
+				unknownCount: result.unknownCount,
+				categoryCount: result.categoryCount,
+				unrecognizedCount: result.unrecognizedCount,
+				unrecognizedNodes: result.unrecognizedNodes,
+				incomplete: result.incomplete,
+				coverage: result.coverage,
+				rawCoordinateUnit: result.rawCoordinateUnit,
+				coordinateUnit: result.coordinateUnit,
+			}
 		},
 	},
 	{
 		name: 'pcb.runDrcDetailed',
-		summary: '运行 PCB DRC 并返回逐条违规明细及归一化坐标。EDA 4.1.78 已核实原始 x/y 单位为 10mil，另返回 xMil/yMil 和 coordinateUnit=mil；其他或未知版本保留原始 x/y 并标 rawCoordinateUnit=unknown，不猜测换算',
+		summary: '运行 PCB DRC 并返回逐条违规明细及完整原始树；passed仅表示本次API返回无违规，实际规则覆盖范围仍未知。仅 EDA 4.1.78 已核实原始 x/y 单位为 10mil；其他版本单位 unknown',
 		params: [],
-		returns: '{ passed, totalCount, fatalCount, warnCount, violations: [逐条明细] }（按宿主版本标注坐标：EDA 4.1.78 的 x/y 保留原值并标 rawCoordinateUnit:"10mil"，同时给 xMil/yMil 和 coordinateUnit:"mil"；其他/未知版本仅给原值并标 rawCoordinateUnit:"unknown"。原始叶保留在 raw）',
+		returns: '{ passed:仅表示本次API返回无违规, totalCount:识别违规叶数, errorCount, fatalCount:errorCount, warnCount, unknownCount:已识别但严重程度未知的叶数, categoryCount, unrecognizedCount/unrecognizedNodes, incomplete, coverage:{source,ruleCoverage:"unknown",result,passedMeaning}, rawResult:完整官方分组树, violations:[扁平明细，raw保留原始叶] }；含未知严重程度或未识别节点时 passed=false。EDA 4.1.78 坐标按已有证据换算，其余单位 unknown',
 		example: { cmd: 'pcb.runDrcDetailed' },
-		handler: async () => {
-			const violations = await eda.pcb_Drc.check(true, false, true)
-			if (!Array.isArray(violations))
-				throw new Error(`PCB DRC 结果不可判定：官方返回 ${violations === null ? 'null' : typeof violations}，预期为违规数组；不能按 0 项通过处理`)
-			const list = violations
+		handler: async (_params, ctx) => {
+			await ctx?.assertDocumentTarget?.()
+			const raw = await eda.pcb_Drc.check(true, false, true)
+			await ctx?.assertDocumentTarget?.()
 			let editorVersion: string | undefined
 			try {
 				const version = eda.sys_Environment?.getEditorCurrentVersion?.()
@@ -1746,73 +1770,7 @@ export const pcbCommands: Array<ICommandDef> = [
 			catch {
 				// DRC remains useful when the host version endpoint is unavailable; coordinates stay raw and unconverted.
 			}
-			const rawCoordinatesAre10Mil = editorVersion === '4.1.78'
-			// 0.10.25 归一化重写（0.10.24 装机实锤真实结构）：官方返回的是**树形分组**——
-			// [{ name:'Connection Error', list:[{ name:'GND', list:[叶...] }] }]，
-			// 叶字段：errorType/errorObjType/ruleName/net/explanation{str,param}/errData{position,obj1,obj1Type,errorType,obj1Suffix,layerIds}/objs[primitiveId]/pos{x,y}/parentId('DRCTab|_|Errors|_|...')
-			const severityOf = (parentId: unknown): string | undefined => {
-				const s = String(parentId ?? '')
-				if (/\|_\|Errors\|_\|/i.test(s))
-					return 'error'
-				if (/\|_\|Warnings\|_\|/i.test(s))
-					return 'warn'
-				return undefined
-			}
-			const flat: Array<Record<string, unknown>> = []
-			const walk = (node: any, groupName?: string, groupNet?: string) => {
-				if (node == null || typeof node !== 'object') {
-					flat.push({ message: String(node) })
-					return
-				}
-				const isLeaf = node.errData != null || node.objs != null || node.errorType != null
-				if (!isLeaf && Array.isArray(node.list)) {
-					// 第一层分组的 name 是规则类别（rule），第二层是网络名（net），更深同理下传
-					const isTop = groupName === undefined
-					for (const child of node.list) {
-						walk(
-							child,
-							isTop ? (node.name != null ? String(node.name) : undefined) : groupName,
-							isTop ? groupNet : (node.name != null ? String(node.name) : groupNet),
-						)
-					}
-					return
-				}
-				// 叶子：按实测结构提取（errData 嵌在 explanation 内部：leaf.explanation.errData）
-				const explanation = node.explanation ?? {}
-				const errData = node.errData ?? explanation.errData ?? {}
-				const pos = node.pos ?? errData.position ?? {}
-				const objs = Array.isArray(node.objs) ? node.objs.map(String) : (errData.obj1 != null ? [String(errData.obj1)] : [])
-				const hasPosition = pos.x != null || pos.y != null
-				const convertedPosition = rawCoordinatesAre10Mil
-					&& typeof pos.x === 'number' && Number.isFinite(pos.x)
-					&& typeof pos.y === 'number' && Number.isFinite(pos.y)
-				flat.push({
-					...(severityOf(node.parentId) ? { type: severityOf(node.parentId) } : {}),
-					...(groupName != null ? { rule: groupName } : (node.ruleName != null ? { rule: String(node.ruleName) } : {})),
-					...(node.ruleName != null ? { ruleName: String(node.ruleName) } : {}),
-					...(errData.errorType != null || node.errorType != null ? { errorType: String(errData.errorType ?? node.errorType) } : {}),
-					...(explanation.str != null ? { message: String(explanation.str), ...(explanation.param ? { messageParams: explanation.param } : {}) } : {}),
-					...(node.net != null ? { net: String(node.net) } : (groupNet != null ? { net: groupNet } : (errData.net != null ? { net: String(errData.net) } : {}))),
-					...(objs.length ? { primitiveId: objs[0], primitiveIds: objs } : {}),
-					...(node.errorObjType != null || errData.obj1Type != null ? { objectType: String(node.errorObjType ?? errData.obj1Type) } : {}),
-					...(errData.obj1Suffix != null ? { objectName: String(errData.obj1Suffix) } : {}),
-					...(pos.x != null ? { x: pos.x } : {}),
-					...(pos.y != null ? { y: pos.y } : {}),
-					...(hasPosition ? {
-						rawCoordinateUnit: rawCoordinatesAre10Mil ? '10mil' : 'unknown',
-					...(convertedPosition ? { xMil: Math.round(pos.x * 10 * 1_000_000) / 1_000_000, yMil: Math.round(pos.y * 10 * 1_000_000) / 1_000_000, coordinateUnit: 'mil' } : {}),
-					} : {}),
-					...(Array.isArray(errData.layerIds) ? { layerIds: errData.layerIds } : {}),
-					raw: node, // 原始叶兜底，字段没提全时自取
-				})
-			}
-			for (const v of list)
-				walk(v)
-			const normalized = flat
-			const totalCount = normalized.length
-			const fatalCount = normalized.filter(v => /fatal|error/i.test(String(v.type ?? ''))).length
-			const warnCount = normalized.filter(v => /warn/i.test(String(v.type ?? ''))).length
-			return { passed: totalCount === 0, totalCount, fatalCount, warnCount, violations: normalized }
+			return parseDrcResult(raw, editorVersion)
 		},
 	},
 	{

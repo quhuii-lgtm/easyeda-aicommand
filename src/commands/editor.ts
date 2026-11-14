@@ -6,6 +6,36 @@ import { fileToResult } from './util'
 
 export const editorCommands: Array<ICommandDef> = [
 	{
+		name: 'pcb.zoomToBoardOutline',
+		summary: '使用官方接口将当前 PCB 视图适应板框；不移动图元、不改变板框，不会退回适应全部图元',
+		params: [],
+		returns: '{ zoomed:true, method:"native-board-outline", document, visualVerified:false }；返回成功表示官方接口成功且前后目标一致，图面效果须另行确认。失败或切页时不自动重发',
+		example: { cmd: 'pcb.zoomToBoardOutline' },
+		handler: async (_params, ctx) => {
+			await ctx?.assertDocumentTarget?.()
+			let result: boolean
+			try {
+				result = await eda.pcb_Document.zoomToBoardOutline()
+			}
+			catch (error) {
+				throw new Error(`适应板框调用未确认：${error instanceof Error ? error.message : String(error)}`, {
+					cause: { phase: 'zoomToBoardOutline', sdkInvoked: true, designModified: false },
+				})
+			}
+			try {
+				await ctx?.assertDocumentTarget?.()
+			}
+			catch (error) {
+				throw new Error(`适应板框已调用，但目标复核失败：${error instanceof Error ? error.message : String(error)}`, {
+					cause: { phase: 'zoomToBoardOutline.readback', sdkInvoked: true, sdkResult: result, designModified: false },
+				})
+			}
+			if (result !== true)
+				throw new Error('官方接口未确认适应板框成功；请检查当前 PCB 和有效板框，未改用适应全部图元')
+			return { zoomed: true, method: 'native-board-outline', document: ctx?.documentTarget, visualVerified: false }
+		},
+	},
+	{
 		name: 'editor.openDocument',
 		summary: '激活打开指定文档（原理图图页/PCB 的 uuid，可从 project.getInfo 获取）；原理图/PCB 类指令执行前需确保对应文档已激活',
 		params: [

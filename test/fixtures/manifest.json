@@ -389,6 +389,30 @@
       "fixtureSha256": "082ca38edbd5d3a41e9186d64ad615f63d33c521c932d041dde066e0f777b635",
       "bytes": 2701,
       "method": "extract identity/resource fields from semantic association proof and typed/reopened readbacks; omit runtime envelopes and live source"
+    },
+    {
+      "fixture": "official-native-drc-4199.json",
+      "source": "../evidence/official-native-drc-probe-4199.json",
+      "sourceSha256": "339eebbba9d23701cbfc27c6b3c0d1c7f2b33bfc19c483dca835202292b35261",
+      "fixtureSha256": "b1aa0f1147e42d719f32a86bca67db82c89135f182741b1b6e98a1dc7bd7453c",
+      "bytes": 3006,
+      "method": "retain the original value.raw DRC tree unchanged; omit document identity and runtime envelope"
+    },
+    {
+      "fixture": "pcb-design-rules-4199.json",
+      "source": "../evidence/rule-editing-live-before.json",
+      "sourceSha256": "b10ed959fb800c03cbfb2a27023f2e5bdcc22d7cbcbadb4ad59f6133ffd245c8",
+      "fixtureSha256": "7dd2bcbb51efd1dba844701ba5111dbc3f3c66d6f644860a718762c9d0048f9d",
+      "bytes": 26057,
+      "method": "extract value.document, value.configuration and value.netRules from the 4.1.99 getter result; omit outer request and timing envelope"
+    },
+    {
+      "fixture": "fanout-routing-before.ts",
+      "source": "fanout-mcu-20261011/129-before/fanout-routing.ts",
+      "sourceSha256": "7b0b1c1821b173873ffc819a7bc9bdc2f739b3ae1bcc0e9190f55cf48b6f2f0e",
+      "fixtureSha256": "ada9e05b960fbaaab9421c71867252da6f80f90dc462b85f0f4a8f7df60f93b2",
+      "bytes": 19905,
+      "method": "copy original algorithm body unchanged; prepend three provenance comment lines"
     }
   ]
 }

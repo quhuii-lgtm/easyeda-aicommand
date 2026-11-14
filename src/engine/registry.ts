@@ -16,6 +16,7 @@ import type {
 import { beginTask, failTask, finishTask, taskProgress } from './tasks'
 import { diag } from './diag'
 import { runWithModuleExecution } from './moduleExecution'
+import { assertDocumentTarget as assertCurrentDocumentTarget, captureDocumentTarget } from './documentTarget'
 
 const registry = new Map<string, ICommandDef>()
 
@@ -39,6 +40,14 @@ export function getCommandDocs(): Array<Omit<ICommandDef, 'handler'>> {
 				type: 'string',
 				required: false,
 				description: '可选目标页 UUID；提供时须为非空字符串，并与当前焦点页匹配。不会自动切换页面，也不保证指令执行期间页面身份保持不变。目标页未激活时，请先显式执行 editor.openDocument。',
+			})
+		}
+		if (!params.some(param => param.name === '__projectUuid')) {
+			params.push({
+				name: '__projectUuid',
+				type: 'string',
+				required: false,
+				description: '可选目标工程 UUID；提供时须为非空字符串，且当前焦点页的 parentProjectUuid 必须与之匹配。不会切换工程或页面。',
 			})
 		}
 		return { ...doc, params }
@@ -222,6 +231,10 @@ export async function executeCommand(req: ICommandRequest, ctx?: ICommandContext
 			const expectTab = params.__tabId
 			if (hasExpectedTab && (typeof expectTab !== 'string' || !expectTab.trim()))
 				throw new Error('__tabId 必须是非空、非纯空白字符串')
+			const hasExpectedProject = Object.prototype.hasOwnProperty.call(params, '__projectUuid')
+			const expectProject = (params as any).__projectUuid
+			if (hasExpectedProject && (typeof expectProject !== 'string' || !expectProject.trim()))
+				throw new Error('__projectUuid 必须是非空、非纯空白字符串')
 			const elapsedBeforeLookup = Date.now() - started
 			const lookupBudgetMs = fuseMs - elapsedBeforeLookup
 			if (lookupBudgetMs <= 0)
@@ -249,6 +262,11 @@ export async function executeCommand(req: ICommandRequest, ctx?: ICommandContext
 			}
 			if (hasExpectedTab && doc.tabId !== expectTab)
 				throw new Error('当前页签与菜单操作的目标页签不符，请返回原 PCB 后重新打开菜单')
+			if (hasExpectedProject && doc.parentProjectUuid !== expectProject)
+				throw new Error(`当前焦点页 parentProjectUuid 与 __projectUuid 不符（焦点=${String(doc.parentProjectUuid ?? '缺失')}，要求=${expectProject}）`)
+			const documentTarget = captureDocumentTarget(doc)
+			context.documentTarget = documentTarget
+			context.assertDocumentTarget = () => assertCurrentDocumentTarget(documentTarget, context.stopSignal)
 			handlerFuseMs = fuseMs - (Date.now() - started)
 			if (handlerFuseMs <= 0)
 				throw new Error(`页级文档校验后执行预算已耗尽（${fuseMs}ms）；未启动页级指令`)

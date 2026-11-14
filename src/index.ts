@@ -32,6 +32,7 @@ import { netSilkscreenCommands } from './commands/netSilkscreen';
 import { padExpansionCommands } from './commands/padExpand';
 import { padHoleCommands } from './commands/padHole';
 import { pcbCommands } from './commands/pcb';
+import { pcbRuleCommands } from './commands/pcbRules';
 import { pcbGroupingCommands } from './commands/pcbGrouping';
 import { pcbRegionMarkerCommands } from './commands/pcbRegionMarkers';
 import { pcbLayerColorCommands } from './commands/pcbLayerColor';
@@ -54,6 +55,7 @@ function registerAllCommands(): void {
 		...editorCommands,
 		...schematicCommands,
 		...pcbCommands,
+		...pcbRuleCommands,
 		...diffPairCommands,
 		...padBranchCommands,
 		...lengthTuneCommands,
