@@ -12,6 +12,11 @@ try {
 	const moduleExecutionCode = ts.transpileModule(moduleExecutionSource, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
 	const moduleExecutionExports = {}
 	vm.runInNewContext(moduleExecutionCode, { exports: moduleExecutionExports, Promise, Error })
+	const documentTargetSource = fs.readFileSync(new URL('../src/engine/documentTarget.ts', import.meta.url), 'utf8')
+	const documentTargetCode = ts.transpileModule(documentTargetSource, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
+	const documentTargetExports = {}
+	let registryContext
+	vm.runInNewContext(documentTargetCode, { exports: documentTargetExports, Promise, Error, get eda() { return registryContext.eda } })
 	let currentDoc = { documentType: 3, uuid: 'pcb-page' }
 	let infoCalls = 0
 	let activateCalls = 0
@@ -23,6 +28,7 @@ try {
 		require(name) {
 			if (name === './diag') return { diag() {} }
 			if (name === './moduleExecution') return moduleExecutionExports
+			if (name === './documentTarget') return documentTargetExports
 			if (name === './tasks') return {
 				beginTask() { return { task: { id: 'macro-test' }, existing: false } },
 				failTask() {}, finishTask() {}, taskProgress() {},
@@ -39,6 +45,7 @@ try {
 		Date: class VirtualDate extends Date { static now() { return virtualClock.now } },
 		console,
 	}
+	registryContext = context
 	vm.runInNewContext(code, context)
 	const { registerCommand, getCommandDocs, executeCommand } = context.exports
 	const register = (name, handler) => registerCommand({ name, summary: '', params: [], returns: '', handler })
@@ -47,13 +54,36 @@ try {
 	const predeclaredTargetParams = [{ name: '__docUuid', type: 'string', required: false, description: 'existing target parameter' }]
 	registerCommand({ name: 'pcb.predeclaredTarget', summary: '', params: predeclaredTargetParams, returns: '', handler: async () => true })
 	register('project.testPage', async () => { handlerCalls++; return true })
+	register('pcb.targetContext', async (_params, ctx) => {
+		handlerCalls++
+		await ctx.assertDocumentTarget()
+		return { target: ctx.documentTarget, checked: true }
+	})
+	register('pcb.targetContextDrift', async (_params, ctx) => {
+		handlerCalls++
+		await ctx.assertDocumentTarget()
+		await Promise.resolve()
+		currentDoc = { ...currentDoc, parentProjectUuid: 'project-switched' }
+		await ctx.assertDocumentTarget()
+		return true
+	})
+	register('pcb.targetContextPageDrift', async (_params, ctx) => {
+		handlerCalls++
+		await ctx.assertDocumentTarget()
+		await Promise.resolve()
+		currentDoc = { ...currentDoc, uuid: 'page-switched' }
+		await ctx.assertDocumentTarget()
+		return true
+	})
 	let docs
 	for (let i = 0; i < 3; i++) {
 		docs = getCommandDocs()
 		const pageDocs = docs.filter(doc => doc.name.startsWith('pcb.') || doc.name.startsWith('schematic.'))
-		assert.equal(pageDocs.length, 3)
-		for (const doc of pageDocs)
+		assert.equal(pageDocs.length, 6)
+		for (const doc of pageDocs) {
 			assert.equal(doc.params.filter(param => param.name === '__docUuid').length, 1, 'page help exports exactly one optional __docUuid')
+			assert.equal(doc.params.filter(param => param.name === '__projectUuid').length, 1, 'page help exports exactly one optional __projectUuid')
+		}
 		assert.ok(!docs.find(doc => doc.name === 'project.testPage').params.some(param => param.name === '__docUuid'), 'non-page help keeps its original parameter list')
 	}
 	assert.deepEqual(predeclaredTargetParams, [{ name: '__docUuid', type: 'string', required: false, description: 'existing target parameter' }], 'help augmentation does not mutate the registered definition parameters')
@@ -88,6 +118,41 @@ try {
 	assert.equal(handlerCalls, beforeWrongTab, 'same document UUID in another project must not enter the handler')
 	result = await executeCommand({ cmd: 'pcb.testPage', params: { __docUuid: 'copied-pcb', __tabId: 'copied-pcb@project-b' } })
 	assert.equal(result.ok, true)
+	currentDoc = { documentType: 3, uuid: 'same-pcb', tabId: 'same-pcb@project-a', parentProjectUuid: 'project-a' }
+	result = await executeCommand({ cmd: 'pcb.testPage', params: { __docUuid: 'same-pcb', __projectUuid: 'project-a' } })
+	assert.equal(result.ok, true, 'explicit project and document identity matching passes')
+	for (const badProject of ['', '   ', null, 7, undefined]) {
+		const beforeInfo = infoCalls
+		const beforeHandler = handlerCalls
+		result = await executeCommand({ cmd: 'pcb.testPage', params: { __projectUuid: badProject } })
+		assert.equal(result.ok, false)
+		assert.match(result.error.message, /__projectUuid 必须是非空/)
+		assert.equal(infoCalls, beforeInfo, 'invalid project target is rejected before the SDK read')
+		assert.equal(handlerCalls, beforeHandler, 'invalid project target never starts the handler')
+	}
+	currentDoc = { documentType: 3, uuid: 'same-pcb', parentProjectUuid: 'project-b' }
+	const beforeSameUuidDifferentProject = handlerCalls
+	result = await executeCommand({ cmd: 'pcb.testPage', params: { __docUuid: 'same-pcb', __projectUuid: 'project-a' } })
+	assert.equal(result.ok, false, 'same UUID under another project rejects explicit project binding')
+	assert.match(result.error.message, /parentProjectUuid 与 __projectUuid 不符/)
+	assert.equal(handlerCalls, beforeSameUuidDifferentProject)
+	currentDoc = { documentType: 3, uuid: 'same-pcb' }
+	result = await executeCommand({ cmd: 'pcb.testPage', params: { __projectUuid: 'project-a' } })
+	assert.equal(result.ok, false, 'explicit project binding rejects a missing parentProjectUuid')
+	currentDoc = { documentType: 3, uuid: 'target-pcb', tabId: 'target-tab', parentProjectUuid: 'project-a' }
+	result = await executeCommand({ cmd: 'pcb.targetContext', params: { __docUuid: 'target-pcb', __projectUuid: 'project-a' } })
+	assert.equal(result.ok, true)
+	assert.deepEqual(JSON.parse(JSON.stringify(result.data.target)), {
+		documentType: 3, uuid: 'target-pcb', tabId: 'target-tab', parentProjectUuid: 'project-a',
+	}, 'context exposes a value snapshot of the current document identity')
+	assert.equal(result.data.checked, true)
+	result = await executeCommand({ cmd: 'pcb.targetContextDrift', params: { __docUuid: 'target-pcb', __projectUuid: 'project-a' } })
+	assert.equal(result.ok, false, 'context guard catches project drift after an async boundary')
+	assert.match(result.error.message, /文档身份已变化/)
+	currentDoc = { documentType: 3, uuid: 'target-pcb', tabId: 'target-tab', parentProjectUuid: 'project-a' }
+	result = await executeCommand({ cmd: 'pcb.targetContextPageDrift', params: { __docUuid: 'target-pcb', __projectUuid: 'project-a' } })
+	assert.equal(result.ok, false, 'context guard catches page drift after an async boundary')
+	assert.match(result.error.message, /文档身份已变化/)
 
 	for (const badUuid of ['', '   ', null, 7, undefined]) {
 		const beforeInfo = infoCalls

@@ -9,7 +9,7 @@ async function main() {
 	const root = resolve(import.meta.dirname, '..');
 	const built = await build({
 		stdin: {
-			contents: `import { fanoutCommands } from '../src/commands/fanout.ts'; import { normalizeRoute, planRouteDetailed } from '../src/pcb/fanout/fanout-routing.ts'; import { planRouteDetailed as planRouteDetailedBefore } from '../../fanout-mcu-20261011/129-before/fanout-routing.ts'; export { fanoutCommands, normalizeRoute, planRouteDetailed, planRouteDetailedBefore }`,
+			contents: `import { fanoutCommands } from '../src/commands/fanout.ts'; import { normalizeRoute, planRouteDetailed } from '../src/pcb/fanout/fanout-routing.ts'; import { planRouteDetailed as planRouteDetailedBefore } from './fixtures/fanout-routing-before.ts'; export { fanoutCommands, normalizeRoute, planRouteDetailed, planRouteDetailedBefore }`,
 			resolveDir: resolve(root, 'test'),
 			sourcefile: 'fanout-regression-entry.ts',
 		},
@@ -79,12 +79,12 @@ async function main() {
 		};
 	}
 
-	function install({ pads = [pad('P1')], vias = [], fills = [], pours = [], poured = [], arcs = [], holeLines = [], outlinePolylines = [], rules = emptyRules, focusUuid = 'pcb-A', outline = true, outlineLines, mergeCollinearLines = false, editorVersion = null } = {}) {
-		const state = { writes: [], reads: [], source: docHead(focusUuid), rules, pads: [...pads], vias: [...vias], fills: [...fills], arcs: [...arcs], holeLines: [...holeLines], lines: [], created: new Map(), nextId: 1, failCreate: undefined, mismatchReadback: false, mergeCollinearLines };
+	function install({ pads = [pad('P1')], components = [], tracks = [], vias = [], fills = [], pours = [], poured = [], arcs = [], holeLines = [], outlinePolylines = [], rules = emptyRules, focusUuid = 'pcb-A', outline = true, outlineLines, mergeCollinearLines = false, editorVersion = null } = {}) {
+		const state = { writes: [], reads: [], source: docHead(focusUuid), rules, pads: [...pads], components: [...components], vias: [...vias], fills: [...fills], arcs: [...arcs], holeLines: [...holeLines], lines: [...tracks], created: new Map(), nextId: 1, failCreate: undefined, mismatchReadback: false, mergeCollinearLines };
 		if (outlineLines)
-			state.lines = outlineLines;
+			state.lines = [...tracks, ...outlineLines];
 		else if (outline)
-			state.lines = [line('O1', 11, 0, 0, 1000, 0), line('O2', 11, 1000, 0, 1000, 1000), line('O3', 11, 1000, 1000, 0, 1000), line('O4', 11, 0, 1000, 0, 0)];
+			state.lines = [...tracks, line('O1', 11, 0, 0, 1000, 0), line('O2', 11, 1000, 0, 1000, 1000), line('O3', 11, 1000, 1000, 0, 1000), line('O4', 11, 0, 1000, 0, 0)];
 		const result = {
 			state,
 			sdk: {
@@ -94,11 +94,11 @@ async function main() {
 				pcb_Drc: { getCurrentRuleConfiguration: async () => state.rules },
 				pcb_Layer: { getAllLayers: async () => [{ id: 1, type: 'SIGNAL' }, { id: 2, type: 'SIGNAL' }, { id: 15, type: 'SIGNAL' }, { id: 16, type: 'PLANE' }] },
 				pcb_PrimitivePad: { getAll: async () => [...state.pads] },
-				pcb_PrimitiveComponent: { getAll: async () => [] },
+				pcb_PrimitiveComponent: { getAll: async () => [...state.components] },
 				pcb_PrimitiveLine: {
 					getAll: async (_net, layer) => layer === 47 ? [...state.holeLines] : [...state.lines],
 					create: async (net, layer, x1, y1, x2, y2, width) => {
-						state.writes.push({ kind: 'line', layer, net, start: { x: x1, y: y1 }, end: { x: x2, y: y2 } });
+						state.writes.push({ kind: 'line', layer, net, start: { x: x1, y: y1 }, end: { x: x2, y: y2 }, width });
 						if (state.failCreate === 'line')
 							return undefined;
 						if (state.mergeCollinearLines) {
@@ -135,7 +135,7 @@ async function main() {
 				pcb_PrimitiveVia: {
 					getAll: async () => [...state.vias],
 					create: async (net, x, y, holeDiameter, diameter, type) => {
-						state.writes.push({ kind: 'via', type, net });
+						state.writes.push({ kind: 'via', type, net, x, y, holeDiameter, diameter });
 						if (state.failCreate === 'via')
 							return undefined;
 						const id = `C${state.nextId++}`;
@@ -169,8 +169,8 @@ async function main() {
 	async function runPlan(fixture, request = params()) {
 		return command('pcb.getFanoutPlan').handler(request);
 	}
-	async function runExecute(fixture, plan) {
-		return command('pcb.fanout').handler({ __docUuid: 'pcb-A', plan });
+	async function runExecute(fixture, plan, ctx) {
+		return command('pcb.fanout').handler({ __docUuid: 'pcb-A', plan }, ctx);
 	}
 	let passed = 0;
 	const testFilter = process.env.FANOUT_TEST_FILTER?.split('|').filter(Boolean);
@@ -193,7 +193,123 @@ async function main() {
 		assert.equal(plan.plannedPrimitives[0].layer, 1);
 		assert.equal(plan.plannedPrimitives[0].net, 'N1');
 		assert.equal(plan.plannedPrimitives[1].layer, 'all-copper');
+		assert.equal(plan.coverage.geometryReview.status, 'complete-for-supported-local-geometry');
+		assert.deepEqual(plan.coverage.geometryReview.readCounts, {
+			standalonePads: 1,
+			componentPins: 0,
+			tracks: 0,
+			arcs: 0,
+			vias: 0,
+			fills: 0,
+			pours: 0,
+			pouredObjects: 0,
+			pouredFillChildren: 0,
+			boardLines: 4,
+			holeLines: 0,
+			regions: 0,
+		});
+		assert.deepEqual(plan.coverage.geometryReview.warnings, plan.warnings.filter(item => item.startsWith('椭圆、圆角矩形')));
+		assert.deepEqual(plan.coverage.geometryReview.nativeDrc, { status: 'not-run' });
+		assert.match(plan.coverage.geometryReview.scope, /not native DRC/);
+		assert.match(plan.coverage.geometryReview.precision, /PAD.*SDK对象getter.*未从原始源码读取PAD几何/);
+		assert.match(plan.coverage.geometryReview.precision, /0\.001 mil/);
+		assert.ok(plan.coverage.geometryReview.unknown.some(item => /原生 DRC 未调用/.test(item)));
 		assert.equal(f.state.writes.length, 0);
+	});
+
+	await test('geometry coverage distinguishes embedded pads and combined layered obstacles', async () => {
+		const componentPad = pad('CP1', { x: 200, y: 200, layer: 2, net: 'N2', componentId: 'C1' });
+		const fill = {
+			getState_PrimitiveId: () => 'F1',
+			getState_Layer: () => 1,
+			getState_LineWidth: () => 2,
+			getState_ComplexPolygon: () => ({ getSource: () => [100, 100, 'L', 120, 100, 120, 120, 100, 120] }),
+		};
+		const pour = {
+			getState_PrimitiveId: () => 'PO1',
+			getState_Layer: () => 2,
+			getState_LineWidth: () => 0.2,
+			getState_ComplexPolygon: () => ({ getSource: () => ['R', 660, 740, 80, 80, 0, 0] }),
+		};
+		const childFills = [{
+				id: 'PF1',
+				fill: true,
+				lineWidth: 0,
+				coordinateUnit: 'mil',
+				path: { getSource: () => [670, 670, 'L', 700, 670, 700, 700, 670, 700] },
+			}, {
+				id: 'PF2',
+				fill: true,
+				lineWidth: 0,
+				coordinateUnit: 'mil',
+				path: { getSource: () => [705, 705, 'L', 730, 705, 730, 730, 705, 730] },
+			}];
+		const pouredObject = (fills = childFills) => ({
+			getState_PrimitiveId: () => 'PR1',
+			getState_PourPrimitiveId: () => 'PO1',
+			getState_PourFills: () => fills,
+		});
+		const combined = {
+			components: [{ getState_PrimitiveId: () => 'C1', getAllPins: async () => [componentPad] }],
+			tracks: [line('T1', 1, 300, 350, 400, 350, 8, 'N2'), line('T2', 2, 300, 350, 400, 350, 8, 'N2')],
+			vias: [via('V1', 800, 800, 24, 12, 0, 'N2')],
+			arcs: [arc('A1', 1, 200, 200, 240, 200, 30, 8)],
+			fills: [fill],
+			pours: [pour],
+		};
+		const f = install({ ...combined, poured: [pouredObject()] });
+		const plan = await runPlan(f, params({ padIds: undefined, componentIds: ['C1'], layer: 'bottom' }));
+		const singleChild = await runPlan(install({ ...combined, poured: [pouredObject(childFills.slice(0, 1))] }), params({ padIds: undefined, componentIds: ['C1'], layer: 'bottom' }));
+		assert.equal(plan.executable, true, plan.warnings.join('; '));
+		assert.equal(plan.coverage.geometryReview.status, 'complete-for-supported-local-geometry');
+		assert.deepEqual(plan.coverage.geometryReview.readCounts, {
+			standalonePads: 1,
+			componentPins: 1,
+			tracks: 2,
+			arcs: 1,
+			vias: 1,
+			fills: 1,
+			pours: 1,
+			pouredObjects: 1,
+			pouredFillChildren: 2,
+			boardLines: 4,
+			holeLines: 0,
+			regions: 0,
+		});
+		assert.deepEqual(plan.coverage.geometryReview.warnings, plan.warnings.filter(item => item.startsWith('椭圆、圆角矩形')));
+		assert.equal(plan.coverage.obstacles, singleChild.coverage.obstacles + 1, 'two active fill children in one Poured object become two local obstacles');
+		assert.equal(plan.coverage.geometryReview.nativeDrc.status, 'not-run');
+		assert.equal(f.state.writes.length, 0, 'the combined geometry plan remains read-only');
+	});
+
+	await test('invalid fixed copper fill reports incomplete local geometry', async () => {
+		const fill = {
+			getState_PrimitiveId: () => 'F-invalid',
+			getState_Layer: () => 1,
+			getState_LineWidth: () => -1,
+			getState_ComplexPolygon: () => ({ getSource: () => ['R', 400, 400, 80, 80, 0, 0] }),
+		};
+		const plan = await runPlan(install({ fills: [fill] }));
+		assert.equal(plan.coverage.complete, false);
+		assert.equal(plan.coverage.geometryReview.status, 'incomplete');
+		assert.equal(plan.coverage.geometryReview.readCounts.fills, 1);
+		assert.ok(plan.coverage.geometryReview.warnings.some(item => /填充\/覆铜线宽无效/.test(item)));
+		assert.equal(plan.executable, false);
+	});
+
+	await test('different-net track collision is enforced only on the selected copper layer', async () => {
+		const request = params({ direction: 'N', lineLength: 100, lineWidth: 8, viaDiameter: 24, holeDiameter: 12, clearance: 4 });
+		const base = await runPlan(install({ pads: [pad('P1', { x: 500, y: 300 })] }), request);
+		const otherLayer = await runPlan(install({ pads: [pad('P1', { x: 500, y: 300 })], tracks: [line('T-bottom', 2, 470, 350, 530, 350, 8, 'N2')] }), request);
+		const sameLayer = await runPlan(install({ pads: [pad('P1', { x: 500, y: 300 })], tracks: [line('T-top', 1, 470, 350, 530, 350, 8, 'N2')] }), request);
+		const arcLayer = await runPlan(install({ pads: [pad('P1', { x: 500, y: 300 })], arcs: [arc('A-top', 1, 470, 350, 530, 350, 0, 8)] }), request);
+		assert.equal(base.executable, true, base.warnings.join('; '));
+		assert.equal(otherLayer.executable, true, otherLayer.warnings.join('; '));
+		assert.deepEqual(otherLayer.plannedPrimitives, base.plannedPrimitives, 'opposite-layer copper must not be treated as same-layer track collision');
+		assert.equal(sameLayer.executable, true, sameLayer.warnings.join('; '));
+		assert.notDeepEqual(sameLayer.plannedPrimitives, base.plannedPrimitives, 'different-net copper on the selected layer must obstruct the direct route');
+		assert.equal(arcLayer.executable, true, arcLayer.warnings.join('; '));
+		assert.notDeepEqual(arcLayer.plannedPrimitives, base.plannedPrimitives, 'same-layer arc geometry must be converted into a routing obstacle');
 	});
 
 	await test('native R bounds and zero-width poured copper keep coordinate coverage explicit', async () => {
@@ -211,7 +327,7 @@ async function main() {
 		assert.equal((await runPlan(install({ pours: [pour(rectangle)], poured: [region(0, equivalent)] }))).coverage.complete, true, 'points on the parent boundary remain readable');
 		const outside = [249, 450, 'L', 450, 450, 450, 350, 249, 350, 249, 450];
 		assert.equal((await runPlan(install({ pours: [pour(rectangle)], poured: [region(0, outside)] }))).coverage.complete, false, 'clearly outside points must not be accepted');
-		for (const width of [-1, undefined, '0', NaN, Infinity]) {
+		for (const width of [-1, undefined, '0', Number.NaN, Infinity]) {
 			const invalid = await runPlan(install({ pours: [pour(rectangle)], poured: [region(width, inner)] }));
 			assert.equal(invalid.coverage.complete, false);
 		}
@@ -447,6 +563,8 @@ async function main() {
 		const independentHoleArc = await runPlan(install({ arcs: [arc('A1', 47, 300, 300, 700, 300)] }));
 		assert.equal(independentHoleArc.executable, false);
 		assert.match(independentHoleArc.warnings.join(' '), /独立圆弧图元.*板框\/板内孔层/);
+		assert.equal(independentHoleArc.coverage.geometryReview.status, 'incomplete');
+		assert.ok(independentHoleArc.coverage.geometryReview.warnings.some(item => /独立圆弧图元/.test(item)));
 		assert.equal((await runPlan(install({ arcs: [arc('A2', 11, 300, 300, 700, 300)] }))).executable, false);
 	});
 
@@ -837,6 +955,63 @@ async function main() {
 		assert.equal(g.state.writes.length, 0);
 	});
 
+	await test('document target guard catches same-UUID project or tab changes before and after first write', async () => {
+		const before = install();
+		const beforePlan = await runPlan(before);
+		const capturedTarget = { projectUuid: 'project-A', documentUuid: 'pcb-A', tabId: 'pcb-A@project-A' };
+		let currentTarget = { ...capturedTarget, projectUuid: 'project-B', tabId: 'pcb-A@project-B' };
+		const beforeContext = {
+			assertDocumentTarget: async () => {
+				if (currentTarget.projectUuid !== capturedTarget.projectUuid || currentTarget.tabId !== capturedTarget.tabId)
+					throw new Error('同 UUID 文档的项目或 tab 身份已变化');
+			},
+		};
+		const prewriteError = await runExecute(before, beforePlan, beforeContext).then(() => assert.fail('changed project/tab must reject'), error => error);
+		assert.match(prewriteError.message, /项目或 tab 身份已变化/);
+		assert.equal(before.state.writes.length, 0);
+
+		for (const changedField of ['projectUuid', 'tabId']) {
+			const during = install();
+			const duringPlan = await runPlan(during);
+			let identity = { ...capturedTarget };
+			during.sdk.dmt_SelectControl.getCurrentDocumentInfo = async () => {
+				identity = { ...identity, [changedField]: 'changed-during-focus-read' };
+				return { uuid: capturedTarget.documentUuid, documentType: 3 };
+			};
+			const context = { assertDocumentTarget: async () => {
+				if (identity.projectUuid !== capturedTarget.projectUuid || identity.tabId !== capturedTarget.tabId)
+					throw new Error('same UUID target changed during focus getter');
+			} };
+			const error = await runExecute(during, duringPlan, context).then(() => assert.fail('getter-time target change must reject'), caught => caught);
+			assert.match(error.message, /target changed during focus getter/);
+			assert.equal(during.state.writes.length, 0);
+		}
+
+		const after = install();
+		const afterPlan = await runPlan(after);
+		currentTarget = { ...capturedTarget };
+		const afterContext = {
+			assertDocumentTarget: async () => {
+				if (after.state.writes.length > 0) {
+					currentTarget = { ...capturedTarget, tabId: 'pcb-A@other-tab' };
+					throw new Error('首写后同 UUID tab 身份已变化');
+				}
+			},
+		};
+		const postwriteError = await runExecute(after, afterPlan, afterContext).then(() => assert.fail('post-write target change must stop'), error => error);
+		assert.match(postwriteError.message, /首写后同 UUID tab 身份已变化/);
+		assert.equal(after.state.writes.length, 1);
+		assert.equal(postwriteError.cause?.partial, true);
+		assert.equal(postwriteError.cause?.retryable, false);
+
+		const normal = install();
+		const normalPlan = await runPlan(normal);
+		let normalGuardCalls = 0;
+		const normalResult = await runExecute(normal, normalPlan, { assertDocumentTarget: async () => { normalGuardCalls++; } });
+		assert.ok(normalGuardCalls > 0);
+		assert.equal(normalResult.completed, normalPlan.plannedPrimitives.length);
+	});
+
 	await test('readback mismatch or create failure stops later writes and reports partial state', async () => {
 		const f = install();
 		const plan = await runPlan(f);
@@ -855,6 +1030,29 @@ async function main() {
 		assert.match(failed.message, /创建返回空值/);
 		assert.equal(g.state.writes.length, 1);
 		assert.equal(failed.cause?.notAttemptedSteps, otherPlan.plannedPrimitives.length - 1);
+	});
+
+	await test('mocked SDK line and via requests match ID readback without inferring host persistence', async () => {
+		const f = install({ pads: [pad('P1', { x: 410.125, y: 390.375 })] });
+		const plan = await runPlan(f, params({ direction: 'N', lineLength: 31.625, lineWidth: 6.375, viaDiameter: 21.125, holeDiameter: 10.375, clearance: 3.125 }));
+		assert.equal(plan.executable, true, plan.warnings.join('; '));
+		const result = await runExecute(f, plan);
+		assert.equal(result.saved, false);
+		assert.equal(result.readback.length, plan.plannedPrimitives.length);
+		for (let index = 0; index < plan.plannedPrimitives.length; index++) {
+			const primitive = plan.plannedPrimitives[index];
+			const write = f.state.writes[index];
+			const actual = result.readback[index].actual;
+			assert.equal(result.readback[index].verified, true);
+			if (primitive.type === 'line') {
+				assert.deepEqual(write, { kind: 'line', layer: primitive.layer, net: primitive.net, start: primitive.start, end: primitive.end, width: primitive.lineWidth });
+				assert.deepEqual(actual, { id: actual.id, net: primitive.net, layer: primitive.layer, startX: primitive.start.x, startY: primitive.start.y, endX: primitive.end.x, endY: primitive.end.y, lineWidth: primitive.lineWidth });
+			}
+			else {
+				assert.deepEqual(write, { kind: 'via', type: 0, net: primitive.net, x: primitive.center.x, y: primitive.center.y, holeDiameter: primitive.holeDiameter, diameter: primitive.diameter });
+				assert.deepEqual(actual, { id: actual.id, net: primitive.net, x: primitive.center.x, y: primitive.center.y, diameter: primitive.diameter, holeDiameter: primitive.holeDiameter, viaType: 0 });
+			}
+		}
 	});
 
 	console.log(`fanout regression passed: ${passed}`);

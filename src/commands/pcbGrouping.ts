@@ -38,6 +38,7 @@ import {
 	transformFootprintBBox,
 	verifyMovedComponents,
 } from '../pcb/sourcelog'
+import { rollbackPcbSource } from '../pcb/sourceRollback'
 
 const GENERATED_PREFIX = 'spg_'
 const DOCUMENT_LAYER = 13
@@ -125,10 +126,13 @@ async function listBackups(pcbUuid?: string): Promise<{ proxy: Array<IBackupMeta
 	return { proxy, storage, ...(proxyError ? { proxyError } : {}) }
 }
 
-async function readBackup(backupId: string | undefined, pcbUuid: string)
+async function readBackup(backupId: string | undefined, pcbUuid: string, assertTarget?: () => Promise<void>)
 	: Promise<{ backupId: string, pcbUuid: string, source: string, createdAt?: string }> {
 	if (backupId?.startsWith('storage:')) {
-		const raw = await eda.sys_Storage.getExtensionUserConfig(STORAGE_BACKUP_KEY)
+		await assertTarget?.()
+		let raw: unknown
+		try { raw = await eda.sys_Storage.getExtensionUserConfig(STORAGE_BACKUP_KEY) }
+		finally { await assertTarget?.() }
 		if (!raw)
 			throw new Error('扩展存储中没有源码备份')
 		const backup = JSON.parse(String(raw))
@@ -138,7 +142,9 @@ async function readBackup(backupId: string | undefined, pcbUuid: string)
 	}
 	let result: any
 	try {
-		result = await proxyJson('/source-backup/read', 'POST', backupId ? { backupId } : { pcbUuid, latest: true })
+		await assertTarget?.()
+		try { result = await proxyJson('/source-backup/read', 'POST', backupId ? { backupId } : { pcbUuid, latest: true }) }
+		finally { await assertTarget?.() }
 	}
 	catch (err) {
 		throw new Error(`读取备份失败（代理不可达？）：${err instanceof Error ? err.message : String(err)}`)
@@ -1100,50 +1106,100 @@ export const pcbGroupingCommands: Array<ICommandDef> = [
 	},
 	{
 		name: 'pcb.sourceRollback',
-		summary: '【0.10.22】PCB 源码备份的列出与恢复：list:true 列出当前 PCB 的全部备份（代理文件栈 + EDA 扩展存储单槽）；否则恢复——默认恢复当前 PCB 最近一份，或按 backupId 指定。恢复前校验备份 pcbUuid 与当前 PCB 匹配（不匹配拒绝），恢复后回读校验 uuid 并保存。备份由 pcb.groupBySchematicRegions 等源码写入指令产生',
+		summary: '【0.10.22】PCB 源码备份的列出与恢复：list:true 列出当前 PCB 的全部备份（代理文件栈 + EDA 扩展存储单槽）；否则恢复——默认恢复当前 PCB 最近一份，或按 backupId 指定。恢复前核对备份 metadata 与 PCB 源码 UUID，恢复后完整比较源码并确认保存；默认保存后关闭重开并复核持久性。备份由 pcb.groupBySchematicRegions 等源码写入指令产生',
 		params: [
 			{ name: 'list', type: 'boolean', description: '只列出备份不恢复（默认 false）' },
 			{ name: 'backupId', type: 'string', description: '指定备份 ID（如 "工程名/2026-09-28T09-30-00-000Z"，或 storage: 开头的扩展存储备份）；留空恢复当前 PCB 最近一份' },
+			{ name: 'verifyPersistence', type: 'boolean', description: '保存后关闭并重开同一 PCB，再完整比较源码以确认持久性；默认 true，false 时只做内存读回和保存确认' },
 		],
-		returns: 'list 模式 { backups, storageBackup }；恢复模式 { restored, backupId, pcbUuid, verify, saved }',
+		returns: 'list 模式 { backups, storageBackup }；恢复模式 { restored, contentVerified, saved, saveAcknowledged, persistenceVerified, backupId, pcbUuid, verify, phases }',
 		example: { cmd: 'pcb.sourceRollback', params: { list: true } },
-		handler: async (params) => {
-			const currentSource = await eda.sys_FileManager.getDocumentSource()
-			if (!currentSource)
-				throw new Error('无法获取当前 PCB 源码（请先激活 PCB 文档）')
-			const currentUuid = parseSourceLog(currentSource).uuid
-
+		handler: async (params, ctx) => {
 			if (params.list) {
-				const { proxy, storage, proxyError } = await listBackups(currentUuid)
+				await ctx?.assertDocumentTarget?.()
+				const listSource = await eda.sys_FileManager.getDocumentSource()
+				await ctx?.assertDocumentTarget?.()
+				if (!listSource)
+					throw new Error('无法获取当前 PCB 源码（请先激活 PCB 文档）')
+				const listDocument = parseSourceLog(listSource)
+				if (listDocument.docType !== 'PCB')
+					throw new Error(`当前源码不是 PCB（docType=${listDocument.docType}），未读取备份`)
+				await ctx?.assertDocumentTarget?.()
+				let listed: Awaited<ReturnType<typeof listBackups>>
+				try { listed = await listBackups(listDocument.uuid) }
+				finally { await ctx?.assertDocumentTarget?.() }
+				const { proxy, storage, proxyError } = listed
 				return {
-					pcbUuid: currentUuid,
+					pcbUuid: listDocument.uuid,
 					backups: proxy,
 					...(storage ? { storageBackup: storage } : {}),
 					...(proxyError ? { proxyError, note: '代理不可达，仅列出 EDA 扩展存储备份' } : {}),
 					hint: '恢复：pcb.sourceRollback 不带参数（最近一份）或带 backupId',
 				}
 			}
-
-			const backup = await readBackup(params.backupId ? String(params.backupId) : undefined, currentUuid)
-			if (backup.pcbUuid && backup.pcbUuid !== currentUuid)
-				throw new Error(`备份属于另一块 PCB（备份 ${backup.pcbUuid}，当前 ${currentUuid}），已拒绝恢复。确认要跨板恢复请先激活对应 PCB 文档`)
-			if (!backup.source)
-				throw new Error('备份内容为空，已中止')
-			const writeOk = await eda.sys_FileManager.setDocumentSource(backup.source)
-			if (!writeOk)
-				throw new Error('源码恢复写入失败（setDocumentSource 返回 false），当前文档未改动')
-			const restored = await eda.sys_FileManager.getDocumentSource()
-			if (!restored || parseSourceLog(restored).uuid !== currentUuid)
-				throw new Error('恢复后回读校验失败（uuid 不匹配或回读为空）——请不保存关闭文档重开')
-			await eda.pcb_Document.save()
-			return {
-				restored: true,
-				backupId: backup.backupId,
-				pcbUuid: currentUuid,
-				...(backup.createdAt ? { backupCreatedAt: backup.createdAt } : {}),
-				verify: { ok: true, uuidMatched: true },
-				saved: true,
+			await ctx?.assertDocumentTarget?.()
+			const focused = await eda.dmt_SelectControl.getCurrentDocumentInfo()
+			await ctx?.assertDocumentTarget?.()
+			if (focused?.documentType !== 3 || typeof focused?.uuid !== 'string' || !focused.uuid)
+				throw new Error('当前焦点不是有有效 UUID 的 PCB 文档，未读取备份或写入')
+			const currentUuid = focused.uuid
+			await ctx?.assertDocumentTarget?.()
+			const currentProject = await eda.dmt_Project.getCurrentProjectInfo()
+			await ctx?.assertDocumentTarget?.()
+			if (typeof currentProject?.uuid !== 'string' || !currentProject.uuid)
+				throw new Error('无法读取当前工程 UUID，已拒绝源码恢复')
+			const currentProjectUuid = currentProject.uuid
+			if (typeof focused.parentProjectUuid === 'string' && focused.parentProjectUuid !== currentProjectUuid)
+				throw new Error(`焦点 PCB 的 parentProjectUuid 与当前工程不符（${focused.parentProjectUuid} != ${currentProjectUuid}），已拒绝源码恢复`)
+			const currentTabId = typeof focused.tabId === 'string' ? focused.tabId : undefined
+			let closedTarget = false
+			const assertTarget = async () => {
+				ctx?.stopSignal?.assertActive()
+				if (!closedTarget)
+					await ctx?.assertDocumentTarget?.()
+				const current = await eda.dmt_SelectControl.getCurrentDocumentInfo()
+				ctx?.stopSignal?.assertActive()
+				if (!closedTarget)
+					await ctx?.assertDocumentTarget?.()
+				if (current?.documentType !== 3 || current?.uuid !== currentUuid
+					|| (typeof current?.parentProjectUuid === 'string' && current.parentProjectUuid !== currentProjectUuid)
+					|| (!closedTarget && currentTabId !== undefined && current?.tabId !== currentTabId))
+					throw new Error(`PCB 焦点身份已变化（目标=${currentProjectUuid ?? ''}/${currentUuid}/${currentTabId ?? ''}，当前=${String(current?.parentProjectUuid ?? '')}/${String(current?.uuid ?? '')}/${String(current?.tabId ?? '')}）`)
 			}
+			const assertProject = async () => {
+				ctx?.stopSignal?.assertActive()
+				const project = await eda.dmt_Project.getCurrentProjectInfo()
+				ctx?.stopSignal?.assertActive()
+				if (project?.uuid !== currentProjectUuid)
+					throw new Error(`当前工程已变化（目标=${currentProjectUuid}，当前=${String(project?.uuid ?? '')}）`)
+			}
+			const guarded = async <T>(operation: () => Promise<T>): Promise<T> => {
+				await assertTarget()
+				let result: T
+				try { result = await operation() }
+				finally { await assertTarget() }
+				return result
+			}
+			const currentSource = await guarded(() => eda.sys_FileManager.getDocumentSource())
+			if (!currentSource)
+				throw new Error('无法获取当前 PCB 源码（请先激活 PCB 文档）')
+			const currentDocument = parseSourceLog(currentSource)
+			if (currentDocument.docType !== 'PCB' || currentDocument.uuid !== currentUuid)
+				throw new Error(`当前焦点与源码文档身份不符（焦点 PCB=${currentUuid}，源码=${currentDocument.docType}/${currentDocument.uuid}），未读取备份或写入`)
+			const backup = await readBackup(params.backupId ? String(params.backupId) : undefined, currentUuid, assertTarget)
+			const result = await rollbackPcbSource(backup, currentUuid, currentTabId, params.verifyPersistence !== false, {
+				assertTarget,
+				assertProject,
+				readSource: () => eda.sys_FileManager.getDocumentSource(),
+				writeSource: source => eda.sys_FileManager.setDocumentSource(source),
+				save: () => eda.pcb_Document.save(),
+				getTabs: () => (eda.dmt_EditorControl as any).getSplitScreenTree(),
+				closeDocument: tabId => eda.dmt_EditorControl.closeDocument(tabId),
+				openDocument: pcbUuid => eda.dmt_EditorControl.openDocument(pcbUuid),
+				activateDocument: tabId => eda.dmt_EditorControl.activateDocument(tabId),
+				afterCloseConfirmed: () => { closedTarget = true },
+			})
+			return { ...result, ...(backup.createdAt ? { backupCreatedAt: backup.createdAt } : {}) }
 		},
 	},
 ]

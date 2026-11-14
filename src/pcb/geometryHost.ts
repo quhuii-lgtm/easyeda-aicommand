@@ -45,7 +45,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 /** Create the shared focus and monotonic-budget guard for one geometry operation. */
-export async function createGeometryHost(sdk: any, params: Record<string, any>, expectedUuid?: string): Promise<GeometryHost> {
+export async function createGeometryHost(sdk: any, params: Record<string, any>, expectedUuid?: string, guard?: { assertDocumentTarget?: () => Promise<void> }): Promise<GeometryHost> {
 	const hasParameterUuid = Object.hasOwn(params, '__docUuid');
 	const parameterUuid = params.__docUuid;
 	if (hasParameterUuid && (typeof parameterUuid !== 'string' || parameterUuid.length === 0))
@@ -116,7 +116,12 @@ export async function createGeometryHost(sdk: any, params: Record<string, any>, 
 		currentStepAttempted = false;
 		let focus: any;
 		try {
-			focus = await invoke(focusStep, () => sdk.dmt_SelectControl.getCurrentDocumentInfo());
+			focus = await invoke(focusStep, async () => {
+				await guard?.assertDocumentTarget?.();
+				const current = await sdk.dmt_SelectControl.getCurrentDocumentInfo();
+				await guard?.assertDocumentTarget?.();
+				return current;
+			});
 		}
 		catch (error) {
 			throw latch(error, focusStep, false);

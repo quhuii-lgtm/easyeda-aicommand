@@ -35,6 +35,10 @@ export type TCommandResult<T = any> = ICommandSuccess<T> | ICommandFailure
 /** 宏指令执行上下文：存放各步骤输出，供 `$stepId.path` 引用 */
 export interface ICommandContext {
 	vars: Record<string, any>
+	/** Initial focus identity captured by registry for the current page command. */
+	documentTarget?: DocumentTargetIdentity
+	/** Re-read focus identity and compare it with the current command's captured target. */
+	assertDocumentTarget?: () => Promise<void>
 	/** Latched stop signal for commands with dependent host writes. It cannot cancel an SDK call already dispatched. */
 	stopSignal?: { stop(reason: string): void; assertActive(): void }
 	/**
@@ -43,6 +47,14 @@ export interface ICommandContext {
 	 * 普通指令无需关心；处理器应保证 patch 可 JSON 序列化且尽量小。
 	 */
 	onProgress?: (patch: Record<string, any>) => void
+}
+
+/** Stable identity captured from the host before a page command starts. */
+export interface DocumentTargetIdentity {
+	documentType: number
+	uuid: string
+	tabId?: unknown
+	parentProjectUuid?: unknown
 }
 
 export type TCommandHandler = (params: Record<string, any>, ctx?: ICommandContext) => Promise<any>

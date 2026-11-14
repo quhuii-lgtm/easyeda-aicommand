@@ -10,18 +10,25 @@ const moduleExecutionSource = fs.readFileSync(new URL('../src/engine/moduleExecu
 const moduleExecutionCode = ts.transpileModule(moduleExecutionSource, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
 const moduleExecutionExports = {}
 vm.runInNewContext(moduleExecutionCode, { exports: moduleExecutionExports, Promise, Error })
+const documentTargetSource = fs.readFileSync(new URL('../src/engine/documentTarget.ts', import.meta.url), 'utf8')
+const documentTargetCode = ts.transpileModule(documentTargetSource, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
+const documentTargetExports = {}
+let registryContext
+vm.runInNewContext(documentTargetCode, { exports: documentTargetExports, Promise, Error, get eda() { return registryContext.eda } })
 const timers = []
 let sdkCalls = 0
 let taskId = 0
 const context = { exports: {}, require(name) {
  if (name === './diag') return { diag() {} }
  if (name === './moduleExecution') return moduleExecutionExports
+ if (name === './documentTarget') return documentTargetExports
  if (name === './tasks') return {
   beginTask() { return { task: { id: `test-${++taskId}` }, existing: false } },
   failTask() {}, finishTask() {}, taskProgress() {},
  }
  throw new Error(`Unexpected dependency: ${name}`)
 }, eda: { dmt_SelectControl: { async getCurrentDocumentInfo() { sdkCalls++; return { documentType: 1, uuid: 'test-page' } } } }, setTimeout(_fn, ms) { timers.push(ms); return 1 }, clearTimeout() {}, Date, Error, console }
+registryContext = context
 vm.runInNewContext(code, context)
 const { registerCommand, executeCommand } = context.exports
 let calls = 0
