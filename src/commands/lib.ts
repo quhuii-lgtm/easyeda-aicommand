@@ -156,39 +156,190 @@ async function verifyLibModify(
 	kind: 'symbol' | 'footprint' | 'device',
 	uuid: string,
 	libraryUuid: string,
-	newName?: string,
-): Promise<{ modified: true, uuid: string, uuidChanged: boolean, verify: 'get' | 'search' | 'none', warning?: string }> {
+	params: Record<string, any>,
+	preexistingNameUuids?: Set<string>,
+): Promise<{ modified: true, uuid: string, uuidChanged: boolean, verify: 'get' | 'search' | 'none' }> {
 	const api: any = kind === 'symbol' ? eda.lib_Symbol : kind === 'footprint' ? eda.lib_Footprint : eda.lib_Device
+	const expectedName = params.name === undefined ? undefined : String(params.name)
+	const expectedFields: Array<{ field: string, value: any, clear?: boolean }> = []
+	if (expectedName !== undefined)
+		expectedFields.push({ field: 'name', value: expectedName })
+	if (params.classification !== undefined)
+		expectedFields.push({ field: 'classification', value: params.classification, clear: params.classification === null })
+	if (params.description !== undefined)
+		expectedFields.push({ field: 'description', value: params.description === null ? null : String(params.description), clear: params.description === null })
+	if (kind === 'footprint') {
+		if (params.otherProperty && typeof params.otherProperty === 'object' && !Array.isArray(params.otherProperty)) {
+			for (const [key, value] of Object.entries(params.otherProperty))
+				expectedFields.push({ field: `otherProperty.${key}`, value: value === null ? null : value, clear: value === null })
+		}
+	}
+	else if (kind === 'device') {
+		if (params.symbolUuid !== undefined)
+			expectedFields.push({ field: 'association.symbol.uuid', value: String(params.symbolUuid) })
+		if (params.footprintUuid !== undefined)
+			expectedFields.push({ field: 'association.footprint.uuid', value: params.footprintUuid === null ? null : String(params.footprintUuid), clear: params.footprintUuid === null })
+		if (params.property && typeof params.property === 'object' && !Array.isArray(params.property)) {
+			for (const [key, value] of Object.entries(params.property)) {
+				if (key === 'otherProperty' && value && typeof value === 'object' && !Array.isArray(value)) {
+					for (const [otherKey, otherValue] of Object.entries(value))
+						expectedFields.push({ field: `property.otherProperty.${otherKey}`, value: otherValue === null ? null : otherValue, clear: otherValue === null })
+				}
+				else
+					expectedFields.push({ field: `property.${key}`, value: value === null ? null : value, clear: value === null })
+			}
+		}
+	}
+	const readField = (item: any, field: string): any => {
+		if (field === 'association.symbol.uuid')
+			return item?.association?.symbol?.uuid ?? item?.association?.symbolUuid
+		if (field === 'association.footprint.uuid')
+			return item?.association?.footprint?.uuid ?? item?.association?.footprintUuid
+		return field.split('.').reduce((value, key) => value?.[key], item)
+	}
+	const actualFields = (item: any): Record<string, any> => Object.fromEntries(
+		expectedFields.map(expected => [expected.field, cloneLibValue(readField(item, expected.field))]),
+	)
+	const differences = (item: any): Array<Record<string, any>> => {
+		if (!item)
+			return [{ field: 'readback', expected: 'item', actual: null }]
+		const result: Array<Record<string, any>> = []
+		for (const expected of expectedFields) {
+			const actual = readField(item, expected.field)
+			const matches = expected.clear
+				? actual === undefined || actual === null
+				: libValuesEqual(expected.value, actual)
+			if (!matches)
+				result.push({ field: expected.field, expected: cloneLibValue(expected.value), actual: cloneLibValue(actual) })
+		}
+		return result
+	}
+	const identityMatches = (item: any, expectedUuid: string): boolean => Boolean(item)
+		&& String(item.uuid ?? '') === expectedUuid
+		&& String(item.libraryUuid ?? '') === libraryUuid
+	const expectedIdentity = { uuid, libraryUuid }
+	let oldItem: any
 	try {
-		const item = await api.get(uuid, libraryUuid)
-		if (item)
-			return { modified: true, uuid, uuidChanged: false, verify: 'get' }
+		oldItem = await api.get(uuid, libraryUuid)
 	}
 	catch {
-		// get 对不存在/已变 uuid 会 reject——落按名回搜
+		oldItem = undefined
 	}
-	if (newName) {
+	if (identityMatches(oldItem, uuid) && differences(oldItem).length === 0)
+		return { modified: true, uuid, uuidChanged: false, verify: 'get' }
+
+	// Search every page. A single page hit is not proof of a unique identity, and search
+	// summaries alone are not enough to validate the requested fields.
+	if (expectedName !== undefined && expectedName) {
 		try {
-			// 0.10.65 修复：search 签名按 kind 分支——symbol/device 是 6 参（第 4 位 symbolType），
-			// footprint 是 5 参。此前统一按 5 参调用，symbol/device 的 itemsOfPage=20/page=1 错位到
-			// symbolType/itemsOfPage，过滤条件错导致回搜漏命中、误判 verify:'none' 返回失效旧 uuid。
-			const results = kind === 'footprint'
-				? await api.search(String(newName), libraryUuid, undefined, 20, 1)
-				: await api.search(String(newName), libraryUuid, undefined, undefined, 20, 1)
-			const list: Array<any> = Array.isArray(results) ? results : ((results as any)?.data ?? [])
-			const hit = list.find(it => it && String(it.name ?? '') === String(newName))
-			const newUuid = hit ? String(hit.uuid ?? '') : ''
-			if (newUuid)
+			if (preexistingNameUuids === undefined)
+				throw new Error('修改前未能建立同名条目基线，无法证明搜索到的候选是本次修改结果')
+			const searchName = expectedName
+			const candidates = new Map<string, any>()
+			const pageSize = 20
+			for (let page = 1; ; page++) {
+				const results = kind === 'footprint'
+					? await api.search(searchName, libraryUuid, undefined, pageSize, page)
+					: await api.search(searchName, libraryUuid, undefined, undefined, pageSize, page)
+				if (!Array.isArray(results))
+					throw new Error('库搜索返回非数组结果')
+				for (const candidate of results) {
+					if (candidate && String(candidate.libraryUuid ?? '') === libraryUuid
+						&& String(candidate.name ?? '') === searchName
+						&& typeof candidate.uuid === 'string' && candidate.uuid
+						&& !preexistingNameUuids.has(candidate.uuid))
+						candidates.set(candidate.uuid, candidate)
+				}
+				if (results.length < pageSize)
+					break
+				if (page >= 1000)
+					throw new Error('同名库条目候选超过安全分页上限')
+			}
+			const verified = new Map<string, any>()
+			let unresolvedCandidates = 0
+			for (const candidateUuid of candidates.keys()) {
+				let candidate: any
+				try {
+					candidate = await api.get(candidateUuid, libraryUuid)
+				}
+				catch {
+					unresolvedCandidates++
+					continue
+				}
+				if (!identityMatches(candidate, candidateUuid)) {
+					unresolvedCandidates++
+					continue
+				}
+				// A fully readable same-library item with a mismatched requested field can
+				// be excluded. A candidate that cannot be read or identity-checked cannot.
+				if (differences(candidate).length === 0)
+					verified.set(candidateUuid, candidate)
+			}
+			if (unresolvedCandidates > 0)
+				throw new Error(`有 ${unresolvedCandidates} 个同名候选无法读回并核实身份，不能排除其为本次修改结果`)
+			if (verified.size === 1) {
+				const newUuid = [...verified.keys()][0]
 				return { modified: true, uuid: newUuid, uuidChanged: newUuid !== uuid, verify: 'search' }
-			return { modified: true, uuid, uuidChanged: false, verify: 'none',
-				warning: `modify 官方返回成功，但按旧 uuid 回查失败、按名「${newName}」也未精确搜到——请人工在库中确认实际结果（官方 modify 后 uuid 可能变化，0.10.38 实测）` }
+			}
+			throw new Error(verified.size > 1
+				? `存在 ${verified.size} 个同名且字段匹配的候选，无法确认唯一目标`
+				: '未找到身份及请求字段均匹配的目标')
 		}
-		catch {
-			// search 失败走统一 warning
+		catch (error) {
+			const reason = String((error as Error)?.message ?? error)
+			const cause = {
+				partial: true,
+				retryable: false,
+				sdkModified: true,
+				expected: { identity: expectedIdentity, fields: cloneLibValue(expectedFields) },
+				actualFields: actualFields(oldItem),
+				candidateUuid: null,
+				verify: 'none',
+				reason,
+			}
+			throw new Error('库条目修改已提交，但读回无法确认唯一目标或请求字段；不要自动重试', { cause })
 		}
 	}
-	return { modified: true, uuid, uuidChanged: false, verify: 'none',
-		warning: `modify 官方返回成功，但按旧 uuid 回查失败（官方 modify 后 uuid 可能变化，0.10.38 实测）${newName ? `；按名「${newName}」回搜未执行成功，请按名字搜索确认` : '；未传新名无法按名回搜，请按名字搜索确认'}` }
+	const cause = {
+		partial: true,
+		retryable: false,
+		sdkModified: true,
+		expected: { identity: expectedIdentity, fields: cloneLibValue(expectedFields) },
+		actualFields: actualFields(oldItem),
+		candidateUuid: null,
+		verify: 'none',
+	}
+	throw new Error(expectedName === undefined
+		? '库条目修改已提交，但旧 UUID 读回未通过；本次未请求改名，无法安全搜索新身份，不要自动重试'
+		: '库条目修改已提交，但旧 UUID 读回未通过且新名称不可用于唯一回查；不要自动重试', { cause })
+}
+
+async function searchLibItemsByExactName(
+	kind: 'footprint' | 'device',
+	name: string,
+	libraryUuid: string,
+): Promise<Map<string, any>> {
+	const api: any = kind === 'footprint' ? eda.lib_Footprint : eda.lib_Device
+	const candidates = new Map<string, any>()
+	const pageSize = 20
+	for (let page = 1; ; page++) {
+		const results = kind === 'footprint'
+			? await api.search(name, libraryUuid, undefined, pageSize, page)
+			: await api.search(name, libraryUuid, undefined, undefined, pageSize, page)
+		if (!Array.isArray(results))
+			throw new Error('库搜索返回非数组结果')
+		for (const candidate of results) {
+			if (candidate && String(candidate.libraryUuid ?? '') === libraryUuid
+				&& String(candidate.name ?? '') === name
+				&& typeof candidate.uuid === 'string' && candidate.uuid)
+				candidates.set(candidate.uuid, candidate)
+		}
+		if (results.length < pageSize)
+			break
+		if (page >= 1000)
+			throw new Error('同名库条目候选超过安全分页上限')
+	}
+	return candidates
 }
 
 function cloneLibValue(value: any): any {
@@ -746,6 +897,15 @@ export const libCommands: Array<ICommandDef> = [
 			if (!params.footprintUuid)
 				throw new Error('缺少参数 footprintUuid')
 			const libraryUuid = await resolveLibraryUuid(params)
+			let preexistingNameUuids: Set<string> | undefined
+			if (params.name) {
+				try {
+					preexistingNameUuids = new Set((await searchLibItemsByExactName('footprint', String(params.name), libraryUuid)).keys())
+				}
+				catch {
+					// 只有发生 UUID 变化且旧 UUID 无法验证时才需要该基线；优先保留 modify 的实际结果。
+				}
+			}
 			const modified = await eda.lib_Footprint.modify(
 				String(params.footprintUuid),
 				libraryUuid,
@@ -756,7 +916,7 @@ export const libCommands: Array<ICommandDef> = [
 			)
 			if (modified !== true)
 				throw new Error(`修改封装失败：官方返回 ${String(modified)}`)
-			return await verifyLibModify('footprint', String(params.footprintUuid), libraryUuid, params.name ? String(params.name) : undefined)
+			return await verifyLibModify('footprint', String(params.footprintUuid), libraryUuid, params, preexistingNameUuids)
 		},
 	},
 	{
@@ -1021,6 +1181,15 @@ export const libCommands: Array<ICommandDef> = [
 			if (!params.deviceUuid)
 				throw new Error('缺少参数 deviceUuid')
 			const libraryUuid = await resolveLibraryUuid(params)
+			let preexistingNameUuids: Set<string> | undefined
+			if (params.name) {
+				try {
+					preexistingNameUuids = new Set((await searchLibItemsByExactName('device', String(params.name), libraryUuid)).keys())
+				}
+				catch {
+					// 只有发生 UUID 变化且旧 UUID 无法验证时才需要该基线；优先保留 modify 的实际结果。
+				}
+			}
 			let association: any
 			if (params.symbolUuid !== undefined || params.footprintUuid !== undefined) {
 				association = {}
@@ -1040,7 +1209,7 @@ export const libCommands: Array<ICommandDef> = [
 			)
 			if (modified !== true)
 				throw new Error(`修改器件失败：官方返回 ${String(modified)}`)
-			return await verifyLibModify('device', String(params.deviceUuid), libraryUuid, params.name ? String(params.name) : undefined)
+			return await verifyLibModify('device', String(params.deviceUuid), libraryUuid, params, preexistingNameUuids)
 		},
 	},
 	{

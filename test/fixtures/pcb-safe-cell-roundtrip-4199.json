@@ -1,0 +1,23 @@
+{
+  "capture": "EDA 4.1.99 SAFE getter/source readback pair",
+  "documentUuid": "80aa6990e897beb4",
+  "rule": "copperThickness1oz",
+  "unit": "mm",
+  "layerId": 1,
+  "getterCell": {
+    "row": 12,
+    "column": 0,
+    "beforeMm": 0.1759966,
+    "afterMm": 0.17599659999999998
+  },
+  "sourceGetterCellMil": {
+    "before": 6.929,
+    "after": 6.929
+  },
+  "editedCell": {
+    "row": 0,
+    "column": 0,
+    "sourceBeforeMil": 4.0157,
+    "sourceAfterMil": 10
+  }
+}

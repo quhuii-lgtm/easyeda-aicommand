@@ -255,6 +255,55 @@ assert.match(result.error.message, /UUID 与 __docUuid 不符/)
 assert.equal(handlerCalls, beforeSameTypeMacroSwitch + 1, 'same-type page UUID changes are checked between macro steps')
 assert.equal(activateCalls, 0)
 
+// An explicitly bound macro propagates its project/document/tab target to page children and nested macros.
+currentDoc = { documentType: 3, uuid: 'macro-target-A', tabId: 'macro-tab-A', parentProjectUuid: 'macro-project-A' }
+result = await executeCommand({ cmd: 'macro', params: {
+	__projectUuid: 'macro-project-A', __docUuid: 'macro-target-A', __tabId: 'macro-tab-A',
+	steps: [{ cmd: 'pcb.testPage' }, { cmd: 'macro', params: { steps: [{ cmd: 'pcb.testPage' }] } }],
+} })
+assert.equal(result.ok, true, 'outer target is inherited by direct and nested page steps')
+assert.equal(result.data.steps[0].data.requested, 'macro-target-A')
+assert.equal(result.data.steps[1].data.steps[0].data.requested, 'macro-target-A')
+
+// A statically conflicting child target rejects the whole macro before any preceding handler can write.
+let preflightWrites = 0
+register('project.preflightWrite', async () => { preflightWrites++; return true })
+const beforePreflight = handlerCalls
+result = await executeCommand({ cmd: 'macro', params: {
+	__docUuid: 'macro-target-A',
+	steps: [{ cmd: 'project.preflightWrite' }, { cmd: 'pcb.testPage', params: { __docUuid: 'macro-target-B' } }],
+} })
+assert.equal(result.ok, false)
+assert.match(result.error.message, /与外层目标不一致/)
+assert.equal(preflightWrites, 0, 'target conflict is rejected before earlier macro steps run')
+assert.equal(handlerCalls, beforePreflight)
+
+// A bound macro revalidates its inherited target after every child; a same-type page switch blocks the next write.
+currentDoc = { documentType: 3, uuid: 'macro-target-A', tabId: 'macro-tab-A', parentProjectUuid: 'macro-project-A' }
+register('pcb.switchAwayFromMacroTarget', async () => { handlerCalls++; currentDoc = { ...currentDoc, uuid: 'macro-target-B', tabId: 'macro-tab-B', parentProjectUuid: 'macro-project-B' }; return true })
+register('pcb.mustNotWriteAfterMacroSwitch', async () => { handlerCalls++; throw new Error('bound macro wrote after target changed') })
+const beforeBoundSwitch = handlerCalls
+result = await executeCommand({ cmd: 'macro', params: {
+	__projectUuid: 'macro-project-A', __docUuid: 'macro-target-A', __tabId: 'macro-tab-A',
+	steps: [{ cmd: 'pcb.switchAwayFromMacroTarget' }, { cmd: 'pcb.mustNotWriteAfterMacroSwitch' }],
+} })
+assert.equal(result.ok, false)
+assert.match(result.error.message, /UUID 与 __docUuid 不符/)
+assert.equal(handlerCalls, beforeBoundSwitch + 1, 'page-bound second step is blocked before its handler after focus changes')
+
+// An unbound macro intentionally keeps per-step explicit targets, allowing reviewed cross-document work.
+currentDoc = { documentType: 3, uuid: 'cross-doc-A' }
+register('pcb.switchCrossDoc', async () => { handlerCalls++; currentDoc = { documentType: 3, uuid: 'cross-doc-B' }; return true })
+result = await executeCommand({ cmd: 'macro', params: { steps: [
+	{ cmd: 'pcb.testPage', params: { __docUuid: 'cross-doc-A' } },
+	{ cmd: 'pcb.switchCrossDoc' },
+	{ cmd: 'pcb.testPage', params: { __docUuid: 'cross-doc-B' } },
+] } })
+assert.equal(result.ok, true, 'unbound macro continues to honor explicit per-step cross-document targets')
+assert.equal(result.data.steps[0].data.requested, 'cross-doc-A')
+assert.equal(result.data.steps[2].data.requested, 'cross-doc-B')
+assert.equal(activateCalls, 0)
+
 // Non-page commands retain their existing behavior and do not invoke the page lookup.
 currentDoc = { documentType: 3, uuid: 'pcb-page' }
 let dependentWrites = 0

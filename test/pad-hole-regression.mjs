@@ -8,7 +8,7 @@ async function main() {
 	const root = resolve(import.meta.dirname, '..');
 	const built = await build({
 		stdin: {
-			contents: 'import { padHoleCommands } from \'../src/commands/padHole.ts\'; import { circlePolygonSource, padShapeForSdk, validatePlaceHole, validatePlacePad } from \'../src/engine/padHole.ts\'; export { padHoleCommands, circlePolygonSource, padShapeForSdk, validatePlaceHole, validatePlacePad }',
+			contents: 'import { padHoleCommands } from \'../src/commands/padHole.ts\'; import { circlePolygonSource, padShapeForSdk, validatePlaceHole, validatePlacePad } from \'../src/engine/padHole.ts\'; import { registerCommand, executeCommand } from \'../src/engine/registry.ts\'; export { padHoleCommands, circlePolygonSource, padShapeForSdk, validatePlaceHole, validatePlacePad, registerCommand, executeCommand }',
 			resolveDir: resolve(root, 'test'),
 			sourcefile: 'pad-hole-regression-entry.ts',
 		},
@@ -19,8 +19,10 @@ async function main() {
 		target: 'node24',
 	});
 	const moduleUrl = `data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`;
-	const { padHoleCommands, circlePolygonSource, padShapeForSdk, validatePlaceHole, validatePlacePad } = await import(moduleUrl);
+	const { padHoleCommands, circlePolygonSource, padShapeForSdk, validatePlaceHole, validatePlacePad, registerCommand, executeCommand } = await import(moduleUrl);
 	const command = name => padHoleCommands.find(item => item.name === name);
+	for (const definition of padHoleCommands)
+		registerCommand(definition);
 	const docHead = uuid => `${JSON.stringify({ type: 'DOCHEAD', ticket: 0 })}||${JSON.stringify({ docType: 'PCB', uuid, client: 'pad-hole-test' })}|`;
 	const rules = { design: { spacing: 8 } };
 	const baselineRow = `${JSON.stringify({ type: 'TEXT', id: 'OLD-TEXT', ticket: 11 })}||${JSON.stringify({ text: 'preserve-me', layerId: 3 })}|`;
@@ -46,7 +48,7 @@ async function main() {
 		return Object.fromEntries(Object.entries(state).map(([key, value]) => [`getState_${key[0].toUpperCase() + key.slice(1)}`, () => value]));
 	}
 
-	function install({ compactTrialSource = false, failCreate = false, delayedCreate = false, delayedPadCreate = false, delayedPadModify = false, failPadModify = false, modifySourceMaskOverride, modifyReadbackMaskOverride, staleModifiedPadTicket = false, mutateNonTargetAfterTarget = false, freshDefaultsOverride, changeRulesOnFreshPadRead = false, delaySourceReadCall = 0, mutateSourceBeforeMaskModify = false, sourceReadDelayMs = 1200, badReadback = false, switchFocus = false, mutateNonTarget = false, mutateOldData = false, getAllMissingId = false, hostSourceFormat = true, reticketExisting = true, badEmptyNetAuxiliary = false, initialEmptyNetAuxiliary = false, duplicateEmptyNetAuxiliary = false, namedNetAuxiliary = false, badNamedNetAuxiliary = false, mismatchedNamedNetAuxiliary = false, extraNamedNetAuxiliary = false, initialNamedNetAuxiliary, mutateExistingNamedNet = false, docHeadVolatileMutation = false, docHeadUnknownMutation = false, holeOffsetReadbackOverride, holeOffsetSourceOverride, sourcePadRadiusOverride, getterGeometryOverride, sourceGeometryOverride, readbackRotationOverride, effectiveMask = { topSolderMask: 2, bottomSolderMask: 2, topPasteMask: 0, bottomPasteMask: 0 }, sourceMaskOverride, readbackMaskOverride, fillSourcePathMutation, fillSourceWidth = 1, fillReadbackWidth = 1 } = {}) {
+	function install({ compactTrialSource = false, failCreate = false, delayedCreate = false, delayedPadCreate = false, delayedPadModify = false, failPadModify = false, modifySourceMaskOverride, modifyReadbackMaskOverride, staleModifiedPadTicket = false, mutateNonTargetAfterTarget = false, freshDefaultsOverride, changeRulesOnFreshPadRead = false, delaySourceReadCall = 0, mutateSourceBeforeMaskModify = false, sourceReadDelayMs = 1200, badReadback = false, readbackPadTypeOverride, sourcePadTypeOverride, switchFocus = false, mutateNonTarget = false, mutateOldData = false, getAllMissingId = false, hostSourceFormat = true, reticketExisting = true, badEmptyNetAuxiliary = false, initialEmptyNetAuxiliary = false, duplicateEmptyNetAuxiliary = false, namedNetAuxiliary = false, badNamedNetAuxiliary = false, mismatchedNamedNetAuxiliary = false, extraNamedNetAuxiliary = false, initialNamedNetAuxiliary, mutateExistingNamedNet = false, docHeadVolatileMutation = false, docHeadUnknownMutation = false, holeOffsetReadbackOverride, holeOffsetSourceOverride, sourcePadRadiusOverride, getterGeometryOverride, sourceGeometryOverride, readbackRotationOverride, effectiveMask = { topSolderMask: 2, bottomSolderMask: 2, topPasteMask: 0, bottomPasteMask: 0 }, sourceMaskOverride, readbackMaskOverride, fillSourcePathMutation, fillSourceWidth = 1, fillReadbackWidth = 1, projectUuid } = {}) {
 		const state = {
 			source: `${docHead('pcb-A')}\n${baselineRow}`,
 			pads: new Map(),
@@ -145,7 +147,7 @@ async function main() {
 				holeOffsetY: holeOffsetReadbackOverride?.y ?? holeOffsetY,
 				holeRotation,
 				metallization,
-				padType,
+				padType: readbackPadTypeOverride ?? padType,
 				specialPad,
 				solderMaskAndPasteMaskExpansion: { ...effectiveMask, ...mask, ...readbackMaskOverride },
 				heatWelding,
@@ -165,7 +167,7 @@ async function main() {
 				append('NET', existingNetId, { netType: null, specialColor: 'mutated', retLine: true, differentialName: null, isPositiveNet: false, equalLengthGroupName: null });
 			}
 			const sourceHole = hole == null ? null : { holeType: hole[0], width: hole[1], height: hole[1], cornerRadius: 11.811 };
-			const sourcePad = Array.isArray(pad) && (pad[0] === 'ELLIPSE' || pad[0] === 'RECT')
+			const sourcePad = Array.isArray(pad) && (pad[0] === 'ELLIPSE' || pad[0] === 'OVAL' || pad[0] === 'RECT')
 				? { padType: pad[0], width: pad[1], height: pad[2], ...(pad[0] === 'RECT' ? { radius: sourcePadRadiusOverride ?? pad[3] } : {}) }
 				: pad;
 			const sourceData = compactTrialSource
@@ -180,7 +182,7 @@ async function main() {
 						hole: sourceHole,
 						netName: net || '',
 						plated: Boolean(metallization),
-						padType: 'NORMAL',
+						padType: sourcePadTypeOverride ?? (padType === 1 ? 'TEST' : 'NORMAL'),
 						relativeAngle: layer === 12 ? 0 : null,
 						padOffsetX: holeOffsetSourceOverride?.x ?? holeOffsetX,
 						padOffsetY: holeOffsetSourceOverride?.y ?? holeOffsetY,
@@ -277,7 +279,7 @@ async function main() {
 			return object;
 		};
 		const sdk = {
-			dmt_SelectControl: { getCurrentDocumentInfo: async () => ({ uuid: state.focus, documentType: 3 }) },
+			dmt_SelectControl: { getCurrentDocumentInfo: async () => ({ uuid: state.focus, documentType: 3, ...(projectUuid === undefined ? {} : { parentProjectUuid: projectUuid }) }) },
 			sys_FileManager: { getDocumentSource: async () => {
 				state.sourceReadCount++;
 				state.events.push({ type: 'source', count: state.sourceReadCount });
@@ -350,11 +352,14 @@ async function main() {
 	await test('validates NPTH/PTH hole and top/bottom SMD modes without manufacturing defaults', () => {
 		assert.deepEqual(validatePlaceHole({ x: 10, y: 20, holeDiameter: 30, plated: false }), { x: 10, y: 20, holeDiameter: 30, plated: false });
 		assert.deepEqual(validatePlaceHole({ x: 10, y: 20, holeDiameter: 30, padDiameter: 50, plated: true }), { x: 10, y: 20, holeDiameter: 30, padDiameter: 50, plated: true });
-		assert.deepEqual(validatePlacePad({ x: 10, y: 20, layer: 'bottom', shape: 'rectangle', width: 40, height: 20 }), { x: 10, y: 20, layer: 'bottom', shape: 'rectangle', width: 40, height: 20, cornerRadius: 0 });
+		assert.deepEqual(validatePlacePad({ x: 10, y: 20, layer: 'bottom', shape: 'rectangle', width: 40, height: 20 }), { x: 10, y: 20, layer: 'bottom', shape: 'rectangle', width: 40, height: 20, cornerRadius: 0, padType: 'normal' });
+		assert.equal(validatePlacePad({ x: 10, y: 20, layer: 'top', shape: 'circle', diameter: 30, padType: 'test' }).padType, 'test');
 		assert.deepEqual(padShapeForSdk({ shape: 'rectangle', width: 60, height: 40, cornerRadius: 5 }), ['RECT', 60, 40, 25]);
 		assert.deepEqual(padShapeForSdk({ shape: 'rectangle', width: 40, height: 60, cornerRadius: 5 }), ['RECT', 40, 60, 25]);
 		assert.deepEqual(padShapeForSdk({ shape: 'rectangle', width: 60, height: 40, cornerRadius: 0 }), ['RECT', 60, 40, 0]);
 		assert.deepEqual(padShapeForSdk({ shape: 'rectangle', width: 60, height: 40, cornerRadius: 20 }), ['RECT', 60, 40, 100]);
+		assert.deepEqual(validatePlacePad({ x: 10, y: 20, layer: 'top', shape: 'oval', width: 40, height: 20 }), { x: 10, y: 20, layer: 'top', shape: 'oval', width: 40, height: 20, padType: 'normal' });
+		assert.deepEqual(padShapeForSdk({ shape: 'oval', width: 20, height: 40 }), ['OVAL', 20, 40]);
 	});
 
 	await test('invalid or ambiguous inputs reject before any EDA call or write', async () => {
@@ -366,12 +371,59 @@ async function main() {
 			{ cmd: 'pcb.placeHole', params: { x: 10, y: 20, holeDiameter: 30, plated: false, solderMaskOpen: true } },
 			{ cmd: 'pcb.placePad', params: { x: 10, y: 20, layer: 'multi', shape: 'circle', diameter: 20 } },
 			{ cmd: 'pcb.placePad', params: { x: 10, y: 20, layer: 'top', shape: 'circle', width: 20, height: 20 } },
+			{ cmd: 'pcb.placePad', params: { x: 10, y: 20, layer: 'top', shape: 'circle', diameter: 20, padType: 'automatic' } },
+			{ cmd: 'pcb.placePad', params: { x: 10, y: 20, layer: 'top', shape: 'ellipse', width: 20 } },
+			{ cmd: 'pcb.placePad', params: { x: 10, y: 20, layer: 'top', shape: 'ellipse', width: 20, height: 10 } },
+			{ cmd: 'pcb.placePad', params: { x: 10, y: 20, layer: 'top', shape: 'oval', width: 20, height: 10, diameter: 12 } },
+			{ cmd: 'pcb.placePad', params: { x: 10, y: 20, layer: 'top', shape: 'oval', width: 20, height: 10, cornerRadius: 2 } },
 		];
 		for (const item of invalid) {
 			const f = install();
 			await assert.rejects(() => command(item.cmd).handler(item.params));
 			assert.equal(f.state.writes.length, 0);
 		}
+	});
+
+	await test('creates one explicit TEST pad and verifies SDK getter plus PCB source semantics', async () => {
+		const f = install();
+		const result = await command('pcb.placePad').handler({ __docUuid: 'pcb-A', x: 120, y: 220, layer: 'top', shape: 'circle', diameter: 32, net: 'TP_SIG', padType: 'test' });
+		assert.equal(f.state.writes.length, 1);
+		assert.equal(f.state.writes[0].args[12], 1, 'EPCB_PrimitivePadType.TEST');
+		assert.equal(f.state.pads.get(result.created[0].id).getState_PadType(), 1);
+		assert.equal(result.created[0].purpose, 'standalone-test-point');
+		assert.equal(result.created[0].padType, 'test');
+		assert.equal(result.created[0].sourceReadback.padType, 'TEST');
+		assert.match(f.state.source, /"padType":"TEST"/);
+
+		for (const options of [{ readbackPadTypeOverride: 0 }, { sourcePadTypeOverride: 'NORMAL' }]) {
+			const mismatch = install(options);
+			await assert.rejects(() => command('pcb.placePad').handler({ __docUuid: 'pcb-A', x: 120, y: 220, layer: 'top', shape: 'circle', diameter: 32, padType: 'test' }));
+			assert.equal(mismatch.state.writes.length, 1, 'wrong type is a single failed write, never retried');
+		}
+	});
+
+	await test('project-bound pad and hole commands accept a matching project and reject a mismatch before any write', async () => {
+		let f = install({ projectUuid: 'project-A' });
+		let result = await executeCommand({ cmd: 'pcb.placePad', params: { __docUuid: 'pcb-A', __projectUuid: 'project-A', x: 20, y: 30, layer: 'top', shape: 'circle', diameter: 24 } });
+		assert.equal(result.ok, true, 'a matching project UUID passes registry validation and pad-hole validation');
+		assert.equal(f.state.writes.length, 1);
+
+		f = install({ projectUuid: 'project-A' });
+		result = await executeCommand({ cmd: 'pcb.placeHole', params: { __docUuid: 'pcb-A', __projectUuid: 'project-A', x: 20, y: 30, holeDiameter: 20, plated: false } });
+		assert.equal(result.ok, true, 'the shared validator accepts project UUID for placeHole too');
+		assert.equal(f.state.writes.length, 1);
+
+		f = install({ projectUuid: 'project-B' });
+		result = await executeCommand({ cmd: 'pcb.placePad', params: { __docUuid: 'pcb-A', __projectUuid: 'project-A', x: 20, y: 30, layer: 'top', shape: 'circle', diameter: 24 } });
+		assert.equal(result.ok, false);
+		assert.match(result.error.message, /parentProjectUuid 与 __projectUuid 不符/);
+		assert.equal(f.state.writes.length, 0, 'a mismatched project rejects before pad write');
+
+		f = install({ projectUuid: 'project-B' });
+		result = await executeCommand({ cmd: 'pcb.placeHole', params: { __docUuid: 'pcb-A', __projectUuid: 'project-A', x: 20, y: 30, holeDiameter: 20, plated: false } });
+		assert.equal(result.ok, false);
+		assert.match(result.error.message, /parentProjectUuid 与 __projectUuid 不符/);
+		assert.equal(f.state.writes.length, 0, 'a mismatched project rejects before hole write');
 	});
 
 	await test('creates exact circular no-copper mechanical NPTH as MULTI Fill and independently verifies SDK/source', async () => {
@@ -678,6 +730,44 @@ async function main() {
 		assert.equal(rect.created[0].requestedCornerRadiusMil, 5);
 		assert.equal(rect.created[0].sdkRadiusValue, 25);
 		assert.equal(rect.created[0].sdkRadiusRepresentation, 'percent-of-half-minimum-side');
+	});
+
+	await test('rejects true ellipse before any EDA call because save/reopen cannot preserve its height', async () => {
+		const f = install();
+		await assert.rejects(() => command('pcb.placePad').handler({ __docUuid: 'pcb-A', x: 70, y: 80, layer: 'top', shape: 'ellipse', width: 60, height: 30 }), /保存重开会退化成圆形；未执行写入/);
+		assert.equal(f.state.writes.length, 0);
+		assert.equal(f.state.sourceReadCount, 0);
+	});
+
+	await test('creates circular ELLIPSE and OVAL pads on both outer layers with exact getter and source readback', async () => {
+		for (const item of [
+			{ layer: 'top', shape: 'circle', diameter: 60, width: 60, height: 60, sdk: ['ELLIPSE', 60, 60], sourceType: 'ELLIPSE', padType: 'normal' },
+			{ layer: 'bottom', shape: 'oval', width: 28, height: 56, sdk: ['OVAL', 28, 56], sourceType: 'OVAL', padType: 'test' },
+		]) {
+			const f = install();
+			const result = await command('pcb.placePad').handler({ __docUuid: 'pcb-A', x: 70, y: 80, layer: item.layer, shape: item.shape, ...(item.shape === 'circle' ? { diameter: item.diameter } : { width: item.width, height: item.height }), padType: item.padType, net: 'TP_SIG' });
+			const created = result.created[0];
+			assert.deepEqual(f.state.writes[0].args[5], item.sdk);
+			assert.equal(f.state.writes[0].args[12], item.padType === 'test' ? 1 : 0);
+			assert.equal(created.layer, item.layer);
+			assert.equal(created.padType, item.padType);
+			assert.equal(created.purpose, item.padType === 'test' ? 'standalone-test-point' : 'standalone-smd-pad');
+			assert.deepEqual(created.geometryReadback.actualGetter.shape, item.sdk);
+			assert.deepEqual(created.geometryReadback.source.shape, { padType: item.sourceType, width: item.width, height: item.height });
+			assert.equal(created.geometryReadback.quantizedFields.length, 0);
+			assert.equal(created.sourceReadback.padType, item.padType === 'test' ? 'TEST' : 'NORMAL');
+		}
+	});
+
+	await test('oval getter and source geometry mismatches reject without retry or tolerance', async () => {
+		for (const options of [
+			{ getterGeometryOverride: { pad: ['OVAL', 28.1, 56] } },
+			{ sourceGeometryOverride: { defaultPad: { padType: 'OVAL', width: 28.1, height: 56 } } },
+		]) {
+			const f = install(options);
+			await assert.rejects(() => command('pcb.placePad').handler({ __docUuid: 'pcb-A', x: 70, y: 80, layer: 'bottom', shape: 'oval', width: 28, height: 56, padType: 'test' }));
+			assert.equal(f.state.writes.length, 1);
+		}
 	});
 
 	await test('maps requested rectangular corner radius in mil to SDK percent for swapped dimensions, zero and maximum', async () => {

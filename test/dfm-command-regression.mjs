@@ -80,6 +80,9 @@ await test('required parameters reject missing, strings, NaN, Infinity, and nonp
 		['pcb.runDfm', { material: 'FR4', thickness: 1.6, outerCopperOz: 1 }],
 		['pcb.runDfm', { material: 'FR4', thickness: 1.6, outerCopperOz: 1, innerCopperOz: 2 }],
 		['pcb.runDfm', { material: 'FR4', thickness: 1.6, outerCopperOz: 3, innerCopperOz: 1 }],
+		['pcb.runDfm', { material: 'FR4', thickness: 1.6, outerCopperOz: 1, innerCopperOz: 1, padPurposeEvidence: [{ padId: 'p1', classification: 'guess', reason: 'x', source: 'y' }] }],
+		['pcb.runDfm', { material: 'FR4', thickness: 1.6, outerCopperOz: 1, innerCopperOz: 1, padPurposeEvidence: [{ padId: 'p1', classification: 'nc', reason: '', source: 'y' }] }],
+		['pcb.runDfm', { material: 'FR4', thickness: 1.6, outerCopperOz: 1, innerCopperOz: 1, padPurposeEvidence: [{ padId: 'p1', classification: 'nc', reason: 'x', source: 'y' }, { padId: 'p1', classification: 'reserved', reason: 'x', source: 'y' }] }],
 		['pcb.runDfm', { material: 'FR4', thickness: 1.6, outerCopperOz: NaN, innerCopperOz: 1 }],
 		['pcb.runDfm', { material: 'FR4', thickness: 1.6, outerCopperOz: '1', innerCopperOz: 1 }],
 		['pcb.runDfm', { thickness: 1.6, outerCopperOz: 1, innerCopperOz: 1 }],
@@ -123,6 +126,17 @@ await test('three command definitions use lexical EDA binding, pass only validat
 	assert.equal(pcb.passed, true);
 	assert.equal(smt.reportedCopper, undefined);
 	assert.equal(fState.writes.length, 0); assert.equal(fState.selected.length, 0); assert.equal(fState.navigated.length, 0);
+});
+
+await test('optional pad purpose evidence is validated and passed through only for PCB DFM', async () => {
+	const evidence = [{ padId: 'pad-exact-id', classification: 'nc', reason: 'netlist marks no connect', source: 'project/netlist.xlsx!sheet2!C9' }];
+	const f = fixture({ runOfficialDfm: async (kind, params) => { fState.coreCalls.push({ kind, params }); return { results: [], expectedCount: 0, issues: [], coverage: [], upstreamPassed: false, complete: false, passed: false }; } });
+	const fState = f.state;
+	const byName = Object.fromEntries(f.api.dfmCommands.map(command => [command.name, command]));
+	const result = await byName['pcb.runDfm'].handler({ material: 'FR4', thickness: 1.6, outerCopperOz: 1, innerCopperOz: 1, padPurposeEvidence: evidence });
+	assert.deepEqual(JSON.parse(JSON.stringify(fState.coreCalls[0].params.padPurposeEvidence)), evidence);
+	assert.deepEqual(JSON.parse(JSON.stringify(result.inputs.padPurposeEvidence)), evidence);
+	await assert.rejects(byName['pcb.runSmtDfm'].handler({ standard: 'standard', thickness: 1.6, padPurposeEvidence: evidence }), /仅适用于 pcb.runDfm/);
 });
 
 await test('focus loss latches failure and blocks every later real SDK read even if core catches it', async () => {

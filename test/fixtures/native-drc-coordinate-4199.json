@@ -1,0 +1,799 @@
+{
+  "provenance": {
+    "kind": "independent-host-sample",
+    "date": "2026-11-14",
+    "host": "4.1.99",
+    "project": "ACE_P0_RULES_20261113",
+    "pcb": "ACE_GEOMETRY_DRC_20261114",
+    "evidence": [
+      "geometry-drc-origin-zero.json",
+      "geometry-drc-origin-shifted.json",
+      "geometry-drc-zero-source-read.json"
+    ],
+    "limitations": "Unit convention empirically confirmed for observed native verbose representation; not an official universal API-unit guarantee."
+  },
+  "rawResult": [
+    {
+      "name": "Physical Error",
+      "list": [
+        {
+          "name": "Track",
+          "list": [
+            {
+              "visible": true,
+              "errorType": "Physical Error",
+              "errorObjType": "Track",
+              "ruleName": "copperThickness1oz",
+              "obj1": {
+                "typeName": "Track",
+                "suffix": "(N1): e0"
+              },
+              "layer": "Top Layer",
+              "explanation": {
+                "str": "{obj1} stroke width is {width}, should be {shouldBe}",
+                "param": {
+                  "width": "2mil",
+                  "shouldBe": "5mil ~ 100mil",
+                  "obj1": "Object 1",
+                  "type": "TrackError"
+                },
+                "errData": {
+                  "globalIndex": "err0",
+                  "position": {
+                    "x": 21.34,
+                    "y": -28.76
+                  },
+                  "name": "copperThickness1oz",
+                  "obj1": "01e1fba07d959933",
+                  "width": 0.2,
+                  "minWidth": 0.5,
+                  "maxWidth": 10,
+                  "layerIds": [
+                    1
+                  ]
+                }
+              },
+              "objs": [
+                "01e1fba07d959933"
+              ],
+              "globalIndex": "err0",
+              "pos": {
+                "x": 21.34,
+                "y": -28.76
+              },
+              "parentId": "DRCTab|_|Errors|_|Physical Error|_|Track"
+            },
+            {
+              "visible": true,
+              "errorType": "Physical Error",
+              "errorObjType": "Track",
+              "ruleName": "copperThickness1oz",
+              "obj1": {
+                "typeName": "Track",
+                "suffix": "(N2): e1"
+              },
+              "layer": "Bottom Layer",
+              "explanation": {
+                "str": "{obj1} stroke width is {width}, should be {shouldBe}",
+                "param": {
+                  "width": "2mil",
+                  "shouldBe": "5mil ~ 100mil",
+                  "obj1": "Object 1",
+                  "type": "TrackError"
+                },
+                "errData": {
+                  "globalIndex": "err1",
+                  "position": {
+                    "x": -37.32,
+                    "y": 16.18
+                  },
+                  "name": "copperThickness1oz",
+                  "obj1": "ea018bad873ac8d5",
+                  "width": 0.2,
+                  "minWidth": 0.5,
+                  "maxWidth": 10,
+                  "layerIds": [
+                    2
+                  ]
+                }
+              },
+              "objs": [
+                "ea018bad873ac8d5"
+              ],
+              "globalIndex": "err1",
+              "pos": {
+                "x": -37.32,
+                "y": 16.18
+              },
+              "parentId": "DRCTab|_|Errors|_|Physical Error|_|Track"
+            }
+          ],
+          "count": 2,
+          "title": [
+            "Track",
+            "(2)"
+          ],
+          "visible": true
+        }
+      ],
+      "visible": true,
+      "count": 2,
+      "title": [
+        "Physical Error",
+        "(2)"
+      ]
+    },
+    {
+      "name": "Connection Error",
+      "list": [
+        {
+          "name": "N1",
+          "list": [
+            {
+              "visible": true,
+              "errorType": "Connection Error",
+              "errorObjType": "Track",
+              "ruleName": "Common",
+              "obj1": {
+                "typeName": "Track",
+                "suffix": "(N1): e0"
+              },
+              "isFree": false,
+              "net": "N1",
+              "explanation": {
+                "str": "{obj1} is disconnected from other objects of the same network",
+                "param": {
+                  "obj1": "Object 1",
+                  "type": "ConnectError"
+                },
+                "errData": {
+                  "globalIndex": "err2",
+                  "position": {
+                    "x": 21.34,
+                    "y": -28.76
+                  },
+                  "name": "Common",
+                  "obj1": "01e1fba07d959933",
+                  "obj1Type": "Track",
+                  "net": "N1",
+                  "isFree": false,
+                  "layerIds": [
+                    1
+                  ],
+                  "errorType": "No Connection",
+                  "obj1Suffix": "(N1): e0"
+                }
+              },
+              "objs": [
+                "01e1fba07d959933"
+              ],
+              "globalIndex": "err2",
+              "pos": {
+                "x": 21.34,
+                "y": -28.76
+              },
+              "parentId": "DRCTab|_|Errors|_|Connection Error|_|N1"
+            },
+            {
+              "visible": true,
+              "errorType": "Connection Error",
+              "errorObjType": "SMD Pad",
+              "ruleName": "Common",
+              "obj1": {
+                "typeName": "SMD Pad",
+                "suffix": "(N1): e0"
+              },
+              "isFree": false,
+              "net": "N1",
+              "explanation": {
+                "str": "{obj1} is disconnected from other objects of the same network",
+                "param": {
+                  "obj1": "Object 1",
+                  "type": "ConnectError"
+                },
+                "errData": {
+                  "globalIndex": "err3",
+                  "position": {
+                    "x": 80,
+                    "y": 80
+                  },
+                  "name": "Common",
+                  "obj1": "cb4ae095d097b333",
+                  "obj1Type": "SMD Pad",
+                  "net": "N1",
+                  "isFree": false,
+                  "layerIds": [
+                    1
+                  ],
+                  "errorType": "No Connection",
+                  "obj1Suffix": "(N1): e0"
+                }
+              },
+              "objs": [
+                "cb4ae095d097b333"
+              ],
+              "globalIndex": "err3",
+              "pos": {
+                "x": 80,
+                "y": 80
+              },
+              "parentId": "DRCTab|_|Errors|_|Connection Error|_|N1"
+            }
+          ],
+          "doNotTranslate": true,
+          "count": 2,
+          "title": "N1 (2)",
+          "visible": true
+        },
+        {
+          "name": "N2",
+          "list": [
+            {
+              "visible": true,
+              "errorType": "Connection Error",
+              "errorObjType": "Track",
+              "ruleName": "Common",
+              "obj1": {
+                "typeName": "Track",
+                "suffix": "(N2): e1"
+              },
+              "isFree": false,
+              "net": "N2",
+              "explanation": {
+                "str": "{obj1} is disconnected from other objects of the same network",
+                "param": {
+                  "obj1": "Object 1",
+                  "type": "ConnectError"
+                },
+                "errData": {
+                  "globalIndex": "err4",
+                  "position": {
+                    "x": -37.32,
+                    "y": 16.18
+                  },
+                  "name": "Common",
+                  "obj1": "ea018bad873ac8d5",
+                  "obj1Type": "Track",
+                  "net": "N2",
+                  "isFree": false,
+                  "layerIds": [
+                    2
+                  ],
+                  "errorType": "No Connection",
+                  "obj1Suffix": "(N2): e1"
+                }
+              },
+              "objs": [
+                "ea018bad873ac8d5"
+              ],
+              "globalIndex": "err4",
+              "pos": {
+                "x": -37.32,
+                "y": 16.18
+              },
+              "parentId": "DRCTab|_|Errors|_|Connection Error|_|N2"
+            },
+            {
+              "visible": true,
+              "errorType": "Connection Error",
+              "errorObjType": "SMD Pad",
+              "ruleName": "Common",
+              "obj1": {
+                "typeName": "SMD Pad",
+                "suffix": "(N2): e1"
+              },
+              "isFree": false,
+              "net": "N2",
+              "explanation": {
+                "str": "{obj1} is disconnected from other objects of the same network",
+                "param": {
+                  "obj1": "Object 1",
+                  "type": "ConnectError"
+                },
+                "errData": {
+                  "globalIndex": "err5",
+                  "position": {
+                    "x": 85,
+                    "y": 80
+                  },
+                  "name": "Common",
+                  "obj1": "7fc64d345983003c",
+                  "obj1Type": "SMD Pad",
+                  "net": "N2",
+                  "isFree": false,
+                  "layerIds": [
+                    1
+                  ],
+                  "errorType": "No Connection",
+                  "obj1Suffix": "(N2): e1"
+                }
+              },
+              "objs": [
+                "7fc64d345983003c"
+              ],
+              "globalIndex": "err5",
+              "pos": {
+                "x": 85,
+                "y": 80
+              },
+              "parentId": "DRCTab|_|Errors|_|Connection Error|_|N2"
+            }
+          ],
+          "doNotTranslate": true,
+          "count": 2,
+          "title": "N2 (2)",
+          "visible": true
+        }
+      ],
+      "visible": true,
+      "count": 4,
+      "title": [
+        "Connection Error",
+        "(4)"
+      ]
+    }
+  ],
+  "shiftedOriginRawResult": [
+    {
+      "name": "Physical Error",
+      "list": [
+        {
+          "name": "Track",
+          "list": [
+            {
+              "visible": true,
+              "errorType": "Physical Error",
+              "errorObjType": "Track",
+              "ruleName": "copperThickness1oz",
+              "obj1": {
+                "typeName": "Track",
+                "suffix": "(N1): e0"
+              },
+              "layer": "Top Layer",
+              "explanation": {
+                "str": "{obj1} stroke width is {width}, should be {shouldBe}",
+                "param": {
+                  "width": "2mil",
+                  "shouldBe": "5mil ~ 100mil",
+                  "obj1": "Object 1",
+                  "type": "TrackError"
+                },
+                "errData": {
+                  "globalIndex": "err6",
+                  "position": {
+                    "x": 21.34,
+                    "y": -28.76
+                  },
+                  "name": "copperThickness1oz",
+                  "obj1": "01e1fba07d959933",
+                  "width": 0.2,
+                  "minWidth": 0.5,
+                  "maxWidth": 10,
+                  "layerIds": [
+                    1
+                  ]
+                }
+              },
+              "objs": [
+                "01e1fba07d959933"
+              ],
+              "globalIndex": "err6",
+              "pos": {
+                "x": 21.34,
+                "y": -28.76
+              },
+              "parentId": "DRCTab|_|Errors|_|Physical Error|_|Track"
+            },
+            {
+              "visible": true,
+              "errorType": "Physical Error",
+              "errorObjType": "Track",
+              "ruleName": "copperThickness1oz",
+              "obj1": {
+                "typeName": "Track",
+                "suffix": "(N2): e1"
+              },
+              "layer": "Bottom Layer",
+              "explanation": {
+                "str": "{obj1} stroke width is {width}, should be {shouldBe}",
+                "param": {
+                  "width": "2mil",
+                  "shouldBe": "5mil ~ 100mil",
+                  "obj1": "Object 1",
+                  "type": "TrackError"
+                },
+                "errData": {
+                  "globalIndex": "err7",
+                  "position": {
+                    "x": -37.32,
+                    "y": 16.18
+                  },
+                  "name": "copperThickness1oz",
+                  "obj1": "ea018bad873ac8d5",
+                  "width": 0.2,
+                  "minWidth": 0.5,
+                  "maxWidth": 10,
+                  "layerIds": [
+                    2
+                  ]
+                }
+              },
+              "objs": [
+                "ea018bad873ac8d5"
+              ],
+              "globalIndex": "err7",
+              "pos": {
+                "x": -37.32,
+                "y": 16.18
+              },
+              "parentId": "DRCTab|_|Errors|_|Physical Error|_|Track"
+            }
+          ],
+          "count": 2,
+          "title": [
+            "Track",
+            "(2)"
+          ],
+          "visible": true
+        }
+      ],
+      "visible": true,
+      "count": 2,
+      "title": [
+        "Physical Error",
+        "(2)"
+      ]
+    },
+    {
+      "name": "Connection Error",
+      "list": [
+        {
+          "name": "N1",
+          "list": [
+            {
+              "visible": true,
+              "errorType": "Connection Error",
+              "errorObjType": "Track",
+              "ruleName": "Common",
+              "obj1": {
+                "typeName": "Track",
+                "suffix": "(N1): e0"
+              },
+              "isFree": false,
+              "net": "N1",
+              "explanation": {
+                "str": "{obj1} is disconnected from other objects of the same network",
+                "param": {
+                  "obj1": "Object 1",
+                  "type": "ConnectError"
+                },
+                "errData": {
+                  "globalIndex": "err8",
+                  "position": {
+                    "x": 21.34,
+                    "y": -28.76
+                  },
+                  "name": "Common",
+                  "obj1": "01e1fba07d959933",
+                  "obj1Type": "Track",
+                  "net": "N1",
+                  "isFree": false,
+                  "layerIds": [
+                    1
+                  ],
+                  "errorType": "No Connection",
+                  "obj1Suffix": "(N1): e0"
+                }
+              },
+              "objs": [
+                "01e1fba07d959933"
+              ],
+              "globalIndex": "err8",
+              "pos": {
+                "x": 21.34,
+                "y": -28.76
+              },
+              "parentId": "DRCTab|_|Errors|_|Connection Error|_|N1"
+            },
+            {
+              "visible": true,
+              "errorType": "Connection Error",
+              "errorObjType": "SMD Pad",
+              "ruleName": "Common",
+              "obj1": {
+                "typeName": "SMD Pad",
+                "suffix": "(N1): e0"
+              },
+              "isFree": false,
+              "net": "N1",
+              "explanation": {
+                "str": "{obj1} is disconnected from other objects of the same network",
+                "param": {
+                  "obj1": "Object 1",
+                  "type": "ConnectError"
+                },
+                "errData": {
+                  "globalIndex": "err9",
+                  "position": {
+                    "x": 80,
+                    "y": 80
+                  },
+                  "name": "Common",
+                  "obj1": "cb4ae095d097b333",
+                  "obj1Type": "SMD Pad",
+                  "net": "N1",
+                  "isFree": false,
+                  "layerIds": [
+                    1
+                  ],
+                  "errorType": "No Connection",
+                  "obj1Suffix": "(N1): e0"
+                }
+              },
+              "objs": [
+                "cb4ae095d097b333"
+              ],
+              "globalIndex": "err9",
+              "pos": {
+                "x": 80,
+                "y": 80
+              },
+              "parentId": "DRCTab|_|Errors|_|Connection Error|_|N1"
+            }
+          ],
+          "doNotTranslate": true,
+          "count": 2,
+          "title": "N1 (2)",
+          "visible": true
+        },
+        {
+          "name": "N2",
+          "list": [
+            {
+              "visible": true,
+              "errorType": "Connection Error",
+              "errorObjType": "Track",
+              "ruleName": "Common",
+              "obj1": {
+                "typeName": "Track",
+                "suffix": "(N2): e1"
+              },
+              "isFree": false,
+              "net": "N2",
+              "explanation": {
+                "str": "{obj1} is disconnected from other objects of the same network",
+                "param": {
+                  "obj1": "Object 1",
+                  "type": "ConnectError"
+                },
+                "errData": {
+                  "globalIndex": "err10",
+                  "position": {
+                    "x": -37.32,
+                    "y": 16.18
+                  },
+                  "name": "Common",
+                  "obj1": "ea018bad873ac8d5",
+                  "obj1Type": "Track",
+                  "net": "N2",
+                  "isFree": false,
+                  "layerIds": [
+                    2
+                  ],
+                  "errorType": "No Connection",
+                  "obj1Suffix": "(N2): e1"
+                }
+              },
+              "objs": [
+                "ea018bad873ac8d5"
+              ],
+              "globalIndex": "err10",
+              "pos": {
+                "x": -37.32,
+                "y": 16.18
+              },
+              "parentId": "DRCTab|_|Errors|_|Connection Error|_|N2"
+            },
+            {
+              "visible": true,
+              "errorType": "Connection Error",
+              "errorObjType": "SMD Pad",
+              "ruleName": "Common",
+              "obj1": {
+                "typeName": "SMD Pad",
+                "suffix": "(N2): e1"
+              },
+              "isFree": false,
+              "net": "N2",
+              "explanation": {
+                "str": "{obj1} is disconnected from other objects of the same network",
+                "param": {
+                  "obj1": "Object 1",
+                  "type": "ConnectError"
+                },
+                "errData": {
+                  "globalIndex": "err11",
+                  "position": {
+                    "x": 85,
+                    "y": 80
+                  },
+                  "name": "Common",
+                  "obj1": "7fc64d345983003c",
+                  "obj1Type": "SMD Pad",
+                  "net": "N2",
+                  "isFree": false,
+                  "layerIds": [
+                    1
+                  ],
+                  "errorType": "No Connection",
+                  "obj1Suffix": "(N2): e1"
+                }
+              },
+              "objs": [
+                "7fc64d345983003c"
+              ],
+              "globalIndex": "err11",
+              "pos": {
+                "x": 85,
+                "y": 80
+              },
+              "parentId": "DRCTab|_|Errors|_|Connection Error|_|N2"
+            }
+          ],
+          "doNotTranslate": true,
+          "count": 2,
+          "title": "N2 (2)",
+          "visible": true
+        }
+      ],
+      "visible": true,
+      "count": 4,
+      "title": [
+        "Connection Error",
+        "(4)"
+      ]
+    }
+  ],
+  "shiftedCanvasOrigin": {
+    "offsetX": 100,
+    "offsetY": -200
+  },
+  "restoredCanvasOrigin": {
+    "offsetX": 0,
+    "offsetY": 0
+  },
+  "records": [
+    {
+      "type": "PAD",
+      "id": "cb4ae095d097b333",
+      "data": {
+        "partitionId": "",
+        "groupId": 0,
+        "netName": "N1",
+        "layerId": 1,
+        "num": "",
+        "centerX": 800,
+        "centerY": 800,
+        "padAngle": 0,
+        "hole": null,
+        "defaultPad": {
+          "padType": "ELLIPSE",
+          "width": 10,
+          "height": 10
+        },
+        "specialPad": [],
+        "padOffsetX": 0,
+        "padOffsetY": 0,
+        "relativeAngle": null,
+        "plated": false,
+        "padType": "NORMAL",
+        "topSolderExpansion": null,
+        "bottomSolderExpansion": null,
+        "topPasteExpansion": null,
+        "bottomPasteExpansion": null,
+        "locked": false,
+        "zIndex": -1,
+        "connectMode": null,
+        "spokeSpace": null,
+        "spokeWidth": null,
+        "spokeAngle": null,
+        "unusedInnerLayers": [],
+        "padLen": 0,
+        "propagationDelay": 0,
+        "attrsMap": {}
+      }
+    },
+    {
+      "type": "PAD",
+      "id": "7fc64d345983003c",
+      "data": {
+        "partitionId": "",
+        "groupId": 0,
+        "netName": "N2",
+        "layerId": 1,
+        "num": "",
+        "centerX": 850,
+        "centerY": 800,
+        "padAngle": 0,
+        "hole": null,
+        "defaultPad": {
+          "padType": "ELLIPSE",
+          "width": 10,
+          "height": 10
+        },
+        "specialPad": [],
+        "padOffsetX": 0,
+        "padOffsetY": 0,
+        "relativeAngle": null,
+        "plated": false,
+        "padType": "NORMAL",
+        "topSolderExpansion": null,
+        "bottomSolderExpansion": null,
+        "topPasteExpansion": null,
+        "bottomPasteExpansion": null,
+        "locked": false,
+        "zIndex": -1,
+        "connectMode": null,
+        "spokeSpace": null,
+        "spokeWidth": null,
+        "spokeAngle": null,
+        "unusedInnerLayers": [],
+        "padLen": 0,
+        "propagationDelay": 0,
+        "attrsMap": {}
+      }
+    },
+    {
+      "type": "LINE",
+      "id": "01e1fba07d959933",
+      "data": {
+        "partitionId": "",
+        "groupId": 0,
+        "netName": "N1",
+        "layerId": 1,
+        "startX": 173.4,
+        "startY": -287.6,
+        "endX": 253.4,
+        "endY": -287.6,
+        "width": 2,
+        "locked": false,
+        "zIndex": -1
+      }
+    },
+    {
+      "type": "LINE",
+      "id": "ea018bad873ac8d5",
+      "data": {
+        "partitionId": "",
+        "groupId": 0,
+        "netName": "N2",
+        "layerId": 2,
+        "startX": -413.2,
+        "startY": 161.8,
+        "endX": -333.2,
+        "endY": 161.8,
+        "width": 2,
+        "locked": false,
+        "zIndex": -1
+      }
+    }
+  ],
+  "expectedPositionsMil": {
+    "01e1fba07d959933": {
+      "x": 213.4,
+      "y": -287.6
+    },
+    "ea018bad873ac8d5": {
+      "x": -373.2,
+      "y": 161.8
+    },
+    "cb4ae095d097b333": {
+      "x": 800,
+      "y": 800
+    },
+    "7fc64d345983003c": {
+      "x": 850,
+      "y": 800
+    }
+  }
+}

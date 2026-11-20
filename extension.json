@@ -3,7 +3,7 @@
   "uuid": "29aa51f0bed4411d866cb7a7a249231a",
   "displayName": "AI 指令引擎",
   "description": "AI 指令引擎：为 AI 编程工具提供简易 JSON 指令接口，内部封装嘉立创 EDA 专业版扩展 API，支持宏指令组合与布线知识库",
-  "version": "0.21.7",
+  "version": "0.21.18",
   "publisher": "ai-command-engine",
   "engines": {
     "eda": "^3.2.0"
@@ -186,7 +186,7 @@
           },
           {
             "id": "PcbAutoRouteStart",
-            "title": "启动自动布线…",
+            "title": "启动自动布线（选择引擎）…",
             "registerFn": "pcbAutoRouteStartMenu"
           },
           {
@@ -201,12 +201,12 @@
           },
           {
             "id": "PcbAutoRouteFetch",
-            "title": "取回已完成 SES…",
+            "title": "取回已完成布线结果…",
             "registerFn": "pcbAutoRouteFetchMenu"
           },
           {
             "id": "PcbAutoRouteImport",
-            "title": "显式导入已取回 SES…",
+            "title": "预检并导入布线结果…",
             "registerFn": "pcbAutoRouteImportMenu"
           }
         ]

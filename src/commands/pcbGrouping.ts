@@ -8,6 +8,7 @@
  *   与官方仅有的差异：① 排布起点平移到板框内左下角；② 出口闸——排完校验出板框即报错不写；
  *   ③ 备份改为版本化文件栈（代理落盘 backups/<工程>/<时间戳>.txt，每工程保留最近 5 份），
  *   代理不可用时回退 sys_Storage 单槽备份；④ 组名文本单行（官方为页名/框名+区框内文本多行）。
+ * - pcb.sourceCheckpoint：主动创建源码备份并按备份 ID 读回逐字节核验，不修改或保存 PCB。
  * - pcb.sourceRollback：列出/恢复源码备份（恢复前校验 pcbUuid 匹配，恢复后回读校验）。
  *
  * 铁律：官方 API 返回值不可信，一切成败以回读源码重新解析比对为准（容差 0.001）。
@@ -152,6 +153,116 @@ async function readBackup(backupId: string | undefined, pcbUuid: string, assertT
 	if (!result?.ok)
 		throw new Error(`读取备份失败：${String(result?.error ?? '未知错误')}`)
 	return { backupId: String(result.backupId), pcbUuid: String(result.pcbUuid ?? ''), source: String(result.source), createdAt: result.createdAt }
+}
+
+function checkpointFailure(message: string, phase: string, backup: { backupId: string, location: 'proxy' | 'storage', file?: string }, pcbUuid: string, sourceSizeBytes: number, cause?: unknown): Error {
+	return new Error(message, {
+		cause: {
+			partial: true,
+			retryable: false,
+			source: 'pcb-source-checkpoint',
+			phase,
+			backupState: 'uncertain',
+			backupId: backup.backupId,
+			location: backup.location,
+			...(backup.file ? { file: backup.file } : {}),
+			pcbUuid,
+			sourceSizeBytes,
+			...(cause ? { reason: cause instanceof Error ? cause.message : String(cause) } : {}),
+		},
+	})
+}
+
+async function createPcbSourceCheckpoint(noteValue: unknown, ctx?: import('../engine/types').ICommandContext) {
+	const target = ctx?.documentTarget
+	if (!target || target.documentType !== 3 || typeof target.uuid !== 'string' || !target.uuid
+		|| typeof ctx?.assertDocumentTarget !== 'function')
+		throw new Error('源码检查点需要已绑定的 PCB 工程、文档和页签目标')
+	if (noteValue !== undefined && typeof noteValue !== 'string')
+		throw new Error('note 必须是字符串')
+	const note = noteValue === undefined ? '用户主动创建的 PCB 源码检查点' : String(noteValue)
+	const assertTarget = async () => {
+		ctx.stopSignal?.assertActive()
+		await ctx.assertDocumentTarget!()
+		const focused = await eda.dmt_SelectControl.getCurrentDocumentInfo()
+		ctx.stopSignal?.assertActive()
+		await ctx.assertDocumentTarget!()
+		if (focused?.documentType !== 3 || focused.uuid !== target.uuid
+			|| (target.tabId !== undefined && focused.tabId !== target.tabId))
+			throw new Error(`当前 PCB 焦点与检查点目标不符（目标=${target.uuid}/${String(target.tabId ?? '')}，当前=${String(focused?.uuid ?? '')}/${String(focused?.tabId ?? '')}）`)
+		const project = await eda.dmt_Project.getCurrentProjectInfo()
+		ctx.stopSignal?.assertActive()
+		await ctx.assertDocumentTarget!()
+		if (typeof project?.uuid !== 'string' || !project.uuid
+			|| (target.parentProjectUuid !== undefined && project.uuid !== target.parentProjectUuid)
+			|| (typeof focused.parentProjectUuid === 'string' && focused.parentProjectUuid !== project.uuid))
+			throw new Error(`当前工程与 PCB 目标不符（目标工程=${String(target.parentProjectUuid ?? '')}，当前工程=${String(project?.uuid ?? '')}）`)
+		const boards = Array.isArray(project.data) ? project.data : []
+		const belongsToProject = boards.some((item: any) => {
+			if (item?.itemType === 'PCB')
+				return item.uuid === target.uuid && item.parentProjectUuid === project.uuid
+					&& typeof item.name === 'string' && item.name.length > 0
+					&& (item.parentBoardName === undefined || item.parentBoardName === '')
+			if (item?.itemType !== 'Board' || typeof item.name !== 'string' || !item.name || item.parentProjectUuid !== project.uuid)
+				return false
+			const pcb = item.pcb
+			return pcb?.itemType === 'PCB' && pcb.uuid === target.uuid
+				&& typeof pcb.name === 'string' && pcb.name.length > 0
+				&& pcb.parentProjectUuid === project.uuid && pcb.parentBoardName === item.name
+		})
+		if (!belongsToProject)
+			throw new Error(`目标 PCB ${target.uuid} 不属于当前工程 ${project.uuid}`)
+		return { project, focused }
+	}
+
+	const initial = await assertTarget()
+	await ctx.assertDocumentTarget()
+	const source = await eda.sys_FileManager.getDocumentSource()
+	ctx.stopSignal?.assertActive()
+	await ctx.assertDocumentTarget()
+	if (typeof source !== 'string' || !source)
+		throw new Error('无法读取当前 PCB 源码，未创建检查点')
+	const parsed = parseSourceLog(source)
+	if (parsed.docType !== 'PCB' || parsed.uuid !== target.uuid)
+		throw new Error(`源码身份与目标 PCB 不符（目标=${target.uuid}，源码=${parsed.docType}/${parsed.uuid}），未创建检查点`)
+	const sourceSizeBytes = new TextEncoder().encode(source).byteLength
+	const projectName = String(initial.project.friendlyName ?? initial.project.name ?? initial.project.uuid)
+	await assertTarget()
+	let backup: Awaited<ReturnType<typeof storeBackup>>
+	try {
+		backup = await storeBackup(projectName, target.uuid, source, note)
+	}
+	catch (error) {
+		throw new Error(`创建 PCB 源码检查点失败，未能确认备份结果：${error instanceof Error ? error.message : String(error)}`, {
+			cause: { partial: true, retryable: false, source: 'pcb-source-checkpoint', phase: 'create-backup', backupState: 'uncertain', pcbUuid: target.uuid, sourceSizeBytes },
+		})
+	}
+	try {
+		await assertTarget()
+		const assertReadBackupTarget = async () => { await assertTarget() }
+		const savedBackup = await readBackup(backup.backupId, target.uuid, assertReadBackupTarget)
+		await assertTarget()
+		if (savedBackup.backupId !== backup.backupId || savedBackup.pcbUuid !== target.uuid || savedBackup.source !== source)
+			throw new Error(`备份读回不一致（backupId=${savedBackup.backupId}，pcbUuid=${savedBackup.pcbUuid}，源码逐字节匹配=${savedBackup.source === source}）`)
+		return {
+			backupId: backup.backupId,
+			location: backup.location,
+			...(backup.file ? { file: backup.file } : {}),
+			pcbUuid: target.uuid,
+			projectUuid: initial.project.uuid,
+			sourceSizeBytes,
+			verified: true,
+			backupState: 'created-and-read-back-verified',
+			note,
+			...(backup.pruned?.length ? { backupNote: backup.pruned } : {}),
+		}
+	}
+	catch (error) {
+		throw checkpointFailure(
+			`备份可能已创建，但读回核验未通过；备份状态不确定，请用 pcb.sourceRollback 的 list 模式核对后再决定。不会自动重试。backupId=${backup.backupId}`,
+			'readback', backup, target.uuid, sourceSizeBytes, error,
+		)
+	}
 }
 
 // ---------- 板框识别（优先从 PCB 源码层 11 记录解析，回退实时 Polyline API） ----------
@@ -1105,8 +1216,18 @@ export const pcbGroupingCommands: Array<ICommandDef> = [
 		},
 	},
 	{
+		name: 'pcb.sourceCheckpoint',
+		summary: '主动创建当前 PCB 源码检查点并按备份 ID 读回逐字节核验；不修改图纸、不自动保存。代理可用时使用版本化文件栈（每工程保留最近 5 份），代理不可用时回退 EDA 扩展存储单槽（只保留最近一份，可能覆盖旧备份）；恢复使用 pcb.sourceRollback',
+		params: [
+			{ name: 'note', type: 'string', description: '可选备注，帮助识别检查点用途' },
+		],
+		returns: '{ backupId, location, file?, pcbUuid, projectUuid, sourceSizeBytes, verified, backupState, note }；仅 verified:true 表示已按 ID 读回并逐字节匹配',
+		example: { cmd: 'pcb.sourceCheckpoint', params: { note: '布线修改前' } },
+		handler: async (params, ctx) => createPcbSourceCheckpoint(params.note, ctx),
+	},
+	{
 		name: 'pcb.sourceRollback',
-		summary: '【0.10.22】PCB 源码备份的列出与恢复：list:true 列出当前 PCB 的全部备份（代理文件栈 + EDA 扩展存储单槽）；否则恢复——默认恢复当前 PCB 最近一份，或按 backupId 指定。恢复前核对备份 metadata 与 PCB 源码 UUID，恢复后完整比较源码并确认保存；默认保存后关闭重开并复核持久性。备份由 pcb.groupBySchematicRegions 等源码写入指令产生',
+		summary: '【0.10.22】PCB 源码备份的列出与恢复：list:true 列出当前 PCB 的全部备份（代理文件栈 + EDA 扩展存储单槽）；否则恢复——默认恢复当前 PCB 最近一份，或按 backupId 指定。恢复前核对备份 metadata 与 PCB 源码 UUID，恢复后完整比较源码并确认保存；默认保存后关闭重开并复核持久性。备份可由 pcb.sourceCheckpoint、pcb.groupBySchematicRegions 等指令产生。代理文件栈每工程保留最近 5 份；扩展存储是单槽，只保留最近一份',
 		params: [
 			{ name: 'list', type: 'boolean', description: '只列出备份不恢复（默认 false）' },
 			{ name: 'backupId', type: 'string', description: '指定备份 ID（如 "工程名/2026-09-28T09-30-00-000Z"，或 storage: 开头的扩展存储备份）；留空恢复当前 PCB 最近一份' },

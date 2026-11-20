@@ -186,7 +186,11 @@ export { componentAttributeCommands }
 		{
 			const sdk = makeSdk(original);
 			globalThis.eda = sdk.api;
-			const result = await command.handler({ componentId: COMPONENT_ID, designator: 'R1', x: 150.25, y: 340.5, rotation: 90, fontSize: 50, visible: false });
+			const readFocus = sdk.api.dmt_SelectControl.getCurrentDocumentInfo;
+			sdk.api.dmt_SelectControl.getCurrentDocumentInfo = async () => ({ ...await readFocus(), parentProjectUuid: 'isolated-a', tabId: 'isolated-tab' });
+			await assert.rejects(command.handler({ componentId: COMPONENT_ID, x: 150.25, __projectUuid: 'isolated-b' }), /工程或页签/);
+			assert.equal(sdk.writes, 0);
+			const result = await command.handler({ componentId: COMPONENT_ID, designator: 'R1', x: 150.25, y: 340.5, rotation: 90, fontSize: 50, visible: false, __projectUuid: 'isolated-a', __tabId: 'isolated-tab' });
 			assert.equal(result.verified, true, 'top-side multi-field update passes source and getter readback');
 			assert.equal(result.designator, 'R1', 'designator is returned without changing its text');
 			assert.deepEqual(result.requested, { x: 150.25, y: 340.5, rotation: 90, fontSize: 50, valueVisible: false }, 'only requested attribute fields are sent to SDK');

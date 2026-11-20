@@ -424,10 +424,13 @@ try {
 		assert.deepEqual(await definitions['project.getDocumentSource'].handler(), { source: '{"page":"page-1"}' }, 'valid UUID does not require a guessed type whitelist')
 		state.focusAfterSource = { uuid: 'page-other' }
 		await assert.rejects(() => definitions['project.getDocumentSource'].handler(), /焦点已从/)
+		state.focus = { uuid: 'page-1', parentProjectUuid: 'project-1', tabId: 'page-1@project-1' }
+		state.focusAfterSource = { uuid: 'page-1', parentProjectUuid: 'project-2', tabId: 'page-1@project-2' }
+		await assert.rejects(() => definitions['project.getDocumentSource'].handler(), /焦点已从/)
 		state.focusAfterSource = undefined
 		state.sourceText = ''
 		await assert.rejects(() => definitions['project.getDocumentSource'].handler(), /官方返回空或非字符串/)
-		assert.equal(state.calls.source, 3)
+		assert.equal(state.calls.source, 4)
 	}
 	console.log('project-mutation-outcome-regression: 16 groups passed')
 }

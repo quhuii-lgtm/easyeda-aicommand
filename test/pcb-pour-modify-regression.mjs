@@ -27,13 +27,13 @@ const pourData = (id, overrides = {}) => ({
 	zIndex: 1, ...overrides,
 })
 
-function install({ net = 'GND', sourceNet = net, objectNet = net, sourceName = 'POUR_target', objectName = sourceName, omitNameGetter = false, modifyMutation } = {}) {
+function install({ net = 'GND', sourceNet = net, objectNet = net, sourceName = 'POUR_target', objectName = sourceName, omitNameGetter = false, modifyMutation, pouredId = 'poured-1' } = {}) {
 	const focus = { documentType: 3, uuid: 'pcb-pour-network-policy' }
 	const target = pourData('target', { netName: sourceNet, name: sourceName })
 	const other = pourData('other', { layerId: 15, netName: 'OTHER_NET', order: 4 })
 	const docs = [target, other]
 	const counts = { get: 0, toAsync: 0, setter: 0, done: 0, staticModify: 0, sourceReads: 0, netLookups: 0, creates: 0 }
-	const pouredRecords = [{ id: 'poured-1', data: { pourPrimitiveId: 'target', source: 'retain-me', order: 1 } }]
+	const pouredRecords = [{ id: pouredId, data: { pourPrimitiveId: 'target', source: 'retain-me', order: 1 } }]
 	const source = () => [
 		makeRecord('DOCHEAD', 'head', { docType: 'PCB', uuid: focus.uuid, client: 'fixture' }, 1),
 		...pouredRecords.map((item, index) => makeRecord('POURED', item.id, item.data, index + 2)),
@@ -76,9 +76,10 @@ function install({ net = 'GND', sourceNet = net, objectNet = net, sourceName = '
 			modify: async (id, props) => {
 				counts.staticModify++
 				const item = docs.find(value => value.id === id)
-				const fieldMap = { net: 'netName', layer: 'layerId', pourName: 'name', lineWidth: 'width' }
+				const fieldMap = { net: 'netName', layer: 'layerId', pourName: 'name', lineWidth: 'width', complexPolygon: 'path' }
 				for (const [key, value] of Object.entries(props)) {
 					if (key === 'pourPriority') item.order = value
+					else if (key === 'complexPolygon') item.path = value.getSource()
 					else item[fieldMap[key]] = value
 				}
 				if (modifyMutation === 'poured-removed') pouredRecords.length = 0
@@ -86,7 +87,8 @@ function install({ net = 'GND', sourceNet = net, objectNet = net, sourceName = '
 				return sdkPour(item)
 			},
 		},
-		pcb_Layer: { selectLayer: async () => true },
+	pcb_MathPolygon: { createPolygon: source => ({ getSource: () => source }) },
+	pcb_Layer: { selectLayer: async () => true },
 	}
 	return { docs, counts, pouredRecords }
 }
@@ -223,10 +225,41 @@ try {
 		assert.equal(f.counts.staticModify, 1, `${field} retains the static modify path`)
 		assert.equal(f.counts.setter, 0, `${field} does not invoke the net setter`)
 	}
+
+	// Concave, simple straight-edge polygons can replace the path and are checked
+	// against the persisted POUR source before the command reports success.
+	{
+		const vertices = [{ x: 10, y: 10 }, { x: 50, y: 10 }, { x: 50, y: 30 }, { x: 30, y: 30 }, { x: 30, y: 60 }, { x: 10, y: 60 }]
+		const expected = [10, 10, 'L', 50, 10, 50, 30, 30, 30, 30, 60, 10, 60, 10, 10]
+		const f = install()
+		const result = await modifyPour({ primitiveId: 'target', vertices, __docUuid: 'pcb-pour-network-policy', __projectUuid: 'project-fixture', __tabId: 'tab-fixture' })
+		assert.equal(result.readback.verified, true)
+		assert.deepEqual(f.docs[0].path, expected)
+		assert.deepEqual(result.readback.complexPolygon, expected)
+		assert.equal(f.counts.staticModify, 1)
+	}
+	{
+		const f = install()
+		await assert.rejects(() => modifyPour({ primitiveId: 'target', vertices: [{ x: 0, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }, { x: 10, y: 0 }] }), /自相交|面积为零/)
+		await assert.rejects(() => modifyPour({ primitiveId: 'target', vertices: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 5, y: 0 }, { x: 5, y: 10 }] }), /重叠回折/)
+		await assert.rejects(() => modifyPour({ primitiveId: 'target', vertices: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 0, y: 10 }], layer: 'top' }), /不能与其他铺铜属性混合/)
+		assert.equal(f.counts.staticModify, 0)
+	}
+	{
+		const vertices = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 0, y: 10 }]
+		const fixture = install()
+		eda.pcb_MathPolygon.createPolygon = source => ({ getSource: () => source.map((v, i) => i === 3 ? v + 1 : v) })
+		await assert.rejects(() => modifyPour({ primitiveId: 'target', vertices }), /构造的铺铜轮廓与请求顶点不一致/)
+		assert.equal(fixture.counts.staticModify, 0)
+		install({ modifyMutation: 'poured-removed', pouredId: JSON.stringify(['POURED', 'target']) })
+		assert.equal((await modifyPour({ primitiveId: 'target', vertices })).fillInvalidated, true)
+		install({ modifyMutation: 'poured-removed', pouredId: JSON.stringify(['POURED', 'other']) })
+		await assert.rejects(() => modifyPour({ primitiveId: 'target', vertices }), /同时新增、删除或修改了有效 POURED/)
+	}
 }
 finally {
 	if (originalStructuredClone === undefined) delete globalThis.structuredClone
 	else globalThis.structuredClone = originalStructuredClone
 }
 
-console.log('PASS pcb.modifyPour network-change preflight, same-net no-op, and existing static field paths')
+console.log('PASS pcb.modifyPour network-change preflight, same-net no-op, static fields, and polygon path replacement')

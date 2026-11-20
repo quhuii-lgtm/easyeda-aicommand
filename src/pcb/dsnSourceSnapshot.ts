@@ -89,6 +89,21 @@ function parseSnapshot(source: string): ReturnType<typeof parseSourceLog> {
 	return parseSourceLog(lines.join('\n'))
 }
 
+/** Content identifier for comparing a current PCB with an earlier readback. */
+export async function pcbSourceRevision(source: string, documentUuid: string): Promise<string> {
+	const snapshot = parseSnapshot(source)
+	if (snapshot.docType.toUpperCase() !== 'PCB' || snapshot.uuid !== documentUuid)
+		throw new Error('PCB 源码身份与活动文档不一致')
+	return pcbRevisionDigest(snapshot.records.map(record => [record.header, payload(record)]))
+}
+
+export async function pcbRevisionDigest(snapshot: unknown): Promise<string> {
+	const text = JSON.stringify(snapshot, (_key, value) =>
+		isObject(value) ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])) : value)
+	const bytes = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
+	return Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, '0')).join('')
+}
+
 /** Compare parsed PCB source records, ignoring only volatile DOCHEAD metadata. */
 export function comparePcbSourceSnapshots(expectedSource: unknown, actualSource: unknown): PcbSourceSnapshotComparison {
 	if (typeof expectedSource !== 'string' || typeof actualSource !== 'string')

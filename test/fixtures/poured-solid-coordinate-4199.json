@@ -1,0 +1,445 @@
+{
+  "provenance": {
+    "date": "2026-11-14",
+    "host": "4.1.99",
+    "project": "ACE_P0_RULES_20261113",
+    "pcb": "ACE_GEOMETRY_POUR_20261114",
+    "source": "Independent SDK getter and same-ID source records, original unconverted POURED copper Gerber; fineness 8 to 0 control",
+    "unitGuarantee": "Empirical representation compatibility only, not a universal official unit contract"
+  },
+  "sample8": {
+    "pours": [
+      {
+        "id": "be92d7bb24758417",
+        "layer": 2,
+        "net": "N2",
+        "path": [
+          "R",
+          650,
+          600,
+          100,
+          100,
+          0,
+          0
+        ]
+      },
+      {
+        "id": "ca82d66c312ff6fc",
+        "layer": 2,
+        "net": "N2",
+        "path": [
+          "R",
+          150,
+          770,
+          200,
+          120,
+          0,
+          0
+        ]
+      }
+    ],
+    "poured": [
+      {
+        "id": "be92d7bb24758417",
+        "pourId": "be92d7bb24758417",
+        "fills": [
+          {
+            "id": "51501eae63439b1f",
+            "fill": true,
+            "lineWidth": 0,
+            "path": [
+              74.6,
+              50.4,
+              "L",
+              65.4,
+              50.4,
+              65.4,
+              59.6,
+              74.6,
+              59.6,
+              74.6,
+              50.4
+            ]
+          }
+        ]
+      },
+      {
+        "id": "ca82d66c312ff6fc",
+        "pourId": "ca82d66c312ff6fc",
+        "fills": [
+          {
+            "id": "a0b78a990db55942",
+            "fill": true,
+            "lineWidth": 0,
+            "path": [
+              34.6,
+              65.4,
+              "L",
+              15.399999999999999,
+              65.4,
+              15.4,
+              76.6,
+              34.6,
+              76.6,
+              34.6,
+              65.4
+            ]
+          }
+        ]
+      }
+    ],
+    "records": [
+      {
+        "header": {
+          "type": "POUR",
+          "ticket": 151,
+          "id": "be92d7bb24758417"
+        },
+        "data": {
+          "partitionId": "",
+          "groupId": 0,
+          "netName": "N2",
+          "layerId": 2,
+          "width": 0.2,
+          "name": "POUR1",
+          "order": 0,
+          "path": [
+            [
+              "R",
+              650,
+              600,
+              100,
+              100,
+              0,
+              0
+            ]
+          ],
+          "pourType": {
+            "pourType": "SOLID",
+            "fineness": 8
+          },
+          "keepIsland": true,
+          "locked": false,
+          "zIndex": -1
+        }
+      },
+      {
+        "header": {
+          "type": "POUR",
+          "ticket": 152,
+          "id": "ca82d66c312ff6fc"
+        },
+        "data": {
+          "partitionId": "",
+          "groupId": 0,
+          "netName": "N2",
+          "layerId": 2,
+          "width": 0.2,
+          "name": "POUR2",
+          "order": 1,
+          "path": [
+            [
+              "R",
+              150,
+              770,
+              200,
+              120,
+              0,
+              0
+            ]
+          ],
+          "pourType": {
+            "pourType": "SOLID",
+            "fineness": 8
+          },
+          "keepIsland": true,
+          "locked": false,
+          "zIndex": -1
+        }
+      },
+      {
+        "header": {
+          "type": "POURED",
+          "ticket": 154,
+          "id": "[\"POURED\",\"be92d7bb24758417\"]"
+        },
+        "data": {
+          "pourFill": [
+            {
+              "strokeWidth": 0,
+              "fill": true,
+              "path": [
+                [
+                  74.6,
+                  50.4,
+                  "L",
+                  65.4,
+                  50.4,
+                  65.4,
+                  59.6,
+                  74.6,
+                  59.6,
+                  74.6,
+                  50.4
+                ]
+              ],
+              "id": "51501eae63439b1f"
+            }
+          ]
+        }
+      },
+      {
+        "header": {
+          "type": "POURED",
+          "ticket": 155,
+          "id": "[\"POURED\",\"ca82d66c312ff6fc\"]"
+        },
+        "data": {
+          "pourFill": [
+            {
+              "strokeWidth": 0,
+              "fill": true,
+              "path": [
+                [
+                  34.6,
+                  65.4,
+                  "L",
+                  15.399999999999999,
+                  65.4,
+                  15.4,
+                  76.6,
+                  34.6,
+                  76.6,
+                  34.6,
+                  65.4
+                ]
+              ],
+              "id": "a0b78a990db55942"
+            }
+          ]
+        }
+      }
+    ],
+    "gerberBottom": "G04 Layer: BottomLayer*\nG04 EasyEDA Pro v4.1.99, 2026-11-14 16:48:01*\nG04 Gerber Generator version 0.3*\nG04 Scale: 100 percent, Rotated: No, Reflected: No*\nG04 Dimensions in millimeters*\nG04 Leading zeros omitted, absolute positions, 4 integers and 5 decimals*\nG04 Generated by one-click*\nG04 Object Configs: Pad,Via,Track,Text,Image,Dimension,BoardOutline,BoardCutout,CopperFilled,SolidRegion,FPCStiffener,Line,PlaneZone,ComponentProperty,ComponentSilkscreen,TearDrop*\nG04 Layer Configs: 1,2,3,4,5,6,7,8,9,10,11,13,14,56*\nG04 Copper Areas: 2*\n%FSLAX45Y45*%\n%MOMM*%\n%ADD10C,0.2032*%\n%ADD11C,1.016*%\n%ADD12C,0.8845*%\nG75*\n\n\nG04 Copper Start*\nG36*\nG01X1894840Y1280160D02*\nG01X1661160Y1280160D01*\nG01X1661160Y1513840D01*\nG01X1894840Y1513840D01*\nG01X1894840Y1280160D01*\nG37*\nG36*\nG01X878840Y1661160D02*\nG01X391160Y1661160D01*\nG01X391160Y1945640D01*\nG01X878840Y1945640D01*\nG01X878840Y1661160D01*\nG37*\nG54D10*\nG01X1894840Y1280160D02*\nG01X1661160Y1280160D01*\nG01X1661160Y1513840D01*\nG01X1894840Y1513840D01*\nG01X1894840Y1280160D01*\nG01X878840Y1661160D02*\nG01X391160Y1661160D01*\nG01X391160Y1945640D01*\nG01X878840Y1945640D01*\nG01X878840Y1661160D01*\nG04 Copper End*\n\nG04 PolygonModel Start*\nG36*\nG01X1651000Y1513840D02*\nG02X1661160Y1524000I10160J0D01*\nG01X1894840Y1524000D01*\nG02X1905000Y1513840I0J-10160D01*\nG01X1905000Y1280160D01*\nG02X1894840Y1270000I-10160J0D01*\nG01X1661160Y1270000D01*\nG02X1651000Y1280160I0J10160D01*\nG01X1651000Y1513840D01*\nG37*\n\nG04 Pad Start*\nG54D11*\nG01X2540000Y508000D03*\nG04 Pad End*\n\nM02*\n\n"
+  },
+  "sample0": {
+    "pours": [
+      {
+        "id": "be92d7bb24758417",
+        "layer": 2,
+        "net": "N2",
+        "path": [
+          "R",
+          650,
+          600,
+          100,
+          100,
+          0,
+          0
+        ]
+      },
+      {
+        "id": "ca82d66c312ff6fc",
+        "layer": 2,
+        "net": "N2",
+        "path": [
+          "R",
+          150,
+          770,
+          200,
+          120,
+          0,
+          0
+        ]
+      }
+    ],
+    "poured": [
+      {
+        "id": "be92d7bb24758417",
+        "pourId": "be92d7bb24758417",
+        "fills": [
+          {
+            "id": "93221dff8006f725",
+            "fill": true,
+            "lineWidth": 0,
+            "path": [
+              74.6,
+              50.4,
+              "L",
+              65.4,
+              50.4,
+              65.4,
+              59.6,
+              74.6,
+              59.6,
+              74.6,
+              50.4
+            ]
+          }
+        ]
+      },
+      {
+        "id": "ca82d66c312ff6fc",
+        "pourId": "ca82d66c312ff6fc",
+        "fills": [
+          {
+            "id": "62fd2dd4623b1608",
+            "fill": true,
+            "lineWidth": 0,
+            "path": [
+              15,
+              77,
+              "L",
+              35,
+              77,
+              35,
+              65,
+              15,
+              65,
+              15,
+              77
+            ]
+          }
+        ]
+      }
+    ],
+    "records": [
+      {
+        "header": {
+          "type": "POUR",
+          "ticket": 151,
+          "id": "be92d7bb24758417"
+        },
+        "data": {
+          "partitionId": "",
+          "groupId": 0,
+          "netName": "N2",
+          "layerId": 2,
+          "width": 0.2,
+          "name": "POUR1",
+          "order": 0,
+          "path": [
+            [
+              "R",
+              650,
+              600,
+              100,
+              100,
+              0,
+              0
+            ]
+          ],
+          "pourType": {
+            "pourType": "SOLID",
+            "fineness": 8
+          },
+          "keepIsland": true,
+          "locked": false,
+          "zIndex": -1
+        }
+      },
+      {
+        "header": {
+          "type": "POUR",
+          "ticket": 152,
+          "id": "ca82d66c312ff6fc"
+        },
+        "data": {
+          "partitionId": "",
+          "groupId": 0,
+          "netName": "N2",
+          "layerId": 2,
+          "width": 0.2,
+          "name": "POUR2",
+          "order": 1,
+          "path": [
+            [
+              "R",
+              150,
+              770,
+              200,
+              120,
+              0,
+              0
+            ]
+          ],
+          "pourType": {
+            "pourType": "SOLID",
+            "fineness": 0
+          },
+          "keepIsland": true,
+          "locked": false,
+          "zIndex": -1
+        }
+      },
+      {
+        "header": {
+          "type": "POURED",
+          "ticket": 154,
+          "id": "[\"POURED\",\"be92d7bb24758417\"]"
+        },
+        "data": {
+          "pourFill": [
+            {
+              "strokeWidth": 0,
+              "fill": true,
+              "path": [
+                [
+                  74.6,
+                  50.4,
+                  "L",
+                  65.4,
+                  50.4,
+                  65.4,
+                  59.6,
+                  74.6,
+                  59.6,
+                  74.6,
+                  50.4
+                ]
+              ],
+              "id": "93221dff8006f725"
+            }
+          ]
+        }
+      },
+      {
+        "header": {
+          "type": "POURED",
+          "ticket": 155,
+          "id": "[\"POURED\",\"ca82d66c312ff6fc\"]"
+        },
+        "data": {
+          "pourFill": [
+            {
+              "strokeWidth": 0,
+              "fill": true,
+              "path": [
+                [
+                  15,
+                  77,
+                  "L",
+                  35,
+                  77,
+                  35,
+                  65,
+                  15,
+                  65,
+                  15,
+                  77
+                ]
+              ],
+              "id": "62fd2dd4623b1608"
+            }
+          ]
+        }
+      }
+    ],
+    "gerberBottom": "G04 Layer: BottomLayer*\nG04 EasyEDA Pro v4.1.99, 2026-11-14 16:51:00*\nG04 Gerber Generator version 0.3*\nG04 Scale: 100 percent, Rotated: No, Reflected: No*\nG04 Dimensions in millimeters*\nG04 Leading zeros omitted, absolute positions, 4 integers and 5 decimals*\nG04 Generated by one-click*\nG04 Object Configs: Pad,Via,Track,Text,Image,Dimension,BoardOutline,BoardCutout,CopperFilled,SolidRegion,FPCStiffener,Line,PlaneZone,ComponentProperty,ComponentSilkscreen,TearDrop*\nG04 Layer Configs: 1,2,3,4,5,6,7,8,9,10,11,13,14,56*\nG04 Copper Areas: 2*\n%FSLAX45Y45*%\n%MOMM*%\n%ADD10C,0.2032*%\n%ADD11C,1.016*%\n%ADD12C,0.8795*%\nG75*\n\n\nG04 Copper Start*\nG36*\nG01X1894840Y1280160D02*\nG01X1661160Y1280160D01*\nG01X1661160Y1513840D01*\nG01X1894840Y1513840D01*\nG01X1894840Y1280160D01*\nG37*\nG36*\nG01X381000Y1955800D02*\nG01X889000Y1955800D01*\nG01X889000Y1651000D01*\nG01X381000Y1651000D01*\nG01X381000Y1955800D01*\nG37*\nG54D10*\nG01X1894840Y1280160D02*\nG01X1661160Y1280160D01*\nG01X1661160Y1513840D01*\nG01X1894840Y1513840D01*\nG01X1894840Y1280160D01*\nG04 Copper End*\n\nG04 PolygonModel Start*\nG36*\nG01X1651000Y1513840D02*\nG02X1661160Y1524000I10160J0D01*\nG01X1894840Y1524000D01*\nG02X1905000Y1513840I0J-10160D01*\nG01X1905000Y1280160D01*\nG02X1894840Y1270000I-10160J0D01*\nG01X1661160Y1270000D01*\nG02X1651000Y1280160I0J10160D01*\nG01X1651000Y1513840D01*\nG37*\n\nG04 Pad Start*\nG54D11*\nG01X2540000Y508000D03*\nG04 Pad End*\n\nM02*\n\n"
+  },
+  "expected": {
+    "conversionFactor": 10,
+    "solidFineness8CopperMarginMil": 4,
+    "solidFineness0CopperMarginMil": 0
+  }
+}

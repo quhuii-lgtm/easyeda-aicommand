@@ -44,7 +44,7 @@ const sourceRecord = (type, id, data) => `${JSON.stringify({ type, id })}||${JSO
 const source = () => [
 	`${JSON.stringify({ type: 'DOCHEAD' })}||${JSON.stringify({ docType: 'PCB', uuid })}`,
 	...lineRows.map(line => sourceRecord('LINE', line.id, { net: line.net, layer: line.layer, widthMil: line.widthMil, a: line.a, b: line.b })),
-	...viaRows.map(via => sourceRecord('VIA', via.id, { net: via.net, x: via.x, y: via.y, diameterMil: via.diameterMil, holeDiameterMil: via.holeDiameterMil ?? null })),
+	...viaRows.map(via => sourceRecord('VIA', via.id, { netName: via.net, centerX: via.x, centerY: via.y, viaDiameter: via.diameterMil, holeDiameter: via.holeDiameterMil, viaType: via.viaType === 1 ? 'BLIND' : via.viaType === 2 ? 'BURIED' : 'NORMAL', locked: via.locked ?? false })),
 ].join('|\n') + '|'
 
 globalThis.eda = {

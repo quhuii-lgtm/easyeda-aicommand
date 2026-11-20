@@ -374,6 +374,14 @@ async function handleMessage(event: MessageEvent<any>, id: string, gen: number):
 		return;
 	}
 
+	// A socket heartbeat confirms transport; this receipt confirms extension dispatch.
+	try {
+		eda.sys_WebSocket.send(id, JSON.stringify({ type: 'command-received', id: msg.id }));
+	}
+	catch {
+		// A diagnostic frame is optional and must not change command execution.
+	}
+
 	// 代理端伪指令：指令清单与文档查询
 	let result: unknown;
 	if (msg.cmd === '__listCommands') {
@@ -531,7 +539,7 @@ async function probeAndConnect(): Promise<boolean> {
 				continue;
 			}
 			try {
-				if (health?.ok !== false && health?.service === 'ai-command-proxy' && health?.lifecycleProtocol === 1 && health?.moduleLibraryProtocol === 1) {
+				if (health?.ok !== false && health?.service === 'ai-command-proxy' && health?.lifecycleProtocol === 1 && health?.moduleLibraryProtocol === 1 && health?.kiRoutingProtocol === 1) {
 					proxyCompatible = true;
 					currentPort = port;
 					setProxyPort(port);
@@ -555,7 +563,7 @@ async function probeAndConnect(): Promise<boolean> {
 	currentPort = null;
 	setProxyPort(null);
 	setLifecycleStatus(incompatibleService
-		? '桥接能力不匹配：请更新完整配套技能（需包含模块库支持），现有服务未被关闭'
+		? '桥接能力不匹配：请更新完整配套技能（需包含模块库与 KiRouting 服务），现有服务未被关闭'
 		: '等待配套技能在后台启动本地桥接');
 	return false;
 }

@@ -128,6 +128,9 @@ export async function createGeometryHost(sdk: any, params: Record<string, any>, 
 		}
 		if (focus?.documentType !== 3 || typeof focus.uuid !== 'string' || !focus.uuid)
 			throw latch(new Error(`${stage} 时没有有效的 PCB 焦点，停止后续操作`), focusStep, false);
+		if ((Object.hasOwn(params, '__projectUuid') && focus.parentProjectUuid !== params.__projectUuid)
+			|| (Object.hasOwn(params, '__tabId') && focus.tabId !== params.__tabId))
+			throw latch(new Error(`${stage} 时工程或页签与请求目标不一致，停止后续操作`), focusStep, false);
 		if (documentUuid === undefined)
 			documentUuid = focus.uuid;
 		else if (focus.uuid !== documentUuid)

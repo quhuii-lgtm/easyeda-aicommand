@@ -1,11 +1,12 @@
-import type { ICommandDef } from '../engine/types';
+import type { ICommandContext, ICommandDef } from '../engine/types';
 import { modifyComponentDesignatorAttribute, type ModifyDesignatorInput } from '../engine/componentAttributes';
 import { createGeometryHost } from '../pcb/geometryHost';
 
-async function modifyDesignator(params: Record<string, any>) {
-	const host = await createGeometryHost(eda, params);
+async function modifyDesignator(params: Record<string, any>, context?: ICommandContext) {
+	const host = await createGeometryHost(eda, params, undefined, context);
+	const { __projectUuid, __tabId, ...attributes } = params;
 	try {
-		return await modifyComponentDesignatorAttribute(host, params);
+		return { ...await modifyComponentDesignatorAttribute(host, attributes), target: context?.documentTarget ?? { uuid: host.documentUuid } };
 	}
 	catch (error) {
 		return host.fail(error);
@@ -26,7 +27,7 @@ export const componentAttributeCommands: ICommandDef[] = [
 			{ name: 'fontSize', type: 'number', description: '位号文字字号，必须大于 0。' },
 			{ name: 'visible', type: 'boolean', description: '位号文字 Value 的显示状态；不修改 Key 显示状态。' },
 		],
-		returns: '返回目标组件/属性 ID、请求字段、写前写后 getter、源码差异与 ticket 变化；verified=true 表示位号值保持且完整源码中组件及所有非目标记录未变化。不会保存。',
+		returns: '返回目标工程和文档、组件/属性 ID、请求字段、写前写后 getter、源码差异与 ticket 变化；verified=true 表示位号值保持且完整源码中组件及所有非目标记录未变化。不会保存。',
 		example: { cmd: 'pcb.modifyComponentAttribute', params: { componentId: 'component-id', x: 420, y: 315, rotation: 0, fontSize: 45, visible: true } },
 		handler: modifyDesignator,
 	},

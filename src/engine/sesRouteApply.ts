@@ -1,6 +1,6 @@
 import type { IDocumentSnapshot, TDocumentWrite } from './documentRecovery'
 import { verifySesImport, type SesImportPlan, type SesRouteLine, type SesRouteVia, type SesImportVerification } from './autoRouteSes'
-import { readRouteSnapshot, verifySourceChanges, type HostRouteSnapshot } from './autoRouteSesHost'
+import { canonicalizeSourceVias, readRouteSnapshot, verifySourceChanges, type HostRouteSnapshot } from './autoRouteSesHost'
 
 type JournalWrite = {
 	kind: string
@@ -246,7 +246,21 @@ export function createSesRouteApplyContext(options: SesRouteApplyContextOptions)
 		const item = await readBounded(`过孔 ${id} fresh get`, () => api.pcb_PrimitiveVia.get(id))
 		if (!item || state(item, 'getState_PrimitiveId') !== id || state(item, 'getState_Net') !== via.net)
 			throw new Error(`新过孔 ${id} 身份或网络读回不匹配`)
-		const actual: SesRouteVia = { id, net: state(item, 'getState_Net'), x: state(item, 'getState_X'), y: state(item, 'getState_Y'), diameterMil: state(item, 'getState_Diameter'), holeDiameterMil: state(item, 'getState_HoleDiameter'), viaType: state(item, 'getState_ViaType') }
+		const sdkVia = {
+			id,
+			net: state(item, 'getState_Net'),
+			x: state(item, 'getState_X'),
+			y: state(item, 'getState_Y'),
+			diameterMil: state(item, 'getState_Diameter'),
+			holeDiameterMil: state(item, 'getState_HoleDiameter'),
+			viaType: state(item, 'getState_ViaType'),
+			locked: state(item, 'getState_PrimitiveLock'),
+		} as HostRouteSnapshot['vias'][number]
+		const current = await fresh()
+		const sourceRecord = current.sourceRecords.filter(record => record.type === 'VIA' && record.id === id)
+		if (sourceRecord.length !== 1 || !current.vias.some(currentVia => currentVia.id === id))
+			throw new Error(`新过孔 ${id} fresh source 未唯一确认该 SDK 图元`)
+		const actual: SesRouteVia = canonicalizeSourceVias(sourceRecord, [sdkVia], true)[0]
 		const check = verifySesImport({ ...plan, targetLines: [], targetVias: [via] }, { documentUuid: snapshot.documentUuid, lines: [], vias: [actual] })
 		if (!check.verified) throw new Error(`新过孔 ${id} 几何读回失败：${JSON.stringify(check.differences)}`)
 		return actual

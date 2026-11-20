@@ -413,6 +413,86 @@
       "fixtureSha256": "ada9e05b960fbaaab9421c71867252da6f80f90dc462b85f0f4a8f7df60f93b2",
       "bytes": 19905,
       "method": "copy original algorithm body unchanged; prepend three provenance comment lines"
+    },
+    {
+      "fixture": "poured-solid-coordinate-4199.json",
+      "source": "Independent EDA 4.1.99 test PCB; provenance and captured records embedded in fixture",
+      "sourceSha256": "769b0313dd4dd5601439940c7a93008e3b8c3191f52043f4640ebcf4d6927a50",
+      "fixtureSha256": "769b0313dd4dd5601439940c7a93008e3b8c3191f52043f4640ebcf4d6927a50",
+      "bytes": 12137,
+      "method": "Self-contained selected public SDK/source/Gerber records; empirical representation proof, not a universal unit declaration"
+    },
+    {
+      "fixture": "native-drc-coordinate-4199.json",
+      "source": "Independent EDA 4.1.99 test PCB; provenance and captured records embedded in fixture",
+      "sourceSha256": "cf82ec0fa647dd64a8fd935165c872b91bba6d32abe03d438de3e7433d37c7d6",
+      "fixtureSha256": "cf82ec0fa647dd64a8fd935165c872b91bba6d32abe03d438de3e7433d37c7d6",
+      "bytes": 22837,
+      "method": "Self-contained selected public SDK/source/Gerber records; empirical representation proof, not a universal unit declaration"
+    },
+    {
+      "fixture": "pcb-safe-cell-roundtrip-4199.json",
+      "source": "module-integration/evidence/config-stable-baseline.json + module-integration/evidence/config-spacing-after-read.json",
+      "sourceSha256": "66dfc3c414884b6ed713d9760a5ba1f5b643270529b3ed366d8c20abb59a3bb4",
+      "fixtureSha256": "c4aaf7f3c79a8ecd7ec24e676098625c0877f1422cf7a659757740dd49791454",
+      "bytes": 464,
+      "method": "Selected real getter/raw SAFE cell pair; source hash is SHA256 of the two input files concatenated in listed order"
+    },
+    {
+      "fixture": "pcb-track-new-rule-core.json",
+      "source": "module-integration/evidence/config-core-new-track-fixed.json",
+      "sourceSha256": "f1b0ae61ea062bd3393df9c8505fa1e8c1ab60c35931f657e5fe1694551389fe",
+      "fixtureSha256": "85321005c639811f85926c4f4463480f11ac74c8b3eeffddf6af4c3373c3189e",
+      "bytes": 975,
+      "method": "Selected requested full TRACK object, actual getter floating-point representation and effective raw rows from independent core PCB; runtime wrappers excluded. A verification error in source wrapper is retained as evidence, not treated as success."
+    },
+    {
+      "fixture": "installed-0219-multilayer-widths.json",
+      "source": "../evidence/installed-0219-source-before.json + installed-0219-rules-before.json + installed-0219-core-layers.json + installed-0219-raw-dsn.json",
+      "sourceSha256": "b5f36ad053d39fdbf9478cadf688b616dede43b4c0925ed0afc14d532a01073a",
+      "fixtureSha256": "487bd60da97e62b9313f5cfbbfb3f56827a1f2020d79f9a618b0fa826a8dfe2d",
+      "bytes": 129163,
+      "method": "Selected raw source, design-rule getter, SDK layers and untouched DSN base64 payload; removed instance/request/runtime wrappers. Raw stro* width values remain mil despite the mm rule display marker."
+    },
+    {
+      "fixture": "installed-0219-concave-widths.json",
+      "source": "../evidence/installed-0219-concave-source-before.json + installed-0219-concave-rules.json + installed-0219-concave-layers.json + installed-0219-concave-raw-dsn.json",
+      "sourceSha256": "fe7cabc787235fd2a15c3f078773934bb0a07bdf174eb7954a0deec5c9051f5d",
+      "fixtureSha256": "e4eb0bafa2b319ad97d09cc79373d8aaa55f6e1cc88de43d39e05711577b70d3",
+      "bytes": 109042,
+      "method": "Selected raw source, design-rule getter, SDK layers, untouched DSN base64 payload and captured width comparison; removed runtime wrappers. The mm display marker does not convert raw stro* values."
+    },
+    {
+      "fixture": "host-differential-empty-pair-selector.json",
+      "source": "host-differential-collector-pair.json (minimal sanitized extraction)",
+      "sourceSha256": "a39a4aa9e6561e0ee806333c5c888650404e605e09294580d645f7cde3daadca",
+      "fixtureSha256": "1c7268278d7d1de375800d90aeb93ae537675b151233ef8b79a797f392a80bf7",
+      "bytes": 12586,
+      "method": "retain SDK layers/netRules and DOCHEAD, RULE, RULE_SELECTOR, RULE_TEMPLATE, NET source records; anonymize DOCHEAD"
+    },
+    {
+      "fixture": "host-length-group-rules.json",
+      "source": "module-integration/evidence/kirouting-validation/host-length-group-collector.json",
+      "sourceSha256": "47ee25a10dae5dfbe9e562b17f9b07351cb21c7eaea4d5032418eba27b15f969",
+      "fixtureSha256": "c2f0e34b7ba4a18ebcda5fb92d81d87c4200e8884fe114a7b04dcf31ce35f661",
+      "bytes": 25647,
+      "method": "Minimal sanitized independent testboard source/rules/layers fixture for empty equal-length-group selector and root/member default binding regression"
+    },
+    {
+      "fixture": "kirouting/host-round-control-pads.json",
+      "source": "module-integration/evidence/kirouting-validation/host-round-control-spec.json + host-round-control-readback.json",
+      "sourceSha256": "72185ae65f790f3d9029a04a70ff45941eb621e36154fc690a01dc204d7f2795",
+      "fixtureSha256": "1769fcdd5c90a250b7546fb9531de2f83fe7943d7aefcd5c1bfa716889986dd8",
+      "bytes": 968,
+      "method": "Five raw SDK RECT pad tuples and expected minor-side radii from independent temporary testboard; no runtime EDA proof"
+    },
+    {
+      "fixture": "kirouting/host-qfn-empty-net-normalization.json",
+      "source": "module-integration/evidence/kirouting-validation/host-qfn-adapted-collector.json + host-qfn-corner-adapted-collector.json + host-qfn-saved-placeholder-collector.json",
+      "sourceSha256": "b83d3d1c82eef443d51c5efa97ffcaff3b1d6fd410fc8f5492318e378eb301f9",
+      "fixtureSha256": "c2fc68ebbb6fc316f4fcbf0f393484ac8337f8e4b92e20aa9d4940537f28191d",
+      "bytes": 30318,
+      "method": "Minimal before/after save-reopen projection plus actual saved source RULE records, enabled layers and SDK netRules for full width snapshot regression; choices and 45 unconnected pads retained"
     }
   ]
 }

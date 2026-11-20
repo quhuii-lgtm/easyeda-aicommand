@@ -45,10 +45,11 @@ const actualWidthSource = `{"type":"DOCHEAD"}||{"docType":"PCB","uuid":"pcb-A","
 	 (network (net +5V (pins))))`;
 	const slotDsnWithClass = slotDsn.replace('(structure', '(structure (rule (width 20))').replace('(network (net +5V (pins)))', '(network (net +5V (pins)) (class +5V "+5V" (rule (width 20))))');
 	const strictDefaultTrack = '{"type":"NET","id":"[\\\"NET\\\",\\\"+5V\\\"]","ticket":5}||{"netType":null}|\n{"type":"RULE","id":"[\\\"RULE\\\",\\\"TRACK\\\",\\\"default\\\"]","ticket":6}||{"ruleState":"DEFAULT","ruleContext":{"unit":"mil","track":{"isOpen":true,"content":[{"layerId":1,"stroMin":10,"stroDef":20,"stroMax":30},{"layerId":15,"stroMin":10,"stroDef":30,"stroMax":40},{"layerId":16,"stroMin":10,"stroDef":20,"stroMax":30},{"layerId":2,"stroMin":10,"stroDef":20,"stroMax":30}]}}}|';
-	function install({ startFailure = undefined, startState = 'READY_TO_START', missingSnapshot = false, slotCase = false, widthRuleCase = false, finalSnapshotChange = false, finalSnapshotReadFailure = false, focusChangeAfterSlot = false } = {}) {
+	function install({ startFailure = undefined, startState = 'READY_TO_START', missingSnapshot = false, slotCase = false, widthRuleCase = false, finalSnapshotChange = false, finalSnapshotReadFailure = false, focusChangeAfterSlot = false, settingsMismatch = false } = {}) {
 		const calls = [];
 		const edaCalls = [];
 		let jobState = startState;
+		let effectiveSettings = {};
 		let sourceReadIndex = 0;
 		let focusUuid = 'pcb-A';
 		let focusTabId = 'tab-A';
@@ -118,6 +119,7 @@ const actualWidthSource = `{"type":"DOCHEAD"}||{"docType":"PCB","uuid":"pcb-A","
 			sys_ClientUrl: {
 				request: async (url, method, body) => {
 					calls.push({ url, method, body });
+					if (method === 'POST' && url.endsWith('/jobs/job-A/settings')) effectiveSettings = JSON.parse(body);
 					if (startFailure === 'transport' && method === 'PUT' && url.endsWith('/jobs/job-A/start'))
 						throw new Error('connection reset after request dispatch');
 					if (startFailure === 'http' && method === 'PUT' && url.endsWith('/jobs/job-A/start')) {
@@ -137,6 +139,10 @@ const actualWidthSource = `{"type":"DOCHEAD"}||{"docType":"PCB","uuid":"pcb-A","
 								return { state: startState };
 							if (url.endsWith('/jobs/job-A'))
 								return { state: jobState, stage: 'queued', current_pass: 0 };
+							if (url.endsWith('/jobs/job-A/settings')) {
+								if (!settingsMismatch) return effectiveSettings;
+								return { ...effectiveSettings, scoring: { ...(effectiveSettings.scoring ?? {}), via_costs: 49 } };
+							}
 							return {};
 						},
 					};
@@ -201,9 +207,15 @@ const actualWidthSource = `{"type":"DOCHEAD"}||{"docType":"PCB","uuid":"pcb-A","
 	const result = await start.handler({ skipDrc: true }, {});
 	assert.equal(result.jobId, 'job-A');
 	assert.equal(result.outcome, 'start-request-submitted');
-	assert.deepEqual(result.routingSettings, { automaticNeckdown: false, readbackVerified: false }, 'the default neckdown setting is reported as submitted, not readback verified');
+	assert.equal(result.routingSettings.readbackVerified, true, 'the settings returned are readback verified');
 	const defaultSettingsCall = calls.find(call => call.method === 'POST' && call.url.endsWith('/jobs/job-A/settings'));
-	assert.equal(JSON.parse(defaultSettingsCall.body).automatic_neckdown, false, 'automatic neckdown defaults to false in the submitted FreeRouting settings');
+	const submittedSettings = JSON.parse(defaultSettingsCall.body);
+	assert.equal(submittedSettings.automatic_neckdown, false, 'automatic neckdown defaults to false in the submitted FreeRouting settings');
+	assert.deepEqual(submittedSettings.autorouter, { max_passes: 50 }, 'max passes is sent under the DTO autorouter object');
+	assert.equal(submittedSettings.scoring.via_costs, 50, 'via cost is sent under scoring');
+	assert.equal(submittedSettings.optimizer.max_threads, 4, 'max threads is sent to the optimizer thread pool field');
+	assert.deepEqual(result.routingSettings.requested, submittedSettings, 'the result exposes every requested setting');
+	assert.deepEqual(result.routingSettings.effective, submittedSettings, 'the result exposes the matching effective setting readback');
 	assert.equal(result.stateVerified, false);
 	assert.equal(Object.hasOwn(result, 'state'), false);
 	assert.doesNotMatch(JSON.stringify(result), /RUNNING/);
@@ -216,10 +228,22 @@ const actualWidthSource = `{"type":"DOCHEAD"}||{"docType":"PCB","uuid":"pcb-A","
 	await stop.handler({}, {});
 	const { calls: explicitTrueCalls } = install();
 	const explicitTrueResult = await start.handler({ automaticNeckdown: true }, {});
-	assert.deepEqual(explicitTrueResult.routingSettings, { automaticNeckdown: true, readbackVerified: false }, 'an explicit true value is reported as submitted, not readback verified');
+	assert.equal(explicitTrueResult.routingSettings.readbackVerified, true, 'an explicit setting is reported as readback verified');
+	assert.equal(explicitTrueResult.routingSettings.requested.automatic_neckdown, true);
+	assert.equal(explicitTrueResult.routingSettings.effective.automatic_neckdown, true);
 	const explicitTrueSettingsCall = explicitTrueCalls.find(call => call.method === 'POST' && call.url.endsWith('/jobs/job-A/settings'));
 	assert.equal(JSON.parse(explicitTrueSettingsCall.body).automatic_neckdown, true, 'an explicit true value is sent to FreeRouting');
 	await stop.handler({}, {});
+	const ignoredSetting = install({ settingsMismatch: true });
+	const settingError = await start.handler({ __docUuid: 'pcb-A', __tabId: 'tab-A', __routeOperationId: 'settings-mismatch' }, {}).catch(reason => reason);
+	assert.equal(settingError.cause?.partial, true, settingError?.message ?? 'a settings readback mismatch is a partial task outcome');
+	assert.equal(settingError.cause?.retryable, false);
+	assert.equal(settingError.cause?.jobId, 'job-A', 'the known job remains available for recovery');
+	assert.equal(settingError.cause?.outcome, 'settings-verification-failed');
+	assert.equal(ignoredSetting.calls.some(call => call.url.endsWith('/jobs/job-A/input')), false, 'settings mismatch prevents DSN submission');
+	assert.equal(ignoredSetting.calls.some(call => call.url.endsWith('/jobs/job-A/start')), false, 'settings mismatch prevents start');
+	assert.equal((await status.handler({ __docUuid: 'pcb-A', __tabId: 'tab-A', __routeOperationId: 'settings-mismatch', noImport: true }, {})).jobId, 'job-A', 'operation-scoped recovery can find the queued job after settings failure');
+	await stop.handler({ jobId: 'job-A' }, {});
 	const { calls: mismatchCalls } = install({ widthRuleCase: true });
 	const mismatchStart = await start.handler({}, {});
 	assert.equal(mismatchStart.widthRuleComparison.status, 'mismatch', `autoRouteStart exposes a DSN width mismatch against known EDA limits: ${JSON.stringify(mismatchStart.widthRuleComparison)}`);
