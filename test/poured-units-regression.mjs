@@ -4,10 +4,10 @@ import { resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
 const built = await build({
-	stdin: { contents: "export { normalizePouredPathSource, readEditorVersion } from '../src/pcb/pouredUnits.ts'", resolveDir: resolve(root, 'test'), sourcefile: 'poured-units-regression-entry.ts' },
+	stdin: { contents: "export { normalizePouredPathSource, normalizeMatchedSolidPouredPathSource, readEditorVersion } from '../src/pcb/pouredUnits.ts'", resolveDir: resolve(root, 'test'), sourcefile: 'poured-units-regression-entry.ts' },
 	bundle: true, platform: 'node', format: 'esm', write: false, target: 'node24',
 })
-const { normalizePouredPathSource, readEditorVersion } = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`)
+const { normalizePouredPathSource, normalizeMatchedSolidPouredPathSource, readEditorVersion } = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`)
 
 const firstRaw = [29.6, 10.4, 'L', 10.399999999999995, 10.4, 10.4, 19.6, 29.60000000000001, 19.6, 29.6, 10.4]
 const secondRaw = [89.6, 10.399999999999999, 'L', 60.39999999999999, 10.4, 60.4, 24.6, 89.6, 24.6, 89.6, 10.399999999999999]
@@ -41,4 +41,31 @@ assert.equal(normalize([0, 0, 'L', 10, 0, 'C', 10, 10]).status, 'unsupported', '
 assert.equal(normalize([[0, 0, 'L', 10, 0, 10, 10], [1, 1, 'L', 2, 1, 2, 2]]).status, 'unsupported', 'unknown subpaths and holes remain unsupported')
 assert.equal(readEditorVersion({ sys_Environment: { getEditorCurrentVersion: () => '4.1.78' } }), '4.1.78')
 assert.equal(readEditorVersion({ sys_Environment: { getEditorCurrentVersion: () => { throw new Error('unavailable') } } }), null)
-console.log('PASS poured path units preserve raw input and narrowly normalize confirmed EDA 4.1.78 zero-width line polygons')
+
+const matched8 = normalizeMatchedSolidPouredPathSource([[74.6, 50.4, 'L', 65.4, 50.4, 65.4, 59.6, 74.6, 59.6, 74.6, 50.4]], { sourceMatched: true, fill: true, lineWidth: 0, fineness: 8 })
+assert.equal(matched8.status, 'normalized')
+assert.equal(matched8.normalization, 'source-matched-solid-poured-raw-x10')
+assert.equal(matched8.conversionFactor, 10)
+assert.equal(matched8.copperMarginMil, 4)
+assert.deepEqual(matched8.normalizedPathMil, [746, 504, 'L', 654, 504, 654, 596, 746, 596, 746, 504])
+const matched0 = normalizeMatchedSolidPouredPathSource([15, 77, 'L', 35, 77, 35, 65, 15, 65, 15, 77], { sourceMatched: true, fill: true, lineWidth: 0, fineness: 0 })
+assert.equal(matched0.status, 'normalized', 'zero fineness is valid')
+assert.equal(matched0.copperMarginMil, 0)
+assert.deepEqual(matched0.normalizedPathMil, [150, 770, 'L', 350, 770, 350, 650, 150, 650, 150, 770])
+for (const options of [
+	{ sourceMatched: false, fill: true, lineWidth: 0, fineness: 8 },
+	{ sourceMatched: true, fill: false, lineWidth: 0, fineness: 8 },
+	{ sourceMatched: true, fill: true, lineWidth: 0.1, fineness: 8 },
+	{ sourceMatched: true, fill: true, lineWidth: 0, fineness: -1 },
+	{ sourceMatched: true, fill: true, lineWidth: 0, fineness: Number.NaN },
+])
+	assert.equal(normalizeMatchedSolidPouredPathSource(matched8.normalizedPathMil, options).status, 'unsupported')
+for (const path of [
+	[0, 0, 'L', 10, 0, 10, 10, 0, 10], // open
+	[0, 0, 'L', 10, 0, 'ARC', 10, 10, 0, 0], // curve
+	[0, 0, 'L', 10, 10, 0, 10, 10, 0, 0, 0], // self-crossing
+	[[0, 0, 'L', 10, 0], [1, 1, 'L', 2, 1]], // multiple rings / holes
+])
+	assert.equal(normalizeMatchedSolidPouredPathSource(path, { sourceMatched: true, fill: true, lineWidth: 0, fineness: 8 }).status, 'unsupported')
+
+console.log('PASS legacy pour normalization remains unchanged and source-matched SOLID POURED paths use calibrated x10 geometry plus fineness/2 edge margin')

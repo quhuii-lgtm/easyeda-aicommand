@@ -465,7 +465,7 @@ export { modifyComponentSafely, moveComponentSafely, schematicCommands, register
 			assert.deepEqual(JSON.parse(JSON.stringify(result.error.cause)).stateDifferences.find(item => item.field === 'otherProperty').before, difference.before, 'autoLayout cause retains typed values after JSON serialization');
 			assert.equal(result.data?.stoppedReason, 'partial', 'real registry macro stops on autoLayout partial even when stopOnError is false');
 			assert.equal(f.stats.sentinel, 0, 'autoLayout macro skips the later write step');
-			assert.equal(f.stats.wireGets, 0, 'autoLayout stops before wire enumeration and rewiring after move fails');
+			assert.equal(f.stats.wireGets, 1, 'autoLayout reads and plans wires before movement, but stops before deletion after move fails');
 			assert.equal(f.stats.deletes, 0, 'autoLayout does not delete wires after move fails');
 		}
 		console.log('PASS component mutation regression (all checks)');

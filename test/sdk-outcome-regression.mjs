@@ -343,4 +343,85 @@ await withFakeTimeouts(async () => {
 	})
 })
 
+const copperBefore = { items: [], total: 0, hasMore: false }
+const copperAfter = {
+	items: [{
+		primitiveId: 'rate590e885e14',
+		net: 'N_3V3',
+		start: { x: 1201.2783, y: 17.1347 },
+		end: { x: 1310, y: -242.04 },
+		startId: 'e590',
+		endId: 'e885e14',
+		length: 281.05503583992237,
+		locked: false,
+	}],
+	total: 1,
+	hasMore: false,
+}
+
+function copperHost(before, after) {
+	let writes = 0
+	let ratlineReads = 0
+	const rebuilt = fill('fill-after', [{ fill: true }])
+	const p = pour('pour-1', { before: rebuilt, after: rebuilt, rebuild: async () => { writes++; return rebuilt } })
+	globalThis.eda = {
+		pcb_Net: { getAllNetsName: async () => ['N_3V3', 'N_GND', 'N_BOOT0'] },
+		pcb_Document: { getRatlines: async options => {
+			ratlineReads++
+			const value = writes === 0 ? before : after
+			return typeof value === 'function' ? value(options) : value
+		} },
+		pcb_PrimitivePour: { getAll: async () => [p], get: async () => p },
+		pcb_PrimitivePoured: { getAll: async () => [rebuilt] },
+	}
+	return { get writes() { return writes }, get ratlineReads() { return ratlineReads } }
+}
+
+await check('CP66 repour replay stops a following write when 3.3 V breaks', async () => {
+	const host = copperHost(copperBefore, copperAfter)
+	const result = await runMacro('pcb.rebuildPour', { protectNets: ['N_3V3', 'N_GND'] })
+	const failure = result.data.steps[0]
+	assert.equal(result.ok, false)
+	assert.equal(failure.error.cause.partial, true)
+	assert.equal(failure.error.cause.connectivity.status, 'new-ratlines')
+	assert.equal(failure.error.cause.connectivity.addedRatlines[0].endId, 'e885e14')
+	assert.equal(host.writes, 1)
+	assert.equal(markerWrites, 0)
+})
+
+await check('unchanged protected endpoint pair survives new ID, swapped endpoints and unrelated signal flyline', async () => {
+	const item = copperAfter.items[0]
+	const flipped = { ...item, primitiveId: 'replacement', startId: item.endId, endId: item.startId, start: item.end, end: item.start }
+	const after = ({ cursor }) => cursor === 'page-2'
+		? { items: [{ ...item, net: 'N_BOOT0' }], total: 2, hasMore: false }
+		: { items: [flipped], total: 2, hasMore: true, nextCursor: 'page-2' }
+	const host = copperHost(copperAfter, after)
+	const result = await runMacro('pcb.rebuildPour', { protectNets: ['N_3V3'], primitiveId: 'pour-1' })
+	assert.equal(result.ok, true)
+	assert.equal(result.data.steps[0].data.connectivity.status, 'no-new-ratlines')
+	assert.equal(host.writes, 1)
+	assert.equal(host.ratlineReads, 3)
+	assert.equal(markerWrites, 1)
+})
+
+await check('bad read before repour makes zero writes, bad read after stops dependent writes', async () => {
+	const bad = { items: [], total: 1, hasMore: false }
+	const before = copperHost(bad, copperBefore)
+	const refused = await runMacro('pcb.rebuildPour', { protectNets: ['N_3V3'] }, true)
+	assert.equal(refused.ok, false)
+	assert.equal(before.writes, 0)
+	const after = copperHost(copperBefore, bad)
+	const partial = await runMacro('pcb.rebuildPour', { protectNets: ['N_3V3'] })
+	assert.equal(partial.data.steps[0].error.cause.phase, 'copper-connectivity-after')
+	assert.equal(after.writes, 1)
+	assert.equal(markerWrites, 0)
+})
+
+await check('unknown protection network rejected before rebuild', async () => {
+	const host = copperHost(copperBefore, copperAfter)
+	const result = await runMacro('pcb.rebuildPour', { protectNets: ['TYPO'] }, true)
+	assert.equal(result.ok, false)
+	assert.equal(host.writes, 0)
+})
+
 console.log(`sdk-outcome-regression: ${checks} checks passed`)

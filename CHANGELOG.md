@@ -1,5 +1,9 @@
 # Change log
 
+## 0.21.18
+
+- Native-default routing, optional copper keepouts, post-repour connectivity protection, target checks and crystal routing requirements.
+
 ## 0.21.7
 
 - Design rules, native DRC, outline zoom, fanout verification and single-PCB restore workflows.

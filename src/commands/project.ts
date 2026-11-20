@@ -167,13 +167,19 @@ export const projectCommands: Array<ICommandDef> = [
 	{
 		name: 'project.getInfo',
 		summary: '获取当前工程信息（名称、文档列表等）',
-		params: [],
+		params: [{ name: '__projectUuid', type: 'string', description: '可选，核对宿主此刻的当前工程 UUID，不切换工程' }],
 		returns: '当前工程信息对象',
 		example: { cmd: 'project.getInfo' },
-		handler: async () => {
+		handler: async (params, ctx) => {
+			const expected = params.__projectUuid
+			if (expected !== undefined && (typeof expected !== 'string' || !expected.trim()))
+				throw new Error('__projectUuid 必须是非空字符串')
+			ctx?.onProgress?.({ phase: 'reading-project-identity' })
 			const info = await eda.dmt_Project.getCurrentProjectInfo()
 			if (!info)
 				throw new Error('当前没有打开的工程')
+			if (expected !== undefined && info.uuid !== expected)
+				throw new Error(`当前工程 UUID 不符（要求=${expected}，实际=${info.uuid}）`)
 			return info
 		},
 	},
@@ -592,7 +598,10 @@ export const projectCommands: Array<ICommandDef> = [
 			catch (err) {
 				throw new Error(`源数据读取后无法确认焦点是否仍为文档 ${before.uuid}：${err instanceof Error ? err.message : String(err)}`)
 			}
-			if (!after || after.uuid !== before.uuid || (before.documentType !== undefined && after.documentType !== before.documentType))
+			if (!after || after.uuid !== before.uuid
+				|| (before.documentType !== undefined && after.documentType !== before.documentType)
+				|| (before.parentProjectUuid !== undefined && after.parentProjectUuid !== before.parentProjectUuid)
+				|| (before.tabId !== undefined && after.tabId !== before.tabId))
 				throw new Error(`读取期间激活文档焦点已从 ${before.uuid} 切换，未返回可能错配的源数据`)
 			if (typeof source !== 'string' || !source.trim())
 				throw new Error('读取当前激活文档源数据失败：官方返回空或非字符串')

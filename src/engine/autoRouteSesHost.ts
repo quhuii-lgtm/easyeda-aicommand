@@ -1,4 +1,6 @@
 import { parseSourceLog, resolveRecords } from '../pcb/sourcelog'
+import { findFootprintViaComponents, matchTopFootprintVias, type FootprintRouteViaProof } from './footprintRouteVias'
+import { readProjectLibrarySources } from './footprintSilkscreen'
 
 export interface HostRouteLine {
 	id: string
@@ -47,6 +49,104 @@ export interface HostRouteSnapshot {
 	layers: Array<{ id: number, name: string, type: string, layerStatus?: unknown }>
 	source: string
 	sourceRecords: HostSourceRecord[]
+}
+
+const VIA_COORDINATE_TOLERANCE_MIL = 0.001
+
+function sourceViaType(value: unknown, id: string): 0 | 1 | 2 {
+	const types: Record<string, 0 | 1 | 2> = { NORMAL: 0, BLIND: 1, BURIED: 2 }
+	if (typeof value !== 'string' || !Object.prototype.hasOwnProperty.call(types, value))
+		throw new Error(`PCB 源过孔 ${id} 的 viaType 不可判定`)
+	return types[value]
+}
+
+function sourceViaNumber(data: any, key: string, id: string): number {
+	return finite(data?.[key], key, id)
+}
+
+function diameterReadbackMatches(sourceValue: number, sdkValue: number): boolean {
+	if (sourceValue === sdkValue)
+		return true
+	const projected = Math.round(sourceValue * 10) / 10
+	// Permit only floating point representation noise around the one-decimal SDK projection.
+	return Math.abs(sdkValue - projected) <= Number.EPSILON * Math.max(1, Math.abs(projected)) * 2
+}
+
+/** Pair VIA source records and SDK values by unique primitive ID, retaining source precision. */
+export function canonicalizeSourceVias(sourceRecords: HostSourceRecord[], sdkVias: HostRouteVia[], requireKnownHole = false, footprintViaProofs: FootprintRouteViaProof[] = []): HostRouteVia[] {
+	const records = sourceRecords.filter(record => record.type === 'VIA')
+	const sourceById = new Map<string, HostSourceRecord>()
+	for (const record of records) {
+		if (!record.id.trim() || sourceById.has(record.id))
+			throw new Error(`PCB 源过孔 ID ${record.id || '(empty)'} 重复或无效`)
+		sourceById.set(record.id, record)
+	}
+	const sdkById = new Map<string, HostRouteVia>()
+	for (const via of sdkVias) {
+		if (!via.id.trim() || sdkById.has(via.id))
+			throw new Error(`PCB SDK 过孔 ID ${via.id || '(empty)'} 重复或无效`)
+		sdkById.set(via.id, via)
+	}
+	const footprintProofById = new Map<string, FootprintRouteViaProof>()
+	for (const proof of footprintViaProofs) {
+		if (!proof.id.trim() || footprintProofById.has(proof.id) || sourceById.has(proof.id))
+			throw new Error(`封装内过孔证据 ${proof.id || '(empty)'} 重复、无效或与板级 VIA 源记录冲突`)
+		footprintProofById.set(proof.id, proof)
+	}
+	const canonicalById = new Map<string, HostRouteVia>()
+	const strictIds = new Set<string>([
+		...sdkVias.filter(via => via.viaType === 0).map(via => via.id),
+		...records.filter(record => (record.data as any)?.viaType === 'NORMAL').map(record => record.id),
+		...footprintViaProofs.map(proof => proof.id),
+	])
+	for (const id of strictIds) {
+		const sdk = sdkById.get(id)
+		const record = sourceById.get(id)
+		const footprintProof = footprintProofById.get(id)
+		if (!sdk || (!record && !footprintProof))
+			throw new Error(`PCB NORMAL 过孔 ${id} 的源记录与 SDK ID 集合不一致`)
+		const data = record?.data as any
+		const sdkX = finite(sdk.x, 'x', id)
+		const sdkY = finite(sdk.y, 'y', id)
+		const sdkDiameter = finite(sdk.diameterMil, 'diameter', id)
+		const net = record ? netName(data?.netName, id) : footprintProof!.net
+		const x = record ? sourceViaNumber(data, 'centerX', id) : footprintProof!.x
+		const y = record ? sourceViaNumber(data, 'centerY', id) : footprintProof!.y
+		const diameterMil = record ? sourceViaNumber(data, 'viaDiameter', id) : footprintProof!.diameterMil
+		if (!(diameterMil > 0))
+			throw new Error(`PCB 源过孔 ${id} viaDiameter 必须大于 0`)
+		const sourceHoleValue = record ? data?.holeDiameter : footprintProof!.holeDiameterMil
+		const sdkHoleValue = sdk.holeDiameterMil
+		const sourceHoleMissing = sourceHoleValue == null
+		const sdkHoleMissing = sdkHoleValue == null
+		if (sourceHoleMissing !== sdkHoleMissing)
+			throw new Error(`PCB 过孔 ${id} 源码与 SDK 的 holeDiameter 缺失状态冲突`)
+		if (requireKnownHole && (sourceHoleMissing || sdkHoleMissing))
+			throw new Error(`PCB 过孔 ${id} 新建读回缺少可核验的 holeDiameter`)
+		const holeDiameterMil = sourceHoleMissing ? undefined : finite(sourceHoleValue, 'holeDiameter', id)
+		const sdkHoleDiameter = sdkHoleMissing ? undefined : finite(sdkHoleValue, 'holeDiameter', id)
+		if (holeDiameterMil !== undefined && !(diameterMil > holeDiameterMil && holeDiameterMil > 0))
+			throw new Error(`PCB 源过孔 ${id} 孔径必须满足 0 < holeDiameter < viaDiameter`)
+		if (sdkHoleDiameter !== undefined && !(sdkHoleDiameter > 0))
+			throw new Error(`PCB SDK 过孔 ${id} holeDiameter 必须大于 0`)
+		if (sdk.net !== net)
+			throw new Error(`PCB 过孔 ${id} 网络与源码不一致`)
+		if (Math.abs(sdkX - x) > VIA_COORDINATE_TOLERANCE_MIL || Math.abs(sdkY - y) > VIA_COORDINATE_TOLERANCE_MIL)
+			throw new Error(`PCB 过孔 ${id} 坐标与源码不一致`)
+		if (!diameterReadbackMatches(diameterMil, sdkDiameter) || (holeDiameterMil !== undefined && !diameterReadbackMatches(holeDiameterMil, sdkHoleDiameter!)))
+			throw new Error(`PCB 过孔 ${id} 孔径与源码或 SDK 一位小数投影不一致`)
+		const viaType = sourceViaType(record ? data?.viaType : 'NORMAL', id)
+		if (sdk.viaType !== viaType)
+			throw new Error(`PCB 过孔 ${id} viaType 与源码不一致`)
+		const sourceLocked = record ? data?.locked : footprintProof!.locked
+		if (typeof sourceLocked !== 'boolean' || sdk.locked !== sourceLocked)
+			throw new Error(`PCB 过孔 ${id} 锁定状态与源码不一致`)
+		const { holeDiameterMil: _sdkHoleDiameter, ...sdkWithoutHole } = sdk
+		canonicalById.set(id, { ...sdkWithoutHole, net, x, y, diameterMil, ...(holeDiameterMil === undefined ? {} : { holeDiameterMil }), viaType, locked: sourceLocked })
+	}
+	// Older non-through vias retain their prior SDK-only representation; they are not
+	// included in this NORMAL-via precision proof.
+	return sdkVias.map(via => canonicalById.get(via.id) ?? via)
 }
 
 function state<T>(item: any, method: string, id: string): T {
@@ -99,7 +199,7 @@ export async function readRouteSnapshot(
 	assertFocused: () => Promise<void>,
 	sourceOverride?: string,
 ): Promise<HostRouteSnapshot> {
-	const read = async <T>(label: string, action: () => Promise<T>): Promise<T> => {
+	const read = async <T>(label: string, action: () => Promise<T> | T): Promise<T> => {
 		await assertFocused()
 		const value = await action()
 		await assertFocused()
@@ -140,7 +240,7 @@ export async function readRouteSnapshot(
 			locked: lockState(state(item, 'getState_PrimitiveLock', id), id),
 		}]
 	})
-	const vias = rawVias.map((item: any) => {
+	const sdkVias = rawVias.map((item: any) => {
 		const id = primitiveId(state(item, 'getState_PrimitiveId', '过孔'), '过孔')
 		const viaType = finite(state(item, 'getState_ViaType', id), 'viaType', id)
 		if (![0, 1, 2].includes(viaType))
@@ -181,6 +281,18 @@ export async function readRouteSnapshot(
 	if (typeof source !== 'string' || !source.trim())
 		throw new Error('PCB 文档源码读回为空')
 	const parsed = recordsFromSource(source)
+	const boardViaIds = new Set(parsed.records.filter(record => record.type === 'VIA').map(record => record.id))
+	const sdkOnlyUnmappedVias = sdkVias.filter(via => !boardViaIds.has(via.id))
+	const viaComponents = findFootprintViaComponents(source, sdkOnlyUnmappedVias)
+	let footprintViaProofs: FootprintRouteViaProof[] = []
+	if (viaComponents.length) {
+		const footprintSources = await readProjectLibrarySources({ sdk: api, read }, [...new Set(viaComponents.map(component => component.footprintUuid))], '路由快照：读取封装内过孔')
+		const invalidSource = footprintSources.find(item => item.status !== 'found' || typeof item.documentSource !== 'string')
+		if (invalidSource)
+			throw new Error(`封装 ${invalidSource.footprintUuid} 来源不可用于过孔核对：${invalidSource.reason ?? invalidSource.status}`)
+		footprintViaProofs = matchTopFootprintVias(source, viaComponents, footprintSources.map(item => ({ footprintUuid: item.footprintUuid, documentSource: item.documentSource! })), sdkOnlyUnmappedVias)
+	}
+	const vias = canonicalizeSourceVias(parsed.records, sdkVias, false, footprintViaProofs)
 	const focus = await read<any>('文档焦点', () => api.dmt_SelectControl.getCurrentDocumentInfo())
 	if (focus?.documentType !== 3 || focus.uuid !== parsed.documentUuid)
 		throw new Error(`PCB 源码 UUID 与当前焦点不一致（source=${parsed.documentUuid}, focus=${focus?.uuid ?? 'unknown'}）`)

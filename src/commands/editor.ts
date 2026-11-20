@@ -1,8 +1,8 @@
 /**
  * 编辑器视图类指令：截图、缩放、文档激活
  */
-import type { ICommandDef } from '../engine/types'
-import { fileToResult } from './util'
+import type { ICommandDef } from '../engine/types';
+import { fileToResult } from './util';
 
 export const editorCommands: Array<ICommandDef> = [
 	{
@@ -12,27 +12,27 @@ export const editorCommands: Array<ICommandDef> = [
 		returns: '{ zoomed:true, method:"native-board-outline", document, visualVerified:false }；返回成功表示官方接口成功且前后目标一致，图面效果须另行确认。失败或切页时不自动重发',
 		example: { cmd: 'pcb.zoomToBoardOutline' },
 		handler: async (_params, ctx) => {
-			await ctx?.assertDocumentTarget?.()
-			let result: boolean
+			await ctx?.assertDocumentTarget?.();
+			let result: boolean;
 			try {
-				result = await eda.pcb_Document.zoomToBoardOutline()
+				result = await eda.pcb_Document.zoomToBoardOutline();
 			}
 			catch (error) {
 				throw new Error(`适应板框调用未确认：${error instanceof Error ? error.message : String(error)}`, {
 					cause: { phase: 'zoomToBoardOutline', sdkInvoked: true, designModified: false },
-				})
+				});
 			}
 			try {
-				await ctx?.assertDocumentTarget?.()
+				await ctx?.assertDocumentTarget?.();
 			}
 			catch (error) {
 				throw new Error(`适应板框已调用，但目标复核失败：${error instanceof Error ? error.message : String(error)}`, {
 					cause: { phase: 'zoomToBoardOutline.readback', sdkInvoked: true, sdkResult: result, designModified: false },
-				})
+				});
 			}
 			if (result !== true)
-				throw new Error('官方接口未确认适应板框成功；请检查当前 PCB 和有效板框，未改用适应全部图元')
-			return { zoomed: true, method: 'native-board-outline', document: ctx?.documentTarget, visualVerified: false }
+				throw new Error('官方接口未确认适应板框成功；请检查当前 PCB 和有效板框，未改用适应全部图元');
+			return { zoomed: true, method: 'native-board-outline', document: ctx?.documentTarget, visualVerified: false };
 		},
 	},
 	{
@@ -43,21 +43,57 @@ export const editorCommands: Array<ICommandDef> = [
 		],
 		returns: '{ tabId, activated }',
 		example: { cmd: 'editor.openDocument', params: { uuid: '5c96eb02cb6183a2' } },
-		handler: async (params) => {
+		handler: async (params, ctx) => {
 			if (!params.uuid)
-				throw new Error('缺少参数 uuid')
-			const tabId = await eda.dmt_EditorControl.openDocument(String(params.uuid))
-			if (!tabId)
-				throw new Error('文档打开失败，请检查 uuid 是否正确')
-			// 打开后显式激活一次，规避新文档未渲染导致后续 API 拒写的问题
-			let activated = false
+				throw new Error('缺少参数 uuid');
+			ctx?.stopSignal?.assertActive();
+			const readProjectUuid = async (): Promise<string> => {
+				const project: any = await eda.dmt_Project.getCurrentProjectInfo();
+				const uuid = typeof project?.uuid === 'string' ? project.uuid : project?.projectUuid;
+				if (typeof uuid !== 'string' || !uuid.trim())
+					throw new Error('无法读取当前工程 UUID');
+				return uuid;
+			};
+			const beforeProjectUuid = await readProjectUuid();
+			const expectedProjectUuid = typeof params.__projectUuid === 'string' && params.__projectUuid.trim() ? params.__projectUuid : beforeProjectUuid;
+			if (beforeProjectUuid !== expectedProjectUuid)
+				throw new Error(`当前工程 UUID 与指令绑定工程不一致（当前=${beforeProjectUuid}，绑定=${expectedProjectUuid}），未打开文档`);
+			ctx?.stopSignal?.assertActive();
+			let tabId: string | undefined;
 			try {
-				activated = Boolean(await eda.dmt_EditorControl.activateDocument(tabId))
+				tabId = await eda.dmt_EditorControl.openDocument(String(params.uuid));
+			}
+			catch (error) {
+				throw new Error(`打开文档结果未确认：${error instanceof Error ? error.message : String(error)}`, {
+					cause: { partial: true, retryable: false, phase: 'openDocument.outcomeUnknown', openAttempted: true, projectUuid: expectedProjectUuid, uuid: String(params.uuid) },
+				});
+			}
+			if (!tabId) {
+				throw new Error('打开文档已调用，但宿主未返回页签 ID；结果未知，不能安全重试', {
+					cause: { partial: true, retryable: false, phase: 'openDocument.outcomeUnknown', openAttempted: true, projectUuid: expectedProjectUuid, uuid: String(params.uuid) },
+				});
+			}
+			try {
+				ctx?.stopSignal?.assertActive();
+				const afterProjectUuid = await readProjectUuid();
+				if (afterProjectUuid !== expectedProjectUuid)
+					throw new Error(`当前工程已切换（原=${expectedProjectUuid}，当前=${afterProjectUuid}）`);
+				ctx?.stopSignal?.assertActive();
+			}
+			catch (error) {
+				throw new Error(`文档已打开但未激活：${error instanceof Error ? error.message : String(error)}`, {
+					cause: { partial: true, retryable: false, phase: 'openDocument.beforeActivate', openAttempted: true, opened: true, projectUuid: expectedProjectUuid, uuid: String(params.uuid), tabId },
+				});
+			}
+			// 打开后显式激活一次，规避新文档未渲染导致后续 API 拒写的问题
+			let activated = false;
+			try {
+				activated = Boolean(await eda.dmt_EditorControl.activateDocument(tabId));
 			}
 			catch {
 				// 激活失败不阻断，openDocument 本身通常已激活
 			}
-			return { tabId, activated }
+			return { tabId, activated };
 		},
 	},
 	{
@@ -70,146 +106,150 @@ export const editorCommands: Array<ICommandDef> = [
 		returns: '{ tabId, closed:true, sdkResult }（closed 只表示有效页签树确认目标已缺席；不证明文档已保存。SDK false 但目标已缺席也可报告关闭后状态已成立）',
 		example: { cmd: 'editor.closeDocument', params: { uuid: '5c96eb02cb6183a2' } },
 		handler: async (params) => {
-			const closeWaitBudgetMs = params._timeoutMs == null ? 290_000 : Math.max(1, Number(params._timeoutMs) || 1)
-			const closeDeadline = performance.now() + closeWaitBudgetMs
-			let tabId = params.tabId ? String(params.tabId) : undefined
-			const inspectTree = (tree: any, matches: (tabId: string) => boolean): { valid: boolean, found: boolean } => {
-				let found = false
+			const closeWaitBudgetMs = params._timeoutMs == null ? 290_000 : Math.max(1, Number(params._timeoutMs) || 1);
+			const closeDeadline = performance.now() + closeWaitBudgetMs;
+			let tabId = params.tabId ? String(params.tabId) : undefined;
+			const inspectTree = (tree: any, matches: (tabId: string) => boolean): { valid: boolean; found: boolean } => {
+				let found = false;
 				const walk = (node: any): boolean => {
 					if (!node || typeof node !== 'object' || Array.isArray(node))
-						return false
-					let recognized = false
+						return false;
+					let recognized = false;
 					for (const key of ['tabs', 'children', 'splitScreens', 'leaves']) {
 						if (!Object.prototype.hasOwnProperty.call(node, key))
-							continue
-						recognized = true
+							continue;
+						recognized = true;
 						if (!Array.isArray(node[key]))
-							return false
+							return false;
 						if (key === 'tabs') {
 							for (const tab of node.tabs) {
 								if (!tab || typeof tab !== 'object' || typeof tab.tabId !== 'string')
-									return false
+									return false;
 								if (matches(tab.tabId))
-									found = true
+									found = true;
 							}
 						}
 						else {
 							for (const child of node[key]) {
 								if (!walk(child))
-									return false
+									return false;
 							}
 						}
 					}
-					return recognized
-				}
-				const valid = Boolean(tree && typeof tree === 'object' && !Array.isArray(tree) && walk(tree))
-				return { valid, found }
-			}
+					return recognized;
+				};
+				const valid = Boolean(tree && typeof tree === 'object' && !Array.isArray(tree) && walk(tree));
+				return { valid, found };
+			};
 			const readTree = async (stage: string): Promise<any> => {
-				const remaining = closeDeadline - performance.now()
+				const remaining = closeDeadline - performance.now();
 				if (remaining <= 0)
-					throw new Error(`${stage}读取页签树时命令预算已耗尽`)
-				let timer: ReturnType<typeof setTimeout> | undefined
-				let tree: any
+					throw new Error(`${stage}读取页签树时命令预算已耗尽`);
+				let timer: ReturnType<typeof setTimeout> | undefined;
+				let tree: any;
 				try {
 					tree = await Promise.race([
 						(eda.dmt_EditorControl as any).getSplitScreenTree(),
-						new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`${stage}读取页签树超出剩余命令预算`)), remaining) }),
-					])
+						new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`${stage}读取页签树超出剩余命令预算`)), remaining); }),
+					]);
 				}
 				finally {
 					if (timer)
-						clearTimeout(timer)
+						clearTimeout(timer);
 				}
 				if (performance.now() >= closeDeadline)
-					throw new Error(`${stage}读取页签树时命令预算已耗尽`)
+					throw new Error(`${stage}读取页签树时命令预算已耗尽`);
 				if (!tree || typeof tree !== 'object' || Array.isArray(tree))
-					throw new Error(`${stage}读取页签树失败：返回值不是有效对象`)
-				return tree
-			}
+					throw new Error(`${stage}读取页签树失败：返回值不是有效对象`);
+				return tree;
+			};
 			if (!tabId && params.uuid) {
 				// 从页签树按文档 uuid 反查 tabId（页签 ID 形如 "<docUuid>@<projectUuid>"）
-				const tree = await readTree('关闭前')
-				const matchesUuid = (candidate: string) => candidate === String(params.uuid) || candidate.startsWith(`${String(params.uuid)}@`)
-				const inspected = inspectTree(tree, matchesUuid)
+				const tree = await readTree('关闭前');
+				const matchesUuid = (candidate: string) => candidate === String(params.uuid) || candidate.startsWith(`${String(params.uuid)}@`);
+				const inspected = inspectTree(tree, matchesUuid);
 				if (!inspected.valid)
-					throw new Error('关闭前读取到非法页签树结构，已拒绝关闭')
-				tabId = undefined
+					throw new Error('关闭前读取到非法页签树结构，已拒绝关闭');
+				tabId = undefined;
 				const find = (node: any): string | undefined => {
 					if (Array.isArray(node?.tabs)) {
-						const hit = node.tabs.find((tab: any) => matchesUuid(tab.tabId))
+						const hit = node.tabs.find((tab: any) => matchesUuid(tab.tabId));
 						if (hit)
-							return hit.tabId
+							return hit.tabId;
 					}
 					for (const key of ['children', 'splitScreens', 'leaves']) {
 						for (const child of node?.[key] ?? []) {
-							const found = find(child)
+							const found = find(child);
 							if (found)
-								return found
+								return found;
 						}
 					}
-					return undefined
-				}
-				tabId = find(tree)
+					return undefined;
+				};
+				tabId = find(tree);
 				if (!tabId)
-					throw new Error(`页签树中不存在文档 ${String(params.uuid)}，已拒绝关闭`)
+					throw new Error(`页签树中不存在文档 ${String(params.uuid)}，已拒绝关闭`);
 			}
 			if (!tabId)
-				throw new Error('缺少参数 uuid / tabId')
-			let sdkResult: unknown
+				throw new Error('缺少参数 uuid / tabId');
+			let sdkResult: unknown;
 			try {
-				sdkResult = await eda.dmt_EditorControl.closeDocument(tabId)
+				sdkResult = await eda.dmt_EditorControl.closeDocument(tabId);
 			}
 			catch (error) {
-				const message = error instanceof Error ? error.message : String(error)
+				const message = error instanceof Error ? error.message : String(error);
 				throw new Error(`官方 closeDocument 结果未知：${message}`, {
 					cause: { partial: true, retryable: false, phase: 'closeDocument', operationError: message, result: { tabId, closed: 'unknown' } },
-				})
+				});
 			}
-			if (performance.now() >= closeDeadline)
+			if (performance.now() >= closeDeadline) {
 				throw new Error('closeDocument 返回时命令预算已耗尽，关闭后状态未知', {
 					cause: { partial: true, retryable: false, phase: 'closeDocument.readback', result: { tabId, closed: 'unknown', sdkResult } },
-				})
-			if (sdkResult !== true && sdkResult !== false)
+				});
+			}
+			if (sdkResult !== true && sdkResult !== false) {
 				throw new Error(`官方 closeDocument 返回无效结果 ${String(sdkResult)}，无法确认关闭状态`, {
 					cause: { partial: true, retryable: false, phase: 'closeDocument', result: { tabId, closed: 'unknown', sdkResult } },
-				})
-			let stillThere: boolean
-			let firstRead = true
+				});
+			}
+			let stillThere: boolean;
+			let firstRead = true;
 			while (true) {
-				let tree: any
-				let inspected: { valid: boolean, found: boolean }
+				let tree: any;
+				let inspected: { valid: boolean; found: boolean };
 				try {
-					tree = await readTree('关闭后')
-					const matchesTarget = (candidate: string) => candidate === tabId || (!params.tabId && (candidate === String(params.uuid ?? '') || candidate.startsWith(`${String(params.uuid ?? '')}@`)))
-					inspected = inspectTree(tree, matchesTarget)
+					tree = await readTree('关闭后');
+					const matchesTarget = (candidate: string) => candidate === tabId || (!params.tabId && (candidate === String(params.uuid ?? '') || candidate.startsWith(`${String(params.uuid ?? '')}@`)));
+					inspected = inspectTree(tree, matchesTarget);
 				}
 				catch (error) {
-					const message = error instanceof Error ? error.message : String(error)
+					const message = error instanceof Error ? error.message : String(error);
 					throw new Error(`关闭后无法确认页签状态：${message}`, {
 						cause: { partial: true, retryable: false, phase: 'closeDocument.readback', operationError: message, result: { tabId, closed: 'unknown' } },
-					})
+					});
 				}
 				if (!inspected.valid) {
-					const message = '关闭后读取到非法页签树结构'
+					const message = '关闭后读取到非法页签树结构';
 					throw new Error(`${message}，无法确认页签是否关闭`, {
 						cause: { partial: true, retryable: false, phase: 'closeDocument.readback', operationError: message, result: { tabId, closed: 'unknown' } },
-					})
+					});
 				}
-				stillThere = inspected.found
+				stillThere = inspected.found;
 				if (!stillThere)
-					return { tabId, closed: true, sdkResult }
-				if (sdkResult === false && firstRead)
+					return { tabId, closed: true, sdkResult };
+				if (sdkResult === false && firstRead) {
 					throw new Error(`官方 closeDocument 返回 false，且有效页签树确认目标 ${tabId} 仍存在`, {
 						cause: { partial: false, result: { tabId, closed: false, sdkResult: false, treeContainsTab: true } },
-					})
-				firstRead = false
-				const remainingMs = closeDeadline - performance.now()
-				if (remainingMs <= 0)
+					});
+				}
+				firstRead = false;
+				const remainingMs = closeDeadline - performance.now();
+				if (remainingMs <= 0) {
 					throw new Error(`官方 closeDocument 返回 true，但预算耗尽时有效页签树仍含 ${tabId}；无法确认关闭`, {
 						cause: { partial: true, retryable: false, phase: 'closeDocument.readback', result: { tabId, closed: 'unknown', sdkResult: true, treeContainsTab: true } },
-					})
-				await new Promise(resolve => setTimeout(resolve, Math.min(1000, remainingMs)))
+					});
+				}
+				await new Promise(resolve => setTimeout(resolve, Math.min(1000, remainingMs)));
 			}
 		},
 	},
@@ -223,20 +263,20 @@ export const editorCommands: Array<ICommandDef> = [
 		returns: '{ fileName, size, mimeType, base64 }（base64 为 PNG 图像数据）',
 		example: { cmd: 'editor.screenshot', params: { zoomToAll: true } },
 		handler: async (params) => {
-			const tabId = params.tabId ? String(params.tabId) : undefined
+			const tabId = params.tabId ? String(params.tabId) : undefined;
 			if (params.zoomToAll) {
 				try {
-					await eda.dmt_EditorControl.zoomToAllPrimitives(tabId)
+					await eda.dmt_EditorControl.zoomToAllPrimitives(tabId);
 				}
 				catch {
 					// 缩放失败不阻断截图
 				}
 			}
-			const image = await eda.dmt_EditorControl.getCurrentRenderedAreaImage(tabId)
-			const result = await fileToResult(image ?? undefined, 'screenshot.png')
+			const image = await eda.dmt_EditorControl.getCurrentRenderedAreaImage(tabId);
+			const result = await fileToResult(image ?? undefined, 'screenshot.png');
 			if (!result)
-				throw new Error('截图失败：官方返回空（请确认对应画布已在界面中打开并渲染）')
-			return result
+				throw new Error('截图失败：官方返回空（请确认对应画布已在界面中打开并渲染）');
+			return result;
 		},
 	},
 	{
@@ -250,10 +290,10 @@ export const editorCommands: Array<ICommandDef> = [
 		handler: async (params) => {
 			const result = await eda.dmt_EditorControl.zoomToAllPrimitives(
 				params.tabId ? String(params.tabId) : undefined,
-			)
+			);
 			if (result === false)
-				throw new Error('缩放失败（画布可能未打开）')
-			return result
+				throw new Error('缩放失败（画布可能未打开）');
+			return result;
 		},
 	},
 	{
@@ -263,20 +303,20 @@ export const editorCommands: Array<ICommandDef> = [
 		returns: '[{ tabId, title, documentType, splitId }]',
 		example: { cmd: 'editor.listTabs' },
 		handler: async () => {
-			const tree = await (eda.dmt_EditorControl as any).getSplitScreenTree()
-			const tabs: Array<Record<string, unknown>> = []
+			const tree = await (eda.dmt_EditorControl as any).getSplitScreenTree();
+			const tabs: Array<Record<string, unknown>> = [];
 			const walk = (node: any): void => {
 				if (!node)
-					return
+					return;
 				if (Array.isArray(node.tabs)) {
 					for (const t of node.tabs)
-						tabs.push({ tabId: t.tabId, title: t.title, documentType: t.documentType, splitId: node.id })
+						tabs.push({ tabId: t.tabId, title: t.title, documentType: t.documentType, splitId: node.id });
 				}
 				if (Array.isArray(node.children))
-					node.children.forEach(walk)
-			}
-			walk(tree)
-			return tabs
+					node.children.forEach(walk);
+			};
+			walk(tree);
+			return tabs;
 		},
 	},
 	{
@@ -294,13 +334,16 @@ export const editorCommands: Array<ICommandDef> = [
 		handler: async (params) => {
 			for (const key of ['left', 'right', 'top', 'bottom']) {
 				if (params[key] == null)
-					throw new Error(`缺少参数 ${key}`)
+					throw new Error(`缺少参数 ${key}`);
 			}
 			const result = await (eda.dmt_EditorControl as any).zoomToRegion(
-				Number(params.left), Number(params.right), Number(params.top), Number(params.bottom),
+				Number(params.left),
+				Number(params.right),
+				Number(params.top),
+				Number(params.bottom),
 				params.tabId ? String(params.tabId) : undefined,
-			)
-			return { zoomed: result !== false, result }
+			);
+			return { zoomed: result !== false, result };
 		},
 	},
-]
+];

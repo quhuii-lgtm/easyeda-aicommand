@@ -283,7 +283,10 @@ export async function executeCommand(req: ICommandRequest, ctx?: ICommandContext
 		else {
 			let resetFuse: () => void = () => {}
 			let lastDrawWireProgress: { diagnostic: Record<string, unknown>, receivedAt: string } | undefined
+			let lastModifyLineProgress: Record<string, unknown> | undefined
 			const onHeartbeatProgress = (patch: Record<string, any>) => {
+				if (cmd === 'pcb.modifyLine' && patch?.modifyLineDiagnostic)
+					lastModifyLineProgress = patch.modifyLineDiagnostic
 				if (cmd === 'schematic.drawWire') {
 					try {
 						const diagnostic = patch?.drawWireDiagnostic
@@ -302,7 +305,7 @@ export async function executeCommand(req: ICommandRequest, ctx?: ICommandContext
 					context.onProgress(patch)
 				}
 			}
-			const hbContext: ICommandContext = cmd === 'schematic.drawWire' || context.onProgress
+			const hbContext: ICommandContext = cmd === 'schematic.drawWire' || cmd === 'pcb.modifyLine' || context.onProgress
 				? { ...context, onProgress: onHeartbeatProgress }
 				: context
 			try {
@@ -318,6 +321,11 @@ export async function executeCommand(req: ICommandRequest, ctx?: ICommandContext
 			}
 			catch (error) {
 				const cause = (error as any)?.cause
+				if (cmd === 'pcb.modifyLine' && cause?.source === 'heartbeat-fuse' && lastModifyLineProgress) {
+					throw new Error(error instanceof Error ? error.message : String(error), {
+						cause: { ...cause, partial: true, status: 'unknown', retryable: false, lastObservedChanges: lastModifyLineProgress },
+					})
+				}
 				if (cmd === 'schematic.drawWire' && cause?.source === 'heartbeat-fuse' && lastDrawWireProgress) {
 					throw new Error(error instanceof Error ? error.message : String(error), {
 						cause: {
@@ -347,10 +355,58 @@ async function executeMacro(
 	const steps = params.steps
 	if (!Array.isArray(steps) || steps.length === 0)
 		return errorResult('macro', new Error('macro 指令需要非空 steps 数组'))
+	const targetKeys = ['__projectUuid', '__docUuid', '__tabId'] as const
+	type MacroTarget = Partial<Record<typeof targetKeys[number], unknown>>
+	const ownTarget = (value: unknown): MacroTarget => {
+		if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+		const params = value as Record<string, unknown>
+		return Object.fromEntries(targetKeys.filter(key => Object.prototype.hasOwnProperty.call(params, key)).map(key => [key, params[key]])) as MacroTarget
+	}
+	const isDeferredRef = (value: unknown): boolean => typeof value === 'string' && value.startsWith('$') && !value.startsWith('$$')
+	const mergeTarget = (inherited: MacroTarget, childParams: unknown, refsContext?: ICommandContext): { params: Record<string, unknown>, error?: Error } => {
+		const child = childParams && typeof childParams === 'object' && !Array.isArray(childParams)
+			? { ...(childParams as Record<string, unknown>) }
+			: {}
+		for (const key of targetKeys) {
+			if (!Object.prototype.hasOwnProperty.call(inherited, key)) continue
+			if (Object.prototype.hasOwnProperty.call(child, key)) {
+				let childValue = child[key]
+				try { if (refsContext && isDeferredRef(childValue)) childValue = resolveRefs(childValue, refsContext) }
+				catch (err) { return { params: child, error: err instanceof Error ? err : new Error(String(err)) } }
+				if (!isDeferredRef(childValue) && childValue !== inherited[key])
+					return { params: child, error: new Error(`宏步骤的 ${key} 与外层目标不一致，已拒绝执行该步骤`) }
+			}
+			else child[key] = inherited[key]
+		}
+		return { params: child }
+	}
+	const outerTarget = ownTarget(params)
+	// 静态冲突在宏启动前整体拒绝，避免前序步骤已写入后才发现目标互相矛盾。
+	const findStaticTargetConflict = (macroSteps: Array<IMacroStep>, inherited: MacroTarget): Error | undefined => {
+		for (const step of macroSteps) {
+			if (!step || typeof step !== 'object') continue
+			const childTarget = ownTarget(step.params)
+			for (const key of targetKeys) {
+				if (Object.prototype.hasOwnProperty.call(inherited, key) && Object.prototype.hasOwnProperty.call(childTarget, key)
+					&& !isDeferredRef(childTarget[key]) && childTarget[key] !== inherited[key])
+					return new Error(`宏步骤的 ${key} 与外层目标不一致，已拒绝启动宏`)
+			}
+			const effective: MacroTarget = { ...inherited }
+			for (const key of targetKeys)
+				if (!Object.prototype.hasOwnProperty.call(effective, key) && Object.prototype.hasOwnProperty.call(childTarget, key)) effective[key] = childTarget[key]
+			if (step.cmd === 'macro' && Array.isArray((step.params as any)?.steps)) {
+				const nestedConflict = findStaticTargetConflict((step.params as any).steps, effective)
+				if (nestedConflict) return nestedConflict
+			}
+		}
+		return undefined
+	}
+	const targetConflict = findStaticTargetConflict(steps, outerTarget)
+	if (targetConflict) return errorResult('macro', targetConflict)
 
 	const stopOnError = params.stopOnError !== false
 	// 0.10.49：宏注册长任务——客户端超时后同参数重发只回进度不重复执行；逐步心跳重置代理/扩展超时
-	const { task, existing } = beginTask('macro', { steps, stopOnError },
+	const { task, existing } = beginTask('macro', { steps, stopOnError, target: outerTarget },
 		parentCtx && ((t) => parentCtx.onProgress?.({ taskId: t.id, state: t.state, ...t.progress })))
 	if (existing) {
 		return {
@@ -378,7 +434,10 @@ async function executeMacro(
 			continue
 		}
 		taskProgress(task, { stage: 'step', step: index + 1, totalSteps: steps.length, cmd: step.cmd, failed: results.filter(r => !r.ok).length })
-		const result = await executeCommand({ cmd: step.cmd, params: step.params }, ctx)
+		const merged = mergeTarget(outerTarget, step.params, ctx)
+		const result = merged.error
+			? errorResult(step.cmd, merged.error)
+			: await executeCommand({ cmd: step.cmd, params: merged.params }, ctx)
 		results.push(result)
 		diag('macro', 'step-done', `第${index + 1}/${steps.length}步 ${step.cmd} ok=${result.ok}${result.ok ? '' : ` 错误=${result.error?.message ?? ''}`}`)
 		if (result.ok && step.id)

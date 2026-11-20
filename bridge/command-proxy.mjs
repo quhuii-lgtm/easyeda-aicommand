@@ -26,8 +26,8 @@
  * 执行中扩展会持续推送 { type:'progress', id } 进度心跳，代理每收到一次就重置该指令的
  * 超时计时器——超时判定从「绝对时长」变为「无心跳时长」（默认各 300s）。
  * 批量指令只要还在推进就永远不会超时；单条指令不上报心跳，语义与旧版一致。
- * 客户端 HTTP 超时后：任务仍在后台执行，重发同参数指令只回进度不重复执行（0.10.42+），
- * 或凭返回的 taskId 用 task.get 查询/补取结果。
+ * 客户端 HTTP 超时后：宿主可能仍在执行，先只读核对原目标或凭 taskId 查询任务，
+ * 确认状态后再决定是否重发。
  *
  * 写指令单行道（0.10.50）：除只读指令（schematic./pcb. 的 list/get/export/runDrc、
  * project. 的 get/list/export、editor.、library.、task.、knowledge.）外，全部写指令
@@ -228,15 +228,22 @@ function forwardToExtension(message, instanceId) {
 		const id = randomUUID()
 		const timeoutMs = COMMAND_TIMEOUT_OVERRIDES[message.cmd] ?? COMMAND_TIMEOUT_MS
 		const targetId = target.instanceId ?? target.info?.instanceId
-		const entry = { resolve, timer: null, lastProgress: undefined, timeoutMs, id, instanceId: targetId, owner: target.ws }
-		entry.timer = setTimeout(() => {
+		const entry = { resolve, cmd: message.cmd, timer: null, lastProgress: undefined, timeoutMs, id, instanceId: targetId, owner: target.ws, received: false }
+		entry.onTimeout = () => {
 			pending.delete(id)
 			tryCompleteStop(targetId)
-			// 0.10.37：超时只是代理放弃等待，扩展侧可能仍在后台执行（EDA API 无取消机制）——如实告知边界
-			// 0.10.49：附最后收到的进度心跳，客户端可据此判断任务实际推进到哪
 			const prog = entry.lastProgress !== undefined ? `；最后进度：${JSON.stringify(entry.lastProgress).slice(0, 500)}` : ''
-			reject(new Error(`指令执行超时（${Math.round(timeoutMs / 1000)}s 无进度心跳，代理已放弃等待）${prog}。注意：这≠任务已取消，扩展可能仍在后台执行；重发同参数只回进度不重复执行，或用 task.get 查询；重发前也请先用只读指令（如 listTabs/listComponents）确认现场状态`))
-		}, timeoutMs)
+			resolve({
+				ok: false, cmd: message.cmd,
+				error: {
+					message: `指令等待超时（${Math.round(timeoutMs / 1000)}s）${prog}。宿主可能仍在执行；先查任务或原目标状态，再决定是否重发。`,
+					cause: { code: 'BRIDGE_COMMAND_TIMEOUT', requestId: id, instanceId: targetId,
+						stage: entry.received ? 'awaiting-result' : 'receipt-unavailable', retryable: false,
+						outcome: 'unknown', lastProgress: entry.lastProgress },
+				},
+			})
+		}
+		entry.timer = setTimeout(entry.onTimeout, timeoutMs)
 		pending.set(id, entry)
 		// 注意：id 必须放在展开之后——调用方若自带 id 字段会覆盖代理的关联 id，导致响应永远无法匹配（表现为 30s 超时）
 		target.ws.send(JSON.stringify({ type: 'command', ...message, id }))
@@ -256,6 +263,7 @@ const READONLY_COMMAND_PATTERNS = [
 	/^pcb\.(list|get|export|runDrc)/,
 	/^pcb\.runDfm$/,
 	/^pcb\.runSmtDfm$/,
+	/^pcb\.reviewLocalRouting$/,
 	/^pcb\.checkSameNetPadSpacing$/,
 	/^project\.(get|list|export)/,
 	/^editor\.(listTabs|screenshot|zoomToAll|zoomToRegion)$/,
@@ -995,11 +1003,18 @@ const server = http.createServer(async (req, res) => {
 			// 并发容量≈2，并发批量 create failed）。读指令不进队列。对调用方透明：并发方式 3
 			// 自动退化为逐条执行，不再失败，代价是吞吐 ~3s/条。
 			const writeLane = isReadOnlyCommand(command.cmd) ? null : acquireWriteLane(routeId)
+			const admittedSocket = writeLane ? connectionFor(routeId)?.ws : null
 			const executeWrite = async () => {
+				const assertOriginalConnection = () => {
+					if (writeLane && (!admittedSocket || connectionFor(routeId)?.ws !== admittedSocket))
+						throw new Error('UNKNOWN_INSTANCE')
+				}
+				assertOriginalConnection()
 				// 破坏性指令执行前自动导出 .epro 备份（官方没有撤销 API，删错不可挽回）
 				let backupFile = null
 				if (DESTRUCTIVE_COMMANDS.has(command.cmd))
 					backupFile = await autoBackupBeforeDestructive(command.cmd, routeId)
+				assertOriginalConnection()
 				const result = await forwardToExtension(command, routeId)
 				if (backupFile && result && typeof result === 'object' && !Array.isArray(result))
 					result.backup = backupFile
@@ -1299,6 +1314,11 @@ wss.on('connection', (ws) => {
 			return
 		}
 
+		if (msg?.type === 'command-received' && msg.id && pending.get(msg.id)?.owner === ws) {
+			pending.get(msg.id).received = true
+			return
+		}
+
 		// 0.10.49：进度心跳——长指令（批量删除/batchWire/macro）执行中扩展逐条/逐阶段上报，
 		// 据此重置该指令的超时计时器：超时语义从「绝对时长」变为「无心跳时长」，
 		// 批量指令不会因总时长被误杀（单条指令不上报心跳，语义不变）
@@ -1307,13 +1327,9 @@ wss.on('connection', (ws) => {
 			if (entry.owner !== ws)
 				return
 			clearTimeout(entry.timer)
+			entry.received = true
 			entry.lastProgress = msg.progress
-			entry.timer = setTimeout(() => {
-				pending.delete(msg.id)
-				tryCompleteStop(entry.instanceId)
-				const prog = entry.lastProgress !== undefined ? `；最后进度：${JSON.stringify(entry.lastProgress).slice(0, 500)}` : ''
-				entry.resolve({ ok: false, cmd: '(超时)', error: { message: `指令执行超时（${Math.round(entry.timeoutMs / 1000)}s 无进度心跳，代理已放弃等待）${prog}。这≠任务已取消，扩展可能仍在后台执行；重发同参数只回进度不重复执行，或用 task.get 查询` } })
-			}, entry.timeoutMs)
+			entry.timer = setTimeout(entry.onTimeout, entry.timeoutMs)
 			return
 		}
 
@@ -1328,6 +1344,16 @@ wss.on('connection', (ws) => {
 		laneLog({ event: 'close', instanceId: closed?.instanceId ?? null })
 		connections.delete(ws)
 		writeQueues.delete(ws) // 0.10.50：窗口断开即废弃其写队列（重连后新建）
+		for (const [id, entry] of pending) {
+			if (entry.owner !== ws) continue
+			pending.delete(id)
+			clearTimeout(entry.timer)
+			entry.resolve({ ok: false, cmd: entry.cmd, error: {
+				message: '指令等待期间目标连接断开。请在同一工程重连后只读核对原操作。',
+				cause: { code: 'BRIDGE_DISCONNECTED', requestId: id, instanceId: entry.instanceId,
+					stage: entry.received ? 'awaiting-result' : 'receipt-unavailable', outcome: 'unknown', retryable: false },
+			} })
+		}
 		// 新连接会创建新的写队列，不继承旧连接的历史写保护状态。
 		if (extensionSocket === ws) {
 			extensionSocket = null

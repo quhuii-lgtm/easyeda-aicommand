@@ -151,6 +151,10 @@ async function settleAction() {
 async function start() {
 	launchPcbToolsAction('route-start');
 	await settleAction();
+	const engineChoice = dialogs.pop();
+	assert.equal(engineChoice[3], '选择布线引擎');
+	engineChoice.at(-1)('freerouting');
+	await settleAction();
 	return dialogs.pop();
 }
 const ai = await start();

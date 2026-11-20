@@ -1,0 +1,793 @@
+{
+  "source": "{\"type\":\"DOCHEAD\"}||{\"docType\":\"PCB\",\"client\":\"fixture\",\"uuid\":\"fixture-length-group\",\"updateTime\":1,\"version\":\"1\"}|\n{\"type\":\"NET\",\"ticket\":73,\"id\":\"[\\\"NET\\\",\\\"A\\\"]\"}||{\"netType\":null,\"specialColor\":null,\"retLine\":true,\"differentialName\":null,\"isPositiveNet\":false,\"equalLengthGroupName\":\"ACE_LENGTH_TEST\"}|\n{\"type\":\"NET\",\"ticket\":74,\"id\":\"[\\\"NET\\\",\\\"B\\\"]\"}||{\"netType\":null,\"specialColor\":null,\"retLine\":true,\"differentialName\":null,\"isPositiveNet\":false,\"equalLengthGroupName\":\"ACE_LENGTH_TEST\"}|\n{\"type\":\"NET\",\"ticket\":75,\"id\":\"[\\\"NET\\\",\\\"C\\\"]\"}||{\"netType\":null,\"specialColor\":null,\"retLine\":true,\"differentialName\":null,\"isPositiveNet\":false,\"equalLengthGroupName\":null}|\n{\"type\":\"RULE_TEMPLATE\",\"ticket\":76,\"id\":\"RULE_TEMPLATE\"}||{\"name\":\"\"}|\n{\"type\":\"RULE\",\"ticket\":77,\"id\":\"[\\\"RULE\\\",\\\"SAFE\\\",\\\"copperThickness1oz\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"isForAll\":\"ALL\",\"safeSpacing\":[{\"layerId\":1,\"isOpen\":true,\"content\":[[11.8],[11.8,11.8],[11.8,11.8,11.8],[6,6,6,6],[6,6,6,6,6],[11.8,11.8,11.8,6,6,11.8],[11.8,11.8,11.8,6,6,11.8,11.8],[11.8,11.8,11.8,10,10,11.8,11.8,11.8],[11.8,6,6,6,6,6,6,10,6],[6,6,6,6,6,6,6,10,11.8,6],[6,6,6,6,6,6,6,10,6,6,6],[11.8,11.8,11.8,11.8,11.8,11.8,11.8,10,11.8,11.8,11.8],[6.9,6.9,6.9,6.9,6.9,6.9,6.9,10,6.9,6.9,6.9,6.9]],\"columnNames\":[]}]}}|\n{\"type\":\"RULE\",\"ticket\":78,\"id\":\"[\\\"RULE\\\",\\\"OTHER\\\",\\\"otherClearance\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"deviceClearance\":0,\"thru2SmdClearance\":10,\"holeClearance\":11.8}}|\n{\"type\":\"RULE\",\"ticket\":79,\"id\":\"[\\\"RULE\\\",\\\"CREEPAGE\\\",\\\"creepage\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"creepageDistance\":0,\"ignoreLayer\":true}}|\n{\"type\":\"RULE\",\"ticket\":80,\"id\":\"[\\\"RULE\\\",\\\"TRACK\\\",\\\"copperThickness1oz\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"track\":{\"isOpen\":true,\"content\":[{\"layerId\":1,\"stroMin\":5,\"stroDef\":6,\"stroMax\":100}]}}}|\n{\"type\":\"RULE\",\"ticket\":81,\"id\":\"[\\\"RULE\\\",\\\"NET_LENGTH\\\",\\\"netLength\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"netLenMin\":0,\"netLenMax\":0}}|\n{\"type\":\"RULE\",\"ticket\":82,\"id\":\"[\\\"RULE\\\",\\\"NET_LENGTH_TOLERANCE\\\",\\\"netLengthTolerance\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"netLengthTolerance\":1000}}|\n{\"type\":\"RULE\",\"ticket\":83,\"id\":\"[\\\"RULE\\\",\\\"DIFFER_ENTAIL\\\",\\\"differentialPair\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"stroWidth\":{\"isOpen\":true,\"content\":[{\"layerId\":1,\"stroMin\":5,\"stroMax\":100,\"stroDef\":100}]},\"spacing\":{\"isOpen\":true,\"content\":[{\"layerId\":1,\"spacMin\":5,\"spacDef\":6}]},\"differPairLenTolerMax\":10,\"toleranceUnit\":\"mm\"}}|\n{\"type\":\"RULE\",\"ticket\":84,\"id\":\"[\\\"RULE\\\",\\\"BLIND\\\",\\\"blindVia\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"blinds\":{\"content\":[]}}}|\n{\"type\":\"RULE\",\"ticket\":85,\"id\":\"[\\\"RULE\\\",\\\"RADIUS\\\",\\\"viaSize\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"minRadius\":10,\"defRadius\":12,\"maxRadius\":40,\"minInner\":5,\"defInner\":6,\"maxInner\":20}}|\n{\"type\":\"RULE\",\"ticket\":86,\"id\":\"[\\\"RULE\\\",\\\"PLANE\\\",\\\"innerPlane\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"mulPad\":{\"isOpen\":true,\"content\":[{\"layerId\":1,\"connType\":\"DIVERGENCE\",\"spoSpac\":10,\"spoWidth\":10,\"spoAng\":90}]}}}|\n{\"type\":\"RULE\",\"ticket\":87,\"id\":\"[\\\"RULE\\\",\\\"COPPER\\\",\\\"copperRegion\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"sglPad\":{\"isOpen\":true,\"content\":[{\"layerId\":1,\"connType\":\"DIVERGENCE\",\"spoSpac\":10,\"spoWidth\":10,\"spoAng\":90}]},\"mulPad\":{\"isOpen\":true,\"content\":[{\"layerId\":1,\"connType\":\"DIVERGENCE\",\"spoSpac\":10,\"spoWidth\":10,\"spoAng\":90}]},\"track\":{\"isOpen\":true,\"content\":[{\"layerId\":1,\"connType\":\"DIRECT\"}]}}}|\n{\"type\":\"RULE\",\"ticket\":88,\"id\":\"[\\\"RULE\\\",\\\"PASTE\\\",\\\"pasteMaskExpansion\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"padTopExpan\":0,\"padBotExpan\":0,\"testPointTopExpan\":-1000,\"testPointBotExpan\":-1000}}|\n{\"type\":\"RULE\",\"ticket\":89,\"id\":\"[\\\"RULE\\\",\\\"SOLDER\\\",\\\"solderMaskExpansion\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"padTopExpan\":2,\"padBotExpan\":2,\"viaTopExpan\":-1000,\"viaBotExpan\":-1000,\"testPointTopExpan\":2,\"testPointBotExpan\":2}}|\n{\"type\":\"RULE\",\"ticket\":90,\"id\":\"[\\\"RULE\\\",\\\"AUTO_ROUTER\\\",\\\"Common\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"routingCorner\":\"L45\",\"isKeep\":1,\"viaQuantity\":\"LESS\",\"routingEffectPriority\":\"COMPLETION_FIRST\",\"layers\":[1,2,12],\"ignoreNets\":[]}}|\n{\"type\":\"RULE_SELECTOR\",\"ticket\":91,\"id\":\"[\\\"RULE_SELECTOR\\\",[\\\"NET\\\",\\\"A\\\"]]\"}||{\"ruleOrder\":4,\"ruleKeyValue\":{},\"copperValue\":{},\"innerPlaneValue\":{},\"parent\":null}|\n{\"type\":\"RULE_SELECTOR\",\"ticket\":92,\"id\":\"[\\\"RULE_SELECTOR\\\",[\\\"NET\\\",\\\"B\\\"]]\"}||{\"ruleOrder\":4,\"ruleKeyValue\":{},\"copperValue\":{},\"innerPlaneValue\":{},\"parent\":null}|\n{\"type\":\"RULE_SELECTOR\",\"ticket\":93,\"id\":\"[\\\"RULE_SELECTOR\\\",[\\\"NET\\\",\\\"C\\\"]]\"}||{\"ruleOrder\":4,\"ruleKeyValue\":{},\"copperValue\":{},\"innerPlaneValue\":{},\"parent\":null}|\n{\"type\":\"RULE_SELECTOR\",\"ticket\":94,\"id\":\"[\\\"RULE_SELECTOR\\\",[\\\"EQ_LEN_GRP\\\",\\\"ACE_LENGTH_TEST\\\"]]\"}||{\"ruleOrder\":4,\"ruleKeyValue\":{},\"copperValue\":{},\"innerPlaneValue\":{},\"parent\":null}|",
+  "layers": [
+    {
+      "id": 1,
+      "layerId": 1,
+      "name": "Top Layer",
+      "layerName": "Top Layer",
+      "type": "SIGNAL",
+      "status": 1,
+      "layerStatus": 1
+    },
+    {
+      "id": 2,
+      "layerId": 2,
+      "name": "Bottom Layer",
+      "layerName": "Bottom Layer",
+      "type": "SIGNAL",
+      "status": 1,
+      "layerStatus": 1
+    },
+    {
+      "id": 15,
+      "layerId": 15,
+      "name": "In1.Cu",
+      "layerName": "In1.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 16,
+      "layerId": 16,
+      "name": "In2.Cu",
+      "layerName": "In2.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 17,
+      "layerId": 17,
+      "name": "In3.Cu",
+      "layerName": "In3.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 18,
+      "layerId": 18,
+      "name": "In4.Cu",
+      "layerName": "In4.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 19,
+      "layerId": 19,
+      "name": "In5.Cu",
+      "layerName": "In5.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 20,
+      "layerId": 20,
+      "name": "In6.Cu",
+      "layerName": "In6.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 21,
+      "layerId": 21,
+      "name": "In7.Cu",
+      "layerName": "In7.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 22,
+      "layerId": 22,
+      "name": "In8.Cu",
+      "layerName": "In8.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 23,
+      "layerId": 23,
+      "name": "In9.Cu",
+      "layerName": "In9.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 24,
+      "layerId": 24,
+      "name": "In10.Cu",
+      "layerName": "In10.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 25,
+      "layerId": 25,
+      "name": "In11.Cu",
+      "layerName": "In11.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 26,
+      "layerId": 26,
+      "name": "In12.Cu",
+      "layerName": "In12.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 27,
+      "layerId": 27,
+      "name": "In13.Cu",
+      "layerName": "In13.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 28,
+      "layerId": 28,
+      "name": "In14.Cu",
+      "layerName": "In14.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 29,
+      "layerId": 29,
+      "name": "In15.Cu",
+      "layerName": "In15.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 30,
+      "layerId": 30,
+      "name": "In16.Cu",
+      "layerName": "In16.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 31,
+      "layerId": 31,
+      "name": "In17.Cu",
+      "layerName": "In17.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 32,
+      "layerId": 32,
+      "name": "In18.Cu",
+      "layerName": "In18.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 33,
+      "layerId": 33,
+      "name": "In19.Cu",
+      "layerName": "In19.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 34,
+      "layerId": 34,
+      "name": "In20.Cu",
+      "layerName": "In20.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 35,
+      "layerId": 35,
+      "name": "In21.Cu",
+      "layerName": "In21.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 36,
+      "layerId": 36,
+      "name": "In22.Cu",
+      "layerName": "In22.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 37,
+      "layerId": 37,
+      "name": "In23.Cu",
+      "layerName": "In23.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 38,
+      "layerId": 38,
+      "name": "In24.Cu",
+      "layerName": "In24.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 39,
+      "layerId": 39,
+      "name": "In25.Cu",
+      "layerName": "In25.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 40,
+      "layerId": 40,
+      "name": "In26.Cu",
+      "layerName": "In26.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 41,
+      "layerId": 41,
+      "name": "In27.Cu",
+      "layerName": "In27.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 42,
+      "layerId": 42,
+      "name": "In28.Cu",
+      "layerName": "In28.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 43,
+      "layerId": 43,
+      "name": "In29.Cu",
+      "layerName": "In29.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 44,
+      "layerId": 44,
+      "name": "In30.Cu",
+      "layerName": "In30.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 45,
+      "layerId": 45,
+      "name": "Inner31",
+      "layerName": "Inner31",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 46,
+      "layerId": 46,
+      "name": "Inner32",
+      "layerName": "Inner32",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    }
+  ],
+  "netRules": [
+    {
+      "type": "equalLengthGroup",
+      "name": "ACE_LENGTH_TEST",
+      "Safe Spacing": "default",
+      "Copper Safe Spacing": null,
+      "Plane Safe Spacing": null,
+      "Track": "default",
+      "Blind/Buried Via": "default",
+      "Via Size": "default",
+      "Plane Zone": "default",
+      "Copper Zone": "default",
+      "Solder Mask Expansion": "default",
+      "Paste Mask Expansion": "default",
+      "Net Length Range": "default",
+      "Net Length Tolerance": null,
+      "Creepage Distance": null,
+      "targetNet": null,
+      "sub": [
+        {
+          "type": "net",
+          "name": "A",
+          "Safe Spacing": "default",
+          "Copper Safe Spacing": null,
+          "Plane Safe Spacing": null,
+          "Track": "default",
+          "Net Length Range": "default",
+          "Net Length Tolerance": null,
+          "Blind/Buried Via": "default",
+          "Via Size": "default",
+          "Plane Zone": "default",
+          "Copper Zone": "default",
+          "Solder Mask Expansion": "default",
+          "Paste Mask Expansion": "default",
+          "Creepage Distance": null,
+          "targetNet": null
+        },
+        {
+          "type": "net",
+          "name": "B",
+          "Safe Spacing": "default",
+          "Copper Safe Spacing": null,
+          "Plane Safe Spacing": null,
+          "Track": "default",
+          "Net Length Range": "default",
+          "Net Length Tolerance": null,
+          "Blind/Buried Via": "default",
+          "Via Size": "default",
+          "Plane Zone": "default",
+          "Copper Zone": "default",
+          "Solder Mask Expansion": "default",
+          "Paste Mask Expansion": "default",
+          "Creepage Distance": null,
+          "targetNet": null
+        }
+      ]
+    },
+    {
+      "type": "net",
+      "name": "C",
+      "Safe Spacing": "default",
+      "Copper Safe Spacing": null,
+      "Plane Safe Spacing": null,
+      "Track": "default",
+      "Net Length Range": "default",
+      "Net Length Tolerance": null,
+      "Blind/Buried Via": "default",
+      "Via Size": "default",
+      "Plane Zone": "default",
+      "Copper Zone": "default",
+      "Solder Mask Expansion": "default",
+      "Paste Mask Expansion": "default",
+      "Creepage Distance": null,
+      "targetNet": null
+    }
+  ],
+  "configuration": {
+    "config": {
+      "Spacing": {
+        "Safe Spacing": {
+          "copperThickness1oz": {
+            "editName": "copperThickness1oz",
+            "unit": "mm",
+            "isSetDefault": true,
+            "column": [
+              "Track",
+              "SMD Pad",
+              "TH Pad",
+              "SMD Test Point",
+              "TH Test Point",
+              "Via",
+              "Fill Region/Teardrop",
+              "Copper/Plane Zone",
+              "Slot Region",
+              "Line",
+              "Text/Image",
+              "Board Outline"
+            ],
+            "row": [
+              "Track",
+              "SMD Pad",
+              "TH Pad",
+              "SMD Test Point",
+              "TH Test Point",
+              "Via",
+              "Fill Region/Teardrop",
+              "Copper/Plane Zone",
+              "Slot Region",
+              "Line",
+              "Text/Image",
+              "Board Outline",
+              "Hole"
+            ],
+            "status": 0,
+            "tables": {
+              "1": {
+                "status": 1,
+                "content": [
+                  [
+                    0.29972
+                  ],
+                  [
+                    0.29972,
+                    0.29972
+                  ],
+                  [
+                    0.29972,
+                    0.29972,
+                    0.29972
+                  ],
+                  [
+                    0.15239999999999998,
+                    0.15239999999999998,
+                    0.15239999999999998,
+                    0.15239999999999998
+                  ],
+                  [
+                    0.15239999999999998,
+                    0.15239999999999998,
+                    0.15239999999999998,
+                    0.15239999999999998,
+                    0.15239999999999998
+                  ],
+                  [
+                    0.29972,
+                    0.29972,
+                    0.29972,
+                    0.15239999999999998,
+                    0.15239999999999998,
+                    0.29972
+                  ],
+                  [
+                    0.29972,
+                    0.29972,
+                    0.29972,
+                    0.15239999999999998,
+                    0.15239999999999998,
+                    0.29972,
+                    0.29972
+                  ],
+                  [
+                    0.29972,
+                    0.29972,
+                    0.29972,
+                    0.254,
+                    0.254,
+                    0.29972,
+                    0.29972,
+                    0.29972
+                  ],
+                  [
+                    0.29972,
+                    0.15239999999999998,
+                    0.15239999999999998,
+                    0.15239999999999998,
+                    0.15239999999999998,
+                    0.15239999999999998,
+                    0.15239999999999998,
+                    0.254,
+                    0.15239999999999998
+                  ],
+                  [
+                    0.15239999999999998,
+                    0.15239999999999998,
+                    0.15239999999999998,
+                    0.15239999999999998,
+                    0.15239999999999998,
+                    0.15239999999999998,
+                    0.15239999999999998,
+                    0.254,
+                    0.29972,
+                    0.15239999999999998
+                  ],
+                  [
+                    0.15239999999999998,
+                    0.15239999999999998,
+                    0.15239999999999998,
+                    0.15239999999999998,
+                    0.15239999999999998,
+                    0.15239999999999998,
+                    0.15239999999999998,
+                    0.254,
+                    0.15239999999999998,
+                    0.15239999999999998,
+                    0.15239999999999998
+                  ],
+                  [
+                    0.29972,
+                    0.29972,
+                    0.29972,
+                    0.29972,
+                    0.29972,
+                    0.29972,
+                    0.29972,
+                    0.254,
+                    0.29972,
+                    0.29972,
+                    0.29972
+                  ],
+                  [
+                    0.17525999999999997,
+                    0.17525999999999997,
+                    0.17525999999999997,
+                    0.17525999999999997,
+                    0.17525999999999997,
+                    0.17525999999999997,
+                    0.17525999999999997,
+                    0.254,
+                    0.17525999999999997,
+                    0.17525999999999997,
+                    0.17525999999999997,
+                    0.17525999999999997
+                  ]
+                ]
+              }
+            }
+          }
+        },
+        "Other Spacing": {
+          "otherClearance": {
+            "editName": "otherClearance",
+            "unit": "mm",
+            "isSetDefault": true,
+            "form": {
+              "device2device": 0,
+              "thru2Smd": 0.254,
+              "hole2Hole": 0.29972
+            }
+          }
+        },
+        "Creepage Distance": {
+          "creepage": {
+            "editName": "creepage",
+            "unit": "mm",
+            "isSetDefault": true,
+            "form": {
+              "creepageDistance": 0,
+              "ignoreLayer": true
+            }
+          }
+        }
+      },
+      "Physics": {
+        "Track": {
+          "copperThickness1oz": {
+            "editName": "copperThickness1oz",
+            "unit": "mm",
+            "isSetDefault": true,
+            "form": {
+              "status": 1,
+              "data": {
+                "1": {
+                  "minValue": 0.127,
+                  "defaultValue": 0.15239999999999998,
+                  "maxValue": 2.54
+                }
+              }
+            }
+          }
+        },
+        "Net Length Range": {
+          "netLength": {
+            "editName": "netLength",
+            "unit": "mm",
+            "isSetDefault": true,
+            "form": {
+              "netLengthMin": 0,
+              "netLengthMax": 0
+            }
+          }
+        },
+        "Net Length Tolerance": {
+          "netLengthTolerance": {
+            "editName": "netLengthTolerance",
+            "unit": "mm",
+            "isSetDefault": true,
+            "form": {
+              "netLengthTolerance": 25.4
+            }
+          }
+        },
+        "Differential Pair": {
+          "differentialPair": {
+            "editName": "differentialPair",
+            "unit": "mm",
+            "isSetDefault": true,
+            "form": {
+              "strokeWidthTables": {
+                "status": 1,
+                "data": {
+                  "1": {
+                    "minValue": 0.127,
+                    "defaultValue": 2.54,
+                    "maxValue": 2.54
+                  }
+                }
+              },
+              "diffPairSpacingTables": {
+                "status": 1,
+                "data": {
+                  "1": {
+                    "minValue": 0.127,
+                    "defaultValue": 0.15239999999999998,
+                    "maxValue": null
+                  }
+                }
+              },
+              "toleranceUnit": "mm",
+              "differentailPairLenTolerMax": 0.254
+            }
+          }
+        },
+        "Blind/Buried Via": {
+          "blindVia": {
+            "editName": "blindVia",
+            "isSetDefault": true,
+            "table": []
+          }
+        },
+        "Via Size": {
+          "viaSize": {
+            "editName": "viaSize",
+            "unit": "mm",
+            "isSetDefault": true,
+            "form": {
+              "viaOuterdiameterMin": 0.508,
+              "viaOuterdiameterMax": 2.032,
+              "viaOuterdiameterDefault": 0.6095999999999999,
+              "viaInnerdiameterMin": 0.254,
+              "viaInnerdiameterMax": 1.016,
+              "viaInnerdiameterDefault": 0.30479999999999996
+            }
+          }
+        },
+        "Height": {
+          "height": {
+            "editName": "height",
+            "unit": "mm",
+            "isSetDefault": true,
+            "form": {
+              "maxHeight": 0
+            }
+          }
+        }
+      },
+      "Plane": {
+        "Plane Zone": {
+          "innerPlane": {
+            "editName": "innerPlane",
+            "unit": "mm",
+            "isSetDefault": true,
+            "form": {
+              "status": 1,
+              "data": {
+                "1": {
+                  "connectMode": 0,
+                  "lineClearance": 0.254,
+                  "lineWidth": 0.254,
+                  "lineAngle": 90
+                }
+              }
+            }
+          }
+        },
+        "Copper Zone": {
+          "copperRegion": {
+            "editName": "copperRegion",
+            "unit": "mm",
+            "isSetDefault": true,
+            "form": {
+              "singleLayerPadModel": {
+                "status": 1,
+                "data": {
+                  "1": {
+                    "connectMode": 0,
+                    "lineClearance": 0.254,
+                    "lineWidth": 0.254,
+                    "lineAngle": 90
+                  }
+                }
+              },
+              "multiLayerPadModel": {
+                "status": 1,
+                "data": {
+                  "1": {
+                    "connectMode": 0,
+                    "lineClearance": 0.254,
+                    "lineWidth": 0.254,
+                    "lineAngle": 90
+                  }
+                }
+              },
+              "trackConnectModel": {
+                "status": 1,
+                "data": {
+                  "1": {
+                    "trackConnectMode": 0
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Expansion": {
+        "Solder Mask Expansion": {
+          "solderMaskExpansion": {
+            "editName": "solderMaskExpansion",
+            "unit": "mm",
+            "isSetDefault": true,
+            "form": {
+              "padToplayerExpansion": 0.0508,
+              "padBottomlayerExpansion": 0.0508,
+              "viaToplayerExpansion": -25.4,
+              "viaBottomlayerExpansion": -25.4,
+              "testPointToplayerExpansion": 0.0508,
+              "testPointBottomlayerExpansion": 0.0508
+            }
+          }
+        },
+        "Paste Mask Expansion": {
+          "pasteMaskExpansion": {
+            "editName": "pasteMaskExpansion",
+            "unit": "mm",
+            "isSetDefault": true,
+            "form": {
+              "padToplayerExpansion": 0,
+              "padBottomlayerExpansion": 0,
+              "testPointToplayerExpansion": -25.4,
+              "testPointBottomlayerExpansion": -25.4
+            }
+          }
+        }
+      },
+      "Copper Analysis": {
+        "Acute Angle": [],
+        "Hole Falls on Pad": [],
+        "Bare Track Ends": [],
+        "Pad Hole Ring": [],
+        "Track Neckdown": [],
+        "Short Circuit Prompt": [],
+        "Minimum Copper Width": []
+      },
+      "Drill Hole Analysis": {
+        "No Connected Vias": [],
+        "Hole Size": [],
+        "NPTH to Copper": []
+      },
+      "Silkscreen Analysis": {
+        "Silkscreen to Pad": [],
+        "Silkscreen to Hole": [],
+        "Silkscreen Line Width": []
+      },
+      "Solder Mask Analysis": {
+        "Solder Mask Bridge": [],
+        "SMask Opening Copper": [],
+        "Pad Negative Opening": []
+      }
+    },
+    "name": ""
+  },
+  "configurationName": ""
+}

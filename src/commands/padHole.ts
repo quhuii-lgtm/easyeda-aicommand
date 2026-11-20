@@ -150,7 +150,7 @@ function assertOneNewSourceRecord(before: SourceSnapshot, after: SourceSnapshot,
 
 function sourcePadShape(shape: unknown[]): Record<string, unknown> | undefined {
 	const [type, width, height, round] = shape;
-	if ((type !== 'ELLIPSE' && type !== 'RECT') || typeof width !== 'number' || typeof height !== 'number')
+	if ((type !== 'ELLIPSE' && type !== 'OVAL' && type !== 'RECT') || typeof width !== 'number' || typeof height !== 'number')
 		return undefined;
 	if (type === 'RECT' && (typeof round !== 'number' || !Number.isFinite(round)))
 		return undefined;
@@ -376,12 +376,12 @@ function maskSnapshotReport(requested: Record<string, number>, defaultsReadback:
 	};
 }
 
-async function applyPartialMaskSnapshot(host: GeometryHost, originalSource: SourceSnapshot, originalRules: unknown, id: string, layer: number, x: number, y: number, shape: unknown[], net: string, hole: unknown, plated: boolean, requested: Record<string, number>, setStage: (stage: string) => void, progress: Record<string, unknown>): Promise<{ defaultsReadback: Record<string, number>; applied: Record<string, number>; data: Record<string, any>; geometryReadback: Record<string, unknown>; sourceVerification: Record<string, unknown> }> {
+async function applyPartialMaskSnapshot(host: GeometryHost, originalSource: SourceSnapshot, originalRules: unknown, id: string, layer: number, x: number, y: number, shape: unknown[], net: string, hole: unknown, plated: boolean, requested: Record<string, number>, setStage: (stage: string) => void, progress: Record<string, unknown>, padType = 0): Promise<{ defaultsReadback: Record<string, number>; applied: Record<string, number>; data: Record<string, any>; geometryReadback: Record<string, unknown>; sourceVerification: Record<string, unknown> }> {
 	setStage('readback-created-pad-before-mask-snapshot');
 	const createdObject = await host.read(`部分阻焊写入前按 ID 读回 PAD ${id}`, async () => await host.sdk.pcb_PrimitivePad.get(id));
 	if (!createdObject)
 		throw new Error(`部分阻焊创建后的 PAD ${id} 按 ID 读回为空`);
-	const createReadback = assertPadReadback(createdObject, id, layer, x, y, shape, net, hole, plated, null);
+	const createReadback = assertPadReadback(createdObject, id, layer, x, y, shape, net, hole, plated, null, padType);
 	const defaultsReadback = createReadback.mask as Record<string, number>;
 	progress.defaultsReadback = { ...defaultsReadback };
 	const allAfterCreate = await readExistingIds(host, 'pad');
@@ -390,7 +390,7 @@ async function applyPartialMaskSnapshot(host: GeometryHost, originalSource: Sour
 	setStage('verify-created-pad-source-before-mask-snapshot');
 	const afterCreate = await readSource(host, `部分阻焊修改前读取 PAD 完整源码 ${id}`);
 	const { data: createdData, report: createSourceVerification } = assertOneNewSourceRecord(originalSource, afterCreate, 'PAD', id, net);
-	assertPadSource(createdData, id, layer, x, y, shape, net, hole, plated, null);
+	assertPadSource(createdData, id, layer, x, y, shape, net, hole, plated, null, padType);
 	const applied = { ...defaultsReadback, ...requested };
 	progress.applied = { ...applied };
 	const pendingBaseline = await readSource(host, `部分阻焊写入前重核 PAD 源码基线 ${id}`);
@@ -399,7 +399,7 @@ async function applyPartialMaskSnapshot(host: GeometryHost, originalSource: Sour
 	const freshObject = await host.read(`部分阻焊修改前刷新 PAD ${id} 的几何与默认值`, async () => await host.sdk.pcb_PrimitivePad.get(id));
 	if (!freshObject)
 		throw new Error(`部分阻焊修改前 PAD ${id} 刷新读回为空`);
-	const freshReadback = assertPadReadback(freshObject, id, layer, x, y, shape, net, hole, plated, null);
+	const freshReadback = assertPadReadback(freshObject, id, layer, x, y, shape, net, hole, plated, null, padType);
 	if (stableJson(freshReadback) !== stableJson(createReadback))
 		throw new Error(`部分阻焊修改前 PAD ${id} 的几何或默认值已变化`);
 	const freshSource = await readSource(host, `部分阻焊修改前最终读取 PAD 源码 ${id}`);
@@ -420,14 +420,14 @@ async function applyPartialMaskSnapshot(host: GeometryHost, originalSource: Sour
 	const modifiedObject = await host.read(`部分阻焊修改后按 ID 读回 PAD ${id}`, async () => await host.sdk.pcb_PrimitivePad.get(id));
 	if (!modifiedObject)
 		throw new Error(`部分阻焊修改后的 PAD ${id} 按 ID 读回为空`);
-	const finalReadback = assertPadReadback(modifiedObject, id, layer, x, y, shape, net, hole, plated, applied);
+	const finalReadback = assertPadReadback(modifiedObject, id, layer, x, y, shape, net, hole, plated, applied, padType);
 	const allAfterModify = await readExistingIds(host, 'pad');
 	if (!allAfterModify.has(id))
 		throw new Error(`部分阻焊修改后的 PAD ${id} 不在 pcb_PrimitivePad.getAll() 中`);
 	setStage('verify-mask-modified-pad-source');
 	const afterModify = await readSource(host, `部分阻焊修改后读取 PAD 完整源码 ${id}`);
 	const data = assertOnlyPadMaskChanged(afterCreate, afterModify, id, applied);
-	assertPadSource(data, id, layer, x, y, shape, net, hole, plated, applied);
+	assertPadSource(data, id, layer, x, y, shape, net, hole, plated, applied, padType);
 	host.recordVerified(id);
 	return {
 		defaultsReadback,
@@ -486,7 +486,7 @@ function padGeometryReadbackReport(requested: { x: number; y: number; shape: unk
 	};
 }
 
-function assertPadReadback(object: any, id: string, layer: number, x: number, y: number, shape: unknown[], net: string, hole: unknown, plated: boolean, mask: unknown): PadGetterReadback {
+function assertPadReadback(object: any, id: string, layer: number, x: number, y: number, shape: unknown[], net: string, hole: unknown, plated: boolean, mask: unknown, padType = 0): PadGetterReadback {
 	const actualId = state<string>(object, 'PrimitiveId');
 	const actualType = state<string>(object, 'PrimitiveType');
 	const actualLayer = state<number>(object, 'Layer');
@@ -509,14 +509,14 @@ function assertPadReadback(object: any, id: string, layer: number, x: number, y:
 	if (actualId !== id || actualType !== 'Pad' || actualLayer !== layer || actualPadNumber !== ''
 		|| !matchesExactOrTenthQuantization(actualX, x) || !matchesExactOrTenthQuantization(actualY, y) || !numbersEqual(actualRotation, 0)
 		|| !padShapeGetterMatches(actualShape, shape) || !netMatches
-		|| stableJson(actualHole ?? null) !== stableJson(hole) || !holeOffsetsMatch || actualPlated !== plated || actualPadType !== 0 || actualLock !== false
+		|| stableJson(actualHole ?? null) !== stableJson(hole) || !holeOffsetsMatch || actualPlated !== plated || actualPadType !== padType || actualLock !== false
 		|| !maskMatches) {
 		throw new Error(`新焊盘 ${id} 的独立 SDK 读回属性与请求不符：${stableJson({ actualId, actualType, actualLayer, actualPadNumber, actualX, actualY, actualRotation, actualShape, actualNet, actualHole, actualHoleOffsetX, actualHoleOffsetY, actualPlated, actualPadType, actualMask, actualLock })}`);
 	}
 	return { mask: actualMask, x: actualX as number, y: actualY as number, shape: actualShape as unknown[] };
 }
 
-function assertPadSource(data: Record<string, any>, id: string, layer: number, x: number, y: number, shape: unknown[], net: string, hole: unknown, plated: boolean, mask: any): void {
+function assertPadSource(data: Record<string, any>, id: string, layer: number, x: number, y: number, shape: unknown[], net: string, hole: unknown, plated: boolean, mask: any, padType = 0): void {
 	const expectedShape = sourcePadShape(shape);
 	const shapeMatches = expectedShape !== undefined && stableJson(data.defaultPad) === stableJson(expectedShape);
 	const holeMatches = holeSourceMatches(data.hole ?? null, hole);
@@ -524,7 +524,7 @@ function assertPadSource(data: Record<string, any>, id: string, layer: number, x
 	const holeOffsetsMatch = hole == null || (numbersEqual(data.padOffsetX, 0) && numbersEqual(data.padOffsetY, 0));
 	const maskMatches = maskSourceMatches(data, mask);
 	if (!shapeMatches || !holeMatches || data.layerId !== layer || data.centerX !== x || data.centerY !== y
-		|| data.padAngle !== 0 || data.plated !== plated || data.padType !== 'NORMAL' || data.num !== '' || !netMatches || !holeOffsetsMatch || !maskMatches) {
+		|| data.padAngle !== 0 || data.plated !== plated || data.padType !== (padType === 1 ? 'TEST' : 'NORMAL') || data.num !== '' || !netMatches || !holeOffsetsMatch || !maskMatches) {
 		throw new Error(`新焊盘 ${id} 的源码几何/孔/层/网络/阻焊读回与请求不符：${stableJson({ id, data, expected: { layer, x, y, shape, net, hole, plated, mask } })}`);
 	}
 }
@@ -697,11 +697,14 @@ async function placePad(params: Record<string, any>) {
 			throw new Error('焊盘写入前完整源码与 GeometryHost 基线不一致');
 		const existing = await readExistingIds(host, 'pad');
 		await host.assertBaseline(baseline);
-		stage = 'create-smd-pad';
+		stage = input.padType === 'test' ? 'create-test-point-pad' : 'create-smd-pad';
 		const layer = input.layer === 'top' ? TOP : BOTTOM;
+		const padType = (input.padType === 'test' ? 1 : 0) as EPCB_PrimitivePadType;
 		const shape = input.shape === 'circle'
 			? { shape: 'circle' as const, diameter: input.diameter! }
-			: { shape: 'rectangle' as const, width: input.width!, height: input.height!, cornerRadius: input.cornerRadius! };
+			: input.shape === 'rectangle'
+				? { shape: 'rectangle' as const, width: input.width!, height: input.height!, cornerRadius: input.cornerRadius! }
+				: { shape: 'oval' as const, width: input.width!, height: input.height! };
 		const pad = padShapeForSdk(shape);
 		const mask = normalizeMaskRequest(input.solderMaskAndPasteMaskExpansion);
 		const partialMask = isPartialMaskRequest(mask);
@@ -720,7 +723,7 @@ async function placePad(params: Record<string, any>) {
 			0,
 			0,
 			false,
-			0,
+			padType,
 			undefined,
 			partialMask ? null : mask,
 			undefined,
@@ -733,12 +736,13 @@ async function placePad(params: Record<string, any>) {
 			throw new Error('焊盘创建返回的图元 ID 缺失或执行前已存在，结果未知');
 		host.recordCreated(id);
 		if (partialMask) {
-			const partialResult: Record<string, unknown> = { id, primitiveType: 'Pad', purpose: 'standalone-smd-pad', status: 'created-unverified', requestedMask: mask };
+			const partialResult: Record<string, unknown> = { id, primitiveType: 'Pad', purpose: input.padType === 'test' ? 'standalone-test-point' : 'standalone-smd-pad', padType: input.padType, status: 'created-unverified', requestedMask: mask };
 			created.push(partialResult);
-			const verified = await applyPartialMaskSnapshot(host, before, baseline.rules, id, layer, input.x, input.y, pad, input.net ?? '', null, false, mask, nextStage => stage = nextStage, partialResult);
+			const verified = await applyPartialMaskSnapshot(host, before, baseline.rules, id, layer, input.x, input.y, pad, input.net ?? '', null, false, mask, nextStage => stage = nextStage, partialResult, padType);
 			Object.assign(partialResult, {
 				status: 'verified',
-				purpose: 'standalone-smd-pad',
+				purpose: input.padType === 'test' ? 'standalone-test-point' : 'standalone-smd-pad',
+				padType: input.padType,
 				x: input.x,
 				y: input.y,
 				layer: input.layer,
@@ -757,17 +761,17 @@ async function placePad(params: Record<string, any>) {
 		if (!readback)
 			throw new Error(`SMT 焊盘 ${id} 按 ID 读回为空`);
 		const all = await readExistingIds(host, 'pad');
-		const getterReadback = assertPadReadback(readback, id, layer, input.x, input.y, pad, input.net ?? '', null, false, mask);
+		const getterReadback = assertPadReadback(readback, id, layer, input.x, input.y, pad, input.net ?? '', null, false, mask, padType);
 		const actualMask = getterReadback.mask;
 		if (!all.has(id))
 			throw new Error(`SMT 焊盘 ${id} 不在 pcb_PrimitivePad.getAll() 中`);
 		stage = 'verify-smd-pad-source';
 		const after = await readSource(host, `读回独立 SMT PAD 源码 ${id}`);
 		const { data, report: sourceVerification } = assertOneNewSourceRecord(before, after, 'PAD', id, input.net ?? '');
-		assertPadSource(data, id, layer, input.x, input.y, pad, input.net ?? '', null, false, mask);
+		assertPadSource(data, id, layer, input.x, input.y, pad, input.net ?? '', null, false, mask, padType);
 		const geometryReadback = padGeometryReadbackReport({ x: input.x, y: input.y, shape: pad }, getterReadback, data);
 		host.recordVerified(id);
-		created.push({ id, primitiveType: 'Pad', purpose: 'standalone-smd-pad', x: input.x, y: input.y, layer: input.layer, padShape: pad, geometryReadback, ...(shape.shape === 'rectangle' ? { requestedCornerRadiusMil: shape.cornerRadius, sdkRadiusValue: pad[3], sdkRadiusRepresentation: 'percent-of-half-minimum-side' } : {}), net: input.net ?? '', solderMaskSource: mask ? 'explicit-expansion' : 'host-rule', solderMaskAndPasteMaskExpansion: maskReadbackReport(mask, actualMask), sourceReadback: { type: 'PAD', layerId: data.layerId, centerX: data.centerX, centerY: data.centerY, defaultPad: data.defaultPad, hole: data.hole, plated: data.plated, padType: data.padType, sourceVerification } });
+		created.push({ id, primitiveType: 'Pad', purpose: input.padType === 'test' ? 'standalone-test-point' : 'standalone-smd-pad', padType: input.padType, x: input.x, y: input.y, layer: input.layer, padShape: pad, geometryReadback, ...(shape.shape === 'rectangle' ? { requestedCornerRadiusMil: shape.cornerRadius, sdkRadiusValue: pad[3], sdkRadiusRepresentation: 'percent-of-half-minimum-side' } : {}), net: input.net ?? '', solderMaskSource: mask ? 'explicit-expansion' : 'host-rule', solderMaskAndPasteMaskExpansion: maskReadbackReport(mask, actualMask), sourceReadback: { type: 'PAD', layerId: data.layerId, centerX: data.centerX, centerY: data.centerY, defaultPad: data.defaultPad, hole: data.hole, plated: data.plated, padType: data.padType, sourceVerification } });
 		await host.finish();
 		return { documentUuid: host.documentUuid, operation: 'placePad', created, verifiedIds: created.map(item => item.id), saved: false, drc: 'not run', manufacturingExportVerified: false };
 	}
@@ -795,21 +799,22 @@ export const padHoleCommands: ICommandDef[] = [
 	},
 	{
 		name: 'pcb.placePad',
-		summary: '在明确指定的顶层或底层放置独立圆形或矩形 SMT 焊盘；不创建孔或器件。',
+		summary: '在明确指定的顶层或底层放置独立圆形、长圆或矩形焊盘；可选择标记为测试点，不创建孔或器件。',
 		params: [
 			{ name: 'x', type: 'number', required: true, description: '焊盘中心 X，单位 mil。' },
 			{ name: 'y', type: 'number', required: true, description: '焊盘中心 Y，单位 mil。' },
 			{ name: 'layer', type: 'top|bottom', required: true, description: '独立焊盘所在外层。' },
-			{ name: 'shape', type: 'circle|rectangle', required: true, description: '圆形或矩形；圆形传 diameter，矩形传 width 和 height。' },
+			{ name: 'shape', type: 'circle|oval|rectangle', required: true, description: 'circle 传 diameter；oval 创建 OVAL 长圆焊盘并传 width 和 height，交换宽高即可改变长轴方向；rectangle 传 width 和 height，可选 cornerRadius。真椭圆虽可创建，但 EDA 保存重开会将其改成圆形，因此本命令在写入前拒绝 ellipse。' },
+			{ name: 'padType', type: 'normal|test', description: '可选焊盘用途类型；默认 normal。test 会创建官方 TEST 类型焊盘，表示单个测试点；不自动选网、排布或避让。' },
 			{ name: 'diameter', type: 'number', description: '圆形直径，单位 mil。' },
-			{ name: 'width', type: 'number', description: '矩形宽，单位 mil。' },
-			{ name: 'height', type: 'number', description: '矩形高，单位 mil。' },
+			{ name: 'width', type: 'number', description: '矩形或长圆焊盘宽，单位 mil。oval 必填。' },
+			{ name: 'height', type: 'number', description: '矩形或长圆焊盘高，单位 mil。oval 必填。' },
 			{ name: 'cornerRadius', type: 'number', description: '矩形圆角半径，公开输入单位 mil；省略时为 0。插件按 SDK 形式转换为 200×圆角半径/min(width,height)，即短边半尺寸的百分比；要求 0 到 min(width,height)/2。' },
 			{ name: 'net', type: 'string', description: '可选网络名；省略时不绑定网络。无需预先创建网络；创建新网时宿主可能生成该网默认 NET/规则记录，插件仅接受读回确认的默认记录，已有规则和非目标数据仍保持。' },
 			{ name: 'solderMaskAndPasteMaskExpansion', type: 'object', description: '可选 SDK 扩展数值对象：topSolderMask、bottomSolderMask、topPasteMask、bottomPasteMask，单位 mil。省略或传空对象时按宿主默认创建；提供1–3个字段时先按宿主默认创建并读回四项，再将未提供字段按该次读回值显式固定后按同一ID修改，属于 explicit-with-default-snapshot，不是未来动态继承；四字段完整时直接创建。实际 getter/source 与请求均需匹配。solderMaskOpen 不支持。' },
 		],
-		returns: '返回新建 PAD 的 ID、请求几何和独立 SDK/源码读回。矩形圆角另返回公开 requestedCornerRadiusMil、SDK sdkRadiusValue 和表示形式；SDK 值按短边半尺寸百分比映射。已有宿主制造对照只验证了指定样本，不保证其它圆角输入的制造形状。X/Y 与椭圆宽高 getter 若按 0.1 mil 规则量化，会报告请求值、getter 值、源码值及量化字段；源码仍须精确等于请求值。1–3个阻焊字段时报告 explicit-with-default-snapshot、requested、defaultsReadback、applied 和 defaultedFields；未提供字段被显式设置为创建时的 getter 值，不是未来动态继承。阻焊 effective 只表示 getter 实际值，不证明规则求值结果。读回验证不代表已保存或已验证制造导出；不会保存，不执行 DRC 或制造导出。写入结果未知时停止，不自动重试或删除。',
-		example: { cmd: 'pcb.placePad', params: { x: 500, y: 500, layer: 'top', shape: 'circle', diameter: 60 } },
+		returns: '返回新建 PAD 的 ID、用途类型、请求几何和独立 SDK/源码读回；test 类型只有在 padType getter 和 PAD 源码均读回 TEST 时才报告已验证。矩形圆角另返回公开 requestedCornerRadiusMil、SDK sdkRadiusValue 和表示形式；SDK 值按短边半尺寸百分比映射。已有宿主制造对照只验证了指定样本，不保证其它圆角输入的制造形状。X/Y 与圆形 ELLIPSE getter 若按 0.1 mil 规则量化，会报告请求值、getter 值、源码值及量化字段；源码仍须精确等于请求值。OVAL 宽高需与 getter 和源码精确一致。非等径 ELLIPSE 因保存重开会退化成圆形而不支持。1–3个阻焊字段时报告 explicit-with-default-snapshot、requested、defaultsReadback、applied 和 defaultedFields；未提供字段被显式设置为创建时的 getter 值，不是未来动态继承。阻焊 effective 只表示 getter 实际值，不证明规则求值结果。读回验证不代表已保存或已验证制造导出；不会保存、运行DRC或导出测试点表。写入结果未知时停止，不自动重试或删除。',
+		example: { cmd: 'pcb.placePad', params: { x: 500, y: 500, layer: 'top', shape: 'circle', diameter: 60, padType: 'test' } },
 		handler: placePad,
 	},
 ];

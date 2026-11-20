@@ -37,6 +37,7 @@ async function main() {
 	let failRequestFor = '';
 	let delayStatusMs = 0;
 	let delayOutputMs = 0;
+	let effectiveSettings = {};
 	const requests = [];
 	const json = value => ({ ok: true, status: 200, json: async () => value });
 	globalThis.eda = {
@@ -112,8 +113,9 @@ async function main() {
 			},
 		},
 		sys_ClientUrl: {
-			request: async (url, method) => {
+			request: async (url, method, body) => {
 				requests.push({ url, method });
+				if (method === 'POST' && /\/jobs\/[^/]+\/settings$/u.test(url)) effectiveSettings = JSON.parse(body);
 				if (url.includes(failRequestFor) && failRequestFor)
 					throw new Error('mock network failure');
 				if (url.endsWith('/system/status'))
@@ -123,7 +125,7 @@ async function main() {
 				if (url.endsWith('/jobs/enqueue'))
 					return json({ id: `job-${++routeJobCounter}` });
 				if (/\/jobs\/[^/]+\/settings$/.test(url))
-					return json({ ok: true });
+					return json(effectiveSettings);
 				if (/\/jobs\/[^/]+\/input$/.test(url))
 					return json({ ok: true });
 				if (/\/jobs\/[^/]+\/start$/.test(url))

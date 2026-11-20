@@ -1,0 +1,352 @@
+{
+  "capture": "host differential collector; minimal source records, layers, and SDK netRules only",
+  "source": "{\"type\":\"DOCHEAD\"}||{\"docType\":\"PCB\",\"client\":\"fixture\",\"uuid\":\"fixture-diff-pair\",\"updateTime\":1,\"version\":\"1\"}|\n{\"type\":\"NET\",\"ticket\":73,\"id\":\"[\\\"NET\\\",\\\"__ACE_PAIR_0_P\\\"]\"}||{\"netType\":null,\"specialColor\":null,\"retLine\":true,\"differentialName\":\"ACE_TEST_PAIR\",\"isPositiveNet\":true,\"equalLengthGroupName\":null}|\n{\"type\":\"NET\",\"ticket\":74,\"id\":\"[\\\"NET\\\",\\\"__ACE_PAIR_0_N\\\"]\"}||{\"netType\":null,\"specialColor\":null,\"retLine\":true,\"differentialName\":\"ACE_TEST_PAIR\",\"isPositiveNet\":false,\"equalLengthGroupName\":null}|\n{\"type\":\"RULE_TEMPLATE\",\"ticket\":75,\"id\":\"RULE_TEMPLATE\"}||{\"name\":\"\"}|\n{\"type\":\"RULE\",\"ticket\":76,\"id\":\"[\\\"RULE\\\",\\\"SAFE\\\",\\\"copperThickness1oz\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"isForAll\":\"ALL\",\"safeSpacing\":[{\"layerId\":1,\"isOpen\":true,\"content\":[[4],[6,6],[6,6,6],[6,6,6,6],[6,6,6,6,6],[6,6,6,6,6,6],[6,6,6,6,6,6,6],[10,10,10,10,10,10,10,10],[11.8,6,6,6,6,6,6,10,6],[6,6,6,6,6,6,6,10,11.8,6],[6,6,6,6,6,6,6,10,6,6,6],[11.8,11.8,11.8,11.8,11.8,11.8,11.8,10,11.8,11.8,11.8],[6.9,6.9,6.9,6.9,6.9,6.9,6.9,10,6.9,6.9,6.9,6.9]],\"columnNames\":[]}]}}|\n{\"type\":\"RULE\",\"ticket\":77,\"id\":\"[\\\"RULE\\\",\\\"OTHER\\\",\\\"otherClearance\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"deviceClearance\":0,\"thru2SmdClearance\":10,\"holeClearance\":11.8}}|\n{\"type\":\"RULE\",\"ticket\":78,\"id\":\"[\\\"RULE\\\",\\\"CREEPAGE\\\",\\\"creepage\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"creepageDistance\":0,\"ignoreLayer\":true}}|\n{\"type\":\"RULE\",\"ticket\":79,\"id\":\"[\\\"RULE\\\",\\\"TRACK\\\",\\\"copperThickness1oz\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"track\":{\"isOpen\":true,\"content\":[{\"layerId\":1,\"stroMin\":5,\"stroDef\":10,\"stroMax\":100}]}}}|\n{\"type\":\"RULE\",\"ticket\":80,\"id\":\"[\\\"RULE\\\",\\\"NET_LENGTH\\\",\\\"netLength\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"netLenMin\":0,\"netLenMax\":0}}|\n{\"type\":\"RULE\",\"ticket\":81,\"id\":\"[\\\"RULE\\\",\\\"NET_LENGTH_TOLERANCE\\\",\\\"netLengthTolerance\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"netLengthTolerance\":1000}}|\n{\"type\":\"RULE\",\"ticket\":82,\"id\":\"[\\\"RULE\\\",\\\"DIFFER_ENTAIL\\\",\\\"differentialPair\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"stroWidth\":{\"isOpen\":true,\"content\":[{\"layerId\":1,\"stroMin\":5,\"stroMax\":100,\"stroDef\":100}]},\"spacing\":{\"isOpen\":true,\"content\":[{\"layerId\":1,\"spacMin\":5,\"spacDef\":6}]},\"differPairLenTolerMax\":10,\"toleranceUnit\":\"mm\"}}|\n{\"type\":\"RULE\",\"ticket\":83,\"id\":\"[\\\"RULE\\\",\\\"BLIND\\\",\\\"blindVia\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"blinds\":{\"content\":[]}}}|\n{\"type\":\"RULE\",\"ticket\":84,\"id\":\"[\\\"RULE\\\",\\\"RADIUS\\\",\\\"viaSize\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"minRadius\":10,\"defRadius\":12,\"maxRadius\":40,\"minInner\":5,\"defInner\":6,\"maxInner\":20}}|\n{\"type\":\"RULE\",\"ticket\":85,\"id\":\"[\\\"RULE\\\",\\\"PLANE\\\",\\\"innerPlane\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"mulPad\":{\"isOpen\":true,\"content\":[{\"layerId\":1,\"connType\":\"DIVERGENCE\",\"spoSpac\":10,\"spoWidth\":10,\"spoAng\":90}]}}}|\n{\"type\":\"RULE\",\"ticket\":86,\"id\":\"[\\\"RULE\\\",\\\"COPPER\\\",\\\"copperRegion\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"sglPad\":{\"isOpen\":true,\"content\":[{\"layerId\":1,\"connType\":\"DIVERGENCE\",\"spoSpac\":10,\"spoWidth\":10,\"spoAng\":90}]},\"mulPad\":{\"isOpen\":true,\"content\":[{\"layerId\":1,\"connType\":\"DIVERGENCE\",\"spoSpac\":10,\"spoWidth\":10,\"spoAng\":90}]},\"track\":{\"isOpen\":true,\"content\":[{\"layerId\":1,\"connType\":\"DIRECT\"}]}}}|\n{\"type\":\"RULE\",\"ticket\":87,\"id\":\"[\\\"RULE\\\",\\\"PASTE\\\",\\\"pasteMaskExpansion\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"padTopExpan\":0,\"padBotExpan\":0,\"testPointTopExpan\":-1000,\"testPointBotExpan\":-1000}}|\n{\"type\":\"RULE\",\"ticket\":88,\"id\":\"[\\\"RULE\\\",\\\"SOLDER\\\",\\\"solderMaskExpansion\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"padTopExpan\":2,\"padBotExpan\":2,\"viaTopExpan\":-1000,\"viaBotExpan\":-1000,\"testPointTopExpan\":2,\"testPointBotExpan\":2}}|\n{\"type\":\"RULE\",\"ticket\":89,\"id\":\"[\\\"RULE\\\",\\\"AUTO_ROUTER\\\",\\\"Common\\\"]\"}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"routingCorner\":\"L45\",\"isKeep\":1,\"viaQuantity\":\"LESS\",\"routingEffectPriority\":\"COMPLETION_FIRST\",\"layers\":[1,2,12],\"ignoreNets\":[]}}|\n{\"type\":\"RULE_SELECTOR\",\"ticket\":90,\"id\":\"[\\\"RULE_SELECTOR\\\",[\\\"NET\\\",\\\"__ACE_PAIR_0_P\\\"]]\"}||{\"ruleOrder\":4,\"ruleKeyValue\":{},\"copperValue\":{},\"innerPlaneValue\":{},\"parent\":null}|\n{\"type\":\"RULE_SELECTOR\",\"ticket\":91,\"id\":\"[\\\"RULE_SELECTOR\\\",[\\\"NET\\\",\\\"__ACE_PAIR_0_N\\\"]]\"}||{\"ruleOrder\":4,\"ruleKeyValue\":{},\"copperValue\":{},\"innerPlaneValue\":{},\"parent\":null}|\n{\"type\":\"RULE_SELECTOR\",\"ticket\":92,\"id\":\"[\\\"RULE_SELECTOR\\\",[\\\"DIFF_PAIR\\\",\\\"ACE_TEST_PAIR\\\"]]\"}||{\"ruleOrder\":4,\"ruleKeyValue\":{},\"copperValue\":{},\"innerPlaneValue\":{},\"parent\":null}|",
+  "layers": [
+    {
+      "id": 1,
+      "layerId": 1,
+      "name": "Top Layer",
+      "layerName": "Top Layer",
+      "type": "SIGNAL",
+      "status": 1,
+      "layerStatus": 1
+    },
+    {
+      "id": 2,
+      "layerId": 2,
+      "name": "Bottom Layer",
+      "layerName": "Bottom Layer",
+      "type": "SIGNAL",
+      "status": 1,
+      "layerStatus": 1
+    },
+    {
+      "id": 15,
+      "layerId": 15,
+      "name": "In1.Cu",
+      "layerName": "In1.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 16,
+      "layerId": 16,
+      "name": "In2.Cu",
+      "layerName": "In2.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 17,
+      "layerId": 17,
+      "name": "In3.Cu",
+      "layerName": "In3.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 18,
+      "layerId": 18,
+      "name": "In4.Cu",
+      "layerName": "In4.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 19,
+      "layerId": 19,
+      "name": "In5.Cu",
+      "layerName": "In5.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 20,
+      "layerId": 20,
+      "name": "In6.Cu",
+      "layerName": "In6.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 21,
+      "layerId": 21,
+      "name": "In7.Cu",
+      "layerName": "In7.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 22,
+      "layerId": 22,
+      "name": "In8.Cu",
+      "layerName": "In8.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 23,
+      "layerId": 23,
+      "name": "In9.Cu",
+      "layerName": "In9.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 24,
+      "layerId": 24,
+      "name": "In10.Cu",
+      "layerName": "In10.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 25,
+      "layerId": 25,
+      "name": "In11.Cu",
+      "layerName": "In11.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 26,
+      "layerId": 26,
+      "name": "In12.Cu",
+      "layerName": "In12.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 27,
+      "layerId": 27,
+      "name": "In13.Cu",
+      "layerName": "In13.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 28,
+      "layerId": 28,
+      "name": "In14.Cu",
+      "layerName": "In14.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 29,
+      "layerId": 29,
+      "name": "In15.Cu",
+      "layerName": "In15.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 30,
+      "layerId": 30,
+      "name": "In16.Cu",
+      "layerName": "In16.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 31,
+      "layerId": 31,
+      "name": "In17.Cu",
+      "layerName": "In17.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 32,
+      "layerId": 32,
+      "name": "In18.Cu",
+      "layerName": "In18.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 33,
+      "layerId": 33,
+      "name": "In19.Cu",
+      "layerName": "In19.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 34,
+      "layerId": 34,
+      "name": "In20.Cu",
+      "layerName": "In20.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 35,
+      "layerId": 35,
+      "name": "In21.Cu",
+      "layerName": "In21.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 36,
+      "layerId": 36,
+      "name": "In22.Cu",
+      "layerName": "In22.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 37,
+      "layerId": 37,
+      "name": "In23.Cu",
+      "layerName": "In23.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 38,
+      "layerId": 38,
+      "name": "In24.Cu",
+      "layerName": "In24.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 39,
+      "layerId": 39,
+      "name": "In25.Cu",
+      "layerName": "In25.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 40,
+      "layerId": 40,
+      "name": "In26.Cu",
+      "layerName": "In26.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 41,
+      "layerId": 41,
+      "name": "In27.Cu",
+      "layerName": "In27.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 42,
+      "layerId": 42,
+      "name": "In28.Cu",
+      "layerName": "In28.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 43,
+      "layerId": 43,
+      "name": "In29.Cu",
+      "layerName": "In29.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 44,
+      "layerId": 44,
+      "name": "In30.Cu",
+      "layerName": "In30.Cu",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 45,
+      "layerId": 45,
+      "name": "Inner31",
+      "layerName": "Inner31",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    },
+    {
+      "id": 46,
+      "layerId": 46,
+      "name": "Inner32",
+      "layerName": "Inner32",
+      "type": "SIGNAL",
+      "status": 0,
+      "layerStatus": 0
+    }
+  ],
+  "netRules": [
+    {
+      "type": "net",
+      "name": "__ACE_PAIR_0_P",
+      "Safe Spacing": "default",
+      "Copper Safe Spacing": null,
+      "Plane Safe Spacing": null,
+      "Track": "default",
+      "Net Length Range": "default",
+      "Net Length Tolerance": null,
+      "Blind/Buried Via": "default",
+      "Via Size": "default",
+      "Plane Zone": "default",
+      "Copper Zone": "default",
+      "Solder Mask Expansion": "default",
+      "Paste Mask Expansion": "default",
+      "Creepage Distance": null,
+      "targetNet": null,
+      "Differential Pair": "default"
+    },
+    {
+      "type": "net",
+      "name": "__ACE_PAIR_0_N",
+      "Safe Spacing": "default",
+      "Copper Safe Spacing": null,
+      "Plane Safe Spacing": null,
+      "Track": "default",
+      "Net Length Range": "default",
+      "Net Length Tolerance": null,
+      "Blind/Buried Via": "default",
+      "Via Size": "default",
+      "Plane Zone": "default",
+      "Copper Zone": "default",
+      "Solder Mask Expansion": "default",
+      "Paste Mask Expansion": "default",
+      "Creepage Distance": null,
+      "targetNet": null,
+      "Differential Pair": "default"
+    }
+  ]
+}

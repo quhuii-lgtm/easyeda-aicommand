@@ -3,7 +3,8 @@ import type { GeometryHost } from '../geometryHost';
 import type { CopperObstacle, Point, RouteRequest } from './fanout-routing';
 import { normalizeBoardOutlinePolylines } from '../boardOutline';
 import { createGeometryHost } from '../geometryHost';
-import { normalizePouredPathSource, readEditorVersion } from '../pouredUnits';
+import { isClosedSimplePouredPathSource, normalizeMatchedSolidPouredPathSource } from '../pouredUnits';
+import { effectiveRecordsByType, parseSourceLog } from '../sourcelog';
 import { normalizeRoute, planRouteDetailed } from './fanout-routing';
 
 type Direction = 'auto' | '8directions' | 'N' | 'NE' | 'E' | 'SE' | 'S' | 'SW' | 'W' | 'NW';
@@ -49,7 +50,8 @@ interface PadInfo {
 }
 
 type LayerObstacle = CopperObstacle & { copperLayers?: number[]; ownerPadId?: string };
-interface Collected { pads: PadInfo[]; obstacles: LayerObstacle[]; board: Point[][]; keepouts: Point[][]; copperLayers: number[]; readCounts: Record<string, number>; warnings: string[]; complete: boolean }
+interface PouredNormalizationItem { pourId: string; fillId: string; status: 'normalized' | 'unsupported'; normalization: string; conversionFactor: number | null; fineness?: number; copperMarginMil: number | null; reason?: string }
+interface Collected { pads: PadInfo[]; obstacles: LayerObstacle[]; board: Point[][]; keepouts: Point[][]; copperLayers: number[]; readCounts: Record<string, number>; pouredNormalization: { basis: string; items: PouredNormalizationItem[] }; warnings: string[]; complete: boolean }
 
 const DIRS: Record<Exclude<Direction, 'auto' | '8directions'>, Point> = {
 	N: { x: 0, y: 1 },
@@ -424,9 +426,125 @@ function layerOf(obj: any, label: string): number {
 	return requiredState<number>(obj, 'getState_Layer', label);
 }
 
+function singleSourcePath(source: unknown): unknown {
+	if (!Array.isArray(source))
+		return source;
+	if (Array.isArray(source[0]))
+		return source.length === 1 ? source[0] : undefined;
+	return source;
+}
+function sdkPathOf(value: any): unknown {
+	const path = value?.path;
+	return typeof path?.getSource === 'function' ? path.getSource() : path;
+}
+function pathSourcesMatch(sdkPath: unknown, sourcePath: unknown): boolean {
+	const sdkSingle = singleSourcePath(sdkPath);
+	const sourceSingle = singleSourcePath(sourcePath);
+	return sdkSingle !== undefined && sourceSingle !== undefined && stableJson(sdkSingle) === stableJson(sourceSingle);
+}
+function pouredRecordParentId(recordId: unknown): string | undefined {
+	if (typeof recordId !== 'string')
+		return undefined;
+	try {
+		const tuple = JSON.parse(recordId);
+		return Array.isArray(tuple) && tuple.length === 2 && tuple[0] === 'POURED' && typeof tuple[1] === 'string' ? tuple[1] : undefined;
+	}
+	catch {
+		return undefined;
+	}
+}
+function uniqueById<T extends { id?: unknown }>(items: T[]): Map<string, T> | undefined {
+	const output = new Map<string, T>();
+	for (const item of items) {
+		if (typeof item?.id !== 'string' || !item.id || output.has(item.id))
+			return undefined;
+		output.set(item.id, item);
+	}
+	return output;
+}
+
+interface PouredSourceRecords {
+	pours: Map<string, any>;
+	poured: Map<string, any>;
+}
+
+function parsePouredSourceRecords(source: unknown, expectedUuid: string): PouredSourceRecords {
+	if (typeof source !== 'string')
+		throw new Error('getDocumentSource 未返回字符串');
+	const document = parseSourceLog(source);
+	if (document.docType.toUpperCase() !== 'PCB' || document.uuid !== expectedUuid)
+		throw new Error(`覆铜来源源码 DOCHEAD 与目标 PCB ${expectedUuid} 不一致`);
+	const pours = new Map<string, any>();
+	for (const record of effectiveRecordsByType(document, 'POUR')) {
+		if (typeof record.header.id !== 'string' || !record.header.id || !record.data || typeof record.data !== 'object' || Array.isArray(record.data))
+			throw new Error('源码 POUR 记录缺少有效 ID 或对象数据');
+		pours.set(record.header.id, record.data);
+	}
+	const poured = new Map<string, any>();
+	for (const record of effectiveRecordsByType(document, 'POURED')) {
+		const parentId = pouredRecordParentId(record.header.id);
+		if (!parentId || !record.data || typeof record.data !== 'object' || Array.isArray(record.data) || poured.has(parentId))
+			throw new Error('源码 POURED 记录缺少有效父 ID、对象数据或存在重复父记录');
+		poured.set(parentId, record.data);
+	}
+	return { pours, poured };
+}
+
+function verifyParentPourSourceMatch(pourObject: any, parentId: string, sourcePour: any): number {
+	if (!sourcePour)
+		throw new Error(`父覆铜 ${parentId} 的当前 POUR 源码记录缺失`);
+	if (requiredState<string>(pourObject, 'getState_PrimitiveId', `覆铜 ${parentId}`) !== parentId
+		|| requiredState<string>(pourObject, 'getState_Net', `覆铜 ${parentId}`) !== sourcePour.netName
+		|| layerOf(pourObject, `覆铜 ${parentId}`) !== sourcePour.layerId
+		|| String(requiredState<any>(pourObject, 'getState_PourFillMethod', `覆铜 ${parentId}`)).toLowerCase() !== 'solid'
+		|| !pathSourcesMatch(getPolygonState(pourObject), sourcePour.path)) {
+		throw new Error(`父覆铜 ${parentId} 的 SDK ID、网络、层、填充方式或路径与当前源码不一致`);
+	}
+	const pourType = sourcePour.pourType;
+	const fineness = pourType?.fineness;
+	if (String(pourType?.pourType ?? '').toUpperCase() !== 'SOLID' || !finite(fineness) || fineness < 0)
+		throw new Error(`父覆铜 ${parentId} 源码不是有效 SOLID 或 fineness 无效`);
+	const parentPath = singleSourcePath(sourcePour.path);
+	if (!(Array.isArray(parentPath) && parentPath[0] === 'R' && polygonSource(parentPath)?.length === 1)
+		&& !isClosedSimplePouredPathSource(parentPath)) {
+		throw new Error(`父覆铜 ${parentId} 边框不是受支持的单个闭合直线区域`);
+	}
+	return fineness;
+}
+
+function verifyPouredSourceMatch(pouredObject: any, pourObject: any, sourceRecords: PouredSourceRecords): { parentId: string; fineness: number; fills: Array<{ id: string; path: unknown; fill: boolean; lineWidth: number }> } {
+	const parentId = requiredState<string>(pouredObject, 'getState_PourPrimitiveId', '覆铜实填充');
+	const sourcePour = sourceRecords.pours.get(parentId);
+	const sourcePoured = sourceRecords.poured.get(parentId);
+	if (!sourcePour || !sourcePoured)
+		throw new Error(`父覆铜 ${parentId} 的当前 POUR/POURED 源码记录缺失`);
+	const fineness = verifyParentPourSourceMatch(pourObject, parentId, sourcePour);
+	const sdkFills = requiredState<any[]>(pouredObject, 'getState_PourFills', `覆铜实填充 ${parentId}`);
+	const sourceFills = sourcePoured.pourFill;
+	if (!Array.isArray(sdkFills) || !Array.isArray(sourceFills))
+		throw new Error(`父覆铜 ${parentId} SDK/源码子填充列表无效`);
+	const sdkById = uniqueById(sdkFills);
+	const sourceById = uniqueById(sourceFills);
+	if (!sdkById || !sourceById || sdkById.size !== sourceById.size || [...sdkById.keys()].some(id => !sourceById.has(id)))
+		throw new Error(`父覆铜 ${parentId} SDK 与源码子填充 ID 集合不一致`);
+	const fills = [];
+	for (const [id, sdkFill] of sdkById) {
+		const sourceFill = sourceById.get(id)!;
+		const path = sdkPathOf(sdkFill);
+		const sourcePath = sourceFill.path;
+		const strokeWidth = sourceFill.strokeWidth;
+		if (typeof sdkFill.fill !== 'boolean' || sdkFill.fill !== sourceFill.fill
+			|| !finite(sdkFill.lineWidth) || sdkFill.lineWidth !== strokeWidth
+			|| !pathSourcesMatch(path, sourcePath)) {
+			throw new Error(`父覆铜 ${parentId} 子填充 ${id} 的填充状态、线宽或路径与当前源码不一致`);
+		}
+		fills.push({ id, path, fill: sdkFill.fill, lineWidth: sdkFill.lineWidth });
+	}
+	return { parentId, fineness, fills };
+}
+
 async function collect(host: GeometryHost, readViaHoleSizes: boolean): Promise<Collected> {
 	const sdk = host.sdk;
-	const editorVersion = readEditorVersion(sdk);
 	const [regularPads, components, lines, arcs, vias, fills, pours, poured, regions, layers, holeLines, polylines] = await Promise.all([
 		host.read('读取全部独立焊盘', () => sdk.pcb_PrimitivePad.getAll()),
 		host.read('读取全部器件', () => sdk.pcb_PrimitiveComponent.getAll()),
@@ -447,6 +565,19 @@ async function collect(host: GeometryHost, readViaHoleSizes: boolean): Promise<C
 	const copperLayers = (layers as any[]).filter(layer => layer?.type === 'SIGNAL' || layer?.type === 'PLANE').map(layer => layer.id);
 	if (copperLayers.length < 2 || copperLayers.some(id => !Number.isInteger(id)))
 		throw new Error('SDK 铜层栈缺失或层身份无效');
+	let pouredSources: PouredSourceRecords | undefined;
+	let pouredSourceIssue: string | undefined;
+	if ((poured as any[]).length || (pours as any[]).length) {
+		const source = await host.read('读取覆铜实填充对应源码并确认坐标表示', () => sdk.sys_FileManager.getDocumentSource());
+		try {
+			pouredSources = parsePouredSourceRecords(source, host.documentUuid);
+		}
+		catch (error) {
+			// A parsed-source mismatch is reported as incomplete geometry below; host.read failures still stop collection.
+			pouredSources = undefined;
+			pouredSourceIssue = error instanceof Error ? error.message : String(error);
+		}
+	}
 	const pads = new Map<string, PadInfo>();
 	for (const pad of regularPads ?? []) {
 		const info = padToInfo(pad);
@@ -570,7 +701,7 @@ async function collect(host: GeometryHost, readViaHoleSizes: boolean): Promise<C
 		}
 		obstacles.push({ type: 'circle', center: { x, y }, radius: diameter / 2, ...(holeRadius == null ? {} : { holeRadius }), net: '', copperLayers });
 	}
-	for (const item of [...(fills ?? []), ...(pours ?? [])]) {
+	for (const item of fills ?? []) {
 		const layer = layerOf(item, '铜填充');
 		const src = getPolygonState(item);
 		const polygons = polygonSource(src);
@@ -594,6 +725,61 @@ async function collect(host: GeometryHost, readViaHoleSizes: boolean): Promise<C
 	}
 	const pourById = new Map((pours as any[]).map(pour => [requiredState<string>(pour, 'getState_PrimitiveId', '覆铜边框'), pour]));
 	let pouredFillChildren = 0;
+	const pouredNormalization: Collected['pouredNormalization'] = { basis: '读取当前PCB源码并按POUR/POURED ID与路径同SDK逐项核对；实测Gerber支持POURED坐标乘10作为mil几何表示，不构成官方单位承诺', items: [] };
+	const sdkPouredByParent = new Map<string, any>();
+	for (const item of poured as any[]) {
+		const parentId = requiredState<string>(item, 'getState_PourPrimitiveId', '覆铜实填充');
+		if (sdkPouredByParent.has(parentId)) {
+			complete = false;
+			warnings.push(`父覆铜 ${parentId} 存在重复 SDK 实填充对象`);
+		}
+		sdkPouredByParent.set(parentId, item);
+	}
+	for (const [parentId, pourObject] of pourById) {
+		const fillMethod = state<any>(pourObject, 'getState_PourFillMethod');
+		if (typeof fillMethod !== 'string') {
+			complete = false;
+			pouredNormalization.items.push({ pourId: parentId, fillId: '(unknown-cache)', status: 'unsupported', normalization: 'pour-fill-method-unknown', conversionFactor: null, copperMarginMil: null, reason: 'SDK没有返回可识别的覆铜填充方式' });
+			warnings.push(`覆铜 ${parentId} 填充方式无法读取，无法确认是否存在铜障碍`);
+			continue;
+		}
+		if (fillMethod.toLowerCase() !== 'solid') {
+			complete = false;
+			pouredNormalization.items.push({ pourId: parentId, fillId: '(unsupported-fill-method)', status: 'unsupported', normalization: 'unsupported-pour-fill-method', conversionFactor: null, copperMarginMil: null, reason: `填充方式 ${fillMethod} 的实际铜形状表示尚未实现` });
+			warnings.push(`覆铜 ${parentId} 的填充方式 ${fillMethod} 尚无实际铜几何适配，障碍覆盖不完整`);
+			continue;
+		}
+		if (!pouredSources) {
+			complete = false;
+			pouredNormalization.items.push({ pourId: parentId, fillId: '(missing-cache)', status: 'unsupported', normalization: 'fresh-source-unavailable', conversionFactor: null, copperMarginMil: null, reason: pouredSourceIssue ?? 'SOLID父覆铜缺少可解析的当前源码及POURED缓存' });
+			warnings.push(`SOLID 覆铜 ${parentId} 缺少可解析的当前 POUR/POURED 源码，障碍覆盖不完整`);
+			continue;
+		}
+		const sourcePour = pouredSources.pours.get(parentId);
+		try {
+			const fineness = verifyParentPourSourceMatch(pourObject, parentId, sourcePour);
+			const sourcePoured = pouredSources.poured.get(parentId);
+			const sdkObject = sdkPouredByParent.get(parentId);
+			if (!sourcePoured || !Array.isArray(sourcePoured.pourFill)) {
+				complete = false;
+				pouredNormalization.items.push({ pourId: parentId, fillId: '(missing-cache)', status: 'unsupported', normalization: 'poured-cache-missing', conversionFactor: null, fineness, copperMarginMil: null, reason: 'SOLID父覆铜缺少POURED源码缓存记录' });
+				warnings.push(`SOLID 覆铜 ${parentId} 缺少 POURED 缓存记录，障碍覆盖不完整`);
+			}
+			else if (!sdkObject && sourcePoured.pourFill.length > 0) {
+				complete = false;
+				pouredNormalization.items.push({ pourId: parentId, fillId: '(missing-getter)', status: 'unsupported', normalization: 'poured-getter-missing', conversionFactor: null, fineness, copperMarginMil: null, reason: '源码缓存有子填充但SDK没有对应POURED对象' });
+				warnings.push(`SOLID 覆铜 ${parentId} 源码有实填充子区但 SDK 缺少对应对象`);
+			}
+			else if (!sdkObject && sourcePoured.pourFill.length === 0) {
+				pouredNormalization.items.push({ pourId: parentId, fillId: '(empty-cache)', status: 'normalized', normalization: 'source-matched-empty-poured-cache', conversionFactor: 10, fineness, copperMarginMil: fineness / 2, reason: '当前源码明确记录无实填充子区' });
+			}
+		}
+		catch (error) {
+			complete = false;
+			pouredNormalization.items.push({ pourId: parentId, fillId: '(unknown)', status: 'unsupported', normalization: 'parent-source-match-failed', conversionFactor: null, copperMarginMil: null, reason: error instanceof Error ? error.message : String(error) });
+			warnings.push(`SOLID 覆铜 ${parentId} 父边框无法与当前源码核对，障碍覆盖不完整`);
+		}
+	}
 	for (const item of poured as any[]) {
 		const pourId = requiredState<string>(item, 'getState_PourPrimitiveId', '覆铜实填充');
 		const sourcePour = pourById.get(pourId);
@@ -608,36 +794,42 @@ async function collect(host: GeometryHost, readViaHoleSizes: boolean): Promise<C
 			warnings.push(`覆铜实填充 ${pourId} 的铜层 ID 无效`);
 			continue;
 		}
-		const regions = requiredState<any[]>(item, 'getState_PourFills', `覆铜实填充 ${pourId}`);
-		const parentPolygons = polygonSource(getPolygonState(sourcePour));
-		if (!Array.isArray(regions)) {
+		if (!pouredSources) {
 			complete = false;
-			warnings.push(`覆铜实填充 ${pourId} 子区域列表无效`);
+			pouredNormalization.items.push({ pourId, fillId: '(unknown)', status: 'unsupported', normalization: 'fresh-source-unavailable', conversionFactor: null, copperMarginMil: null, reason: '当前 POUR/POURED 源码无法解析' });
+			warnings.push(`覆铜实填充 ${pourId} 缺少可解析的当前源码配对，坐标未用于自动布线规划`);
 			continue;
 		}
-		for (const fill of regions) {
-			if (fill?.fill !== true)
-				continue;
+		let matched: ReturnType<typeof verifyPouredSourceMatch>;
+		try {
+			matched = verifyPouredSourceMatch(item, sourcePour, pouredSources);
+		}
+		catch (error) {
+			complete = false;
+			pouredNormalization.items.push({ pourId, fillId: '(unknown)', status: 'unsupported', normalization: 'source-match-failed', conversionFactor: null, copperMarginMil: null, reason: error instanceof Error ? error.message : String(error) });
+			warnings.push(`覆铜实填充 ${pourId} 与当前 POUR/POURED 源码无法一一核对；该区域不用于自动布线规划`);
+			continue;
+		}
+		if (matched.fills.length === 0)
+			pouredNormalization.items.push({ pourId, fillId: '(empty-cache)', status: 'normalized', normalization: 'source-matched-empty-poured-cache', conversionFactor: 10, fineness: matched.fineness, copperMarginMil: matched.fineness / 2, reason: 'SDK与源码均确认当前无实填充子区' });
+		for (const fill of matched.fills) {
 			pouredFillChildren++;
-			const rawPath = getPolygonState({ getState_ComplexPolygon: () => fill.path });
-			const normalized = normalizePouredPathSource(rawPath, { fill: fill.fill, lineWidth: fill.lineWidth, editorVersion, declaredCoordinateUnit: fill.coordinateUnit });
-			if (normalized.status !== 'normalized') {
+			const normalized = normalizeMatchedSolidPouredPathSource(fill.path, { sourceMatched: true, fill: fill.fill, lineWidth: fill.lineWidth, fineness: matched.fineness });
+			if (normalized.status !== 'normalized' || normalized.normalizedPathMil == null || normalized.copperMarginMil == null) {
 				complete = false;
-				warnings.push(`覆铜实填充 ${pourId} 坐标无法安全归一化（${normalized.normalization}，EDA ${normalized.editorVersion ?? '未知版本'}）；该区域不用于自动布线规划`);
+				pouredNormalization.items.push({ pourId, fillId: fill.id, status: 'unsupported', normalization: normalized.normalization, conversionFactor: null, fineness: matched.fineness, copperMarginMil: null, reason: '仅支持来源匹配、显式闭合的直线SOLID实填充' });
+				warnings.push(`覆铜实填充 ${pourId} 子区 ${fill.id} 不是受支持的来源匹配直线实填充`);
 				continue;
 			}
 			const polygons = polygonSource(normalized.normalizedPathMil);
-			if (!polygons || !finite(fill.lineWidth) || fill.lineWidth < 0) {
+			const parentPolygons = polygonSource(getPolygonState(sourcePour));
+			if (!polygons || polygons.length !== 1 || !parentPolygons || polygons[0].some(point => !parentPolygons.some(parent => insideOrOnPolygon(point, parent)))) {
 				complete = false;
-				warnings.push(`覆铜实填充 ${pourId} 中有无法读取的直线多边形`);
+				pouredNormalization.items.push({ pourId, fillId: fill.id, status: 'unsupported', normalization: 'normalized-path-invalid-or-outside-parent', conversionFactor: null, fineness: matched.fineness, copperMarginMil: null, reason: '归一化结果不是单个区域或落在父边框之外' });
 				continue;
 			}
-			if (!parentPolygons || polygons.some(points => points.some(point => !parentPolygons.some(parent => insideOrOnPolygon(point, parent))))) {
-				complete = false;
-				warnings.push(`覆铜实填充 ${pourId} 归一化后与父边框坐标不一致`);
-				continue;
-			}
-			for (const points of polygons) obstacles.push({ type: 'polygon', points, margin: fill.lineWidth / 2, bounds: polygonBounds(points), net: '', copperLayers: [layer] });
+			obstacles.push({ type: 'polygon', points: polygons[0], margin: normalized.copperMarginMil, bounds: polygonBounds(polygons[0]), net: '', copperLayers: [layer] });
+			pouredNormalization.items.push({ pourId, fillId: fill.id, status: 'normalized', normalization: normalized.normalization, conversionFactor: normalized.conversionFactor, fineness: matched.fineness, copperMarginMil: normalized.copperMarginMil });
 		}
 	}
 	for (const polyline of polylines as any[]) {
@@ -707,6 +899,7 @@ async function collect(host: GeometryHost, readViaHoleSizes: boolean): Promise<C
 			regions: (regions as any[]).length,
 		},
 		warnings: [...new Set(warnings)],
+		pouredNormalization,
 		complete,
 	};
 }
@@ -873,6 +1066,7 @@ function makePlan(input: FanoutInput, dims: ReturnType<typeof dimensions>, colle
 				scope: 'local fanout geometry model; this is not native DRC or full-board clearance acceptance',
 				status: collected.complete ? 'complete-for-supported-local-geometry' : 'incomplete',
 				readCounts: collected.readCounts,
+				pouredNormalization: collected.pouredNormalization,
 				warnings: collected.warnings,
 				precision: 'PAD位置和外形按SDK对象getter构建，未从原始源码读取PAD几何；独立PAD与封装PAD保持各自getter来源。新建线/过孔按ID读回getter与计划值比较，当前实现容差为0.001 mil。该读回不证明原始源码精度或不同图元的统一量化。',
 				unknown: ['原生 DRC 未调用；规则违例、完整电气/制造规则以及 SDK 未公开或未读取的对象未核验'],
@@ -1011,7 +1205,7 @@ export const fanoutCommands: Array<ICommandDef> = [
 			{ name: 'clearance', type: 'number', description: '安全间距（mil）；当前未核实 DRC 规则字段，需要明确提供' },
 			{ name: 'staggerLength', type: 'number', description: '按目标顺序沿出口垂线正负各偏移 staggerLength/2，mil，默认 0' },
 		],
-		returns: '扇出计划，含真实目标坐标、网络、层、线宽、过孔尺寸、搜索覆盖与 executable；coverage.geometryReview 返回 readCounts（SDK 读取数量，并非逐项检查通过数）、局部模型 status、warnings、unknown、precision 及 nativeDrc.status。PAD 模型来自 SDK getter；精度来源和局部覆盖不能代替原生 DRC 或制造验收。不写入 PCB。',
+		returns: '只读扇出计划，含真实目标坐标、网络、层、线宽、过孔尺寸及 executable。板框支持矩形与闭合直线 POLY（含凹形）。实际 SOLID POURED 仅在fresh源码与SDK的父/子ID、网络、层和路径匹配时纳入：子区raw坐标按实测×10表示为mil几何，父fineness/2作为铜边半径只加一次；这是实测表示，不是官方单位保证。coverage.geometryReview.pouredNormalization 返回来源依据和逐区因子、fineness、边距；父POUR边框本身不算实铜，缓存缺失、父子不匹配或未支持的填充/路径会令几何覆盖不完整并阻止计划。其余字段返回局部覆盖和原生DRC状态；不写入PCB，也不替代原生DRC或制造验收。',
 		example: { cmd: 'pcb.getFanoutPlan', params: { padIds: ['pad-id'], lineLength: 120, lineWidth: 8, viaDiameter: 24, holeDiameter: 12, clearance: 8 } },
 		handler: getPlan,
 	},

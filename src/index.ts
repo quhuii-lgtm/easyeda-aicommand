@@ -18,13 +18,17 @@ import { openSmtQuery as openSmtQueryAtOwner } from './bridge/smtMenu';
 import { launchPcbToolsAction } from './menus/pcb-tools';
 import { autoCopperCommands } from './commands/autoCopper';
 import { componentAttributeCommands } from './commands/componentAttributes';
+import { copperShapeReviewCommands } from './commands/copperShapeReview';
+import { copperKeepoutCommands } from './commands/copperKeepouts';
 import { dfmCommands } from './commands/dfm';
 import { diffPairCommands } from './commands/diffPair';
 import { lengthTuneCommands } from './commands/tuneLength';
 import { editorCommands } from './commands/editor';
 import { fanoutCommands } from './commands/fanout';
 import { knowledgeCommands } from './commands/knowledge';
+import { kiRoutingCommands } from './commands/kirouting';
 import { libCommands } from './commands/lib';
+import { localRoutingReviewCommands } from './commands/localRoutingReview';
 import { manufacturingProfileCommands } from './commands/manufacturingProfile';
 import { moduleCommands } from './commands/module';
 import { padBranchCommands } from './commands/padBranches';
@@ -32,8 +36,18 @@ import { netSilkscreenCommands } from './commands/netSilkscreen';
 import { padExpansionCommands } from './commands/padExpand';
 import { padHoleCommands } from './commands/padHole';
 import { pcbCommands } from './commands/pcb';
+import { pcbCanvasOriginCommands } from './commands/pcbCanvasOrigin';
+import { pcbPlacementPrimitiveCommands } from './commands/pcbPlacementPrimitives';
+import { pcbPlacementImageCommands } from './commands/pcbPlacementImage';
+import { pcbNativeAutomationCommands } from './commands/pcbNativeAutomation';
+import { pcbNativeJobCommands } from './commands/pcbNativeJobs';
+import { pcbElectricalPlacementCommands } from './commands/pcbElectricalPlacement';
 import { pcbRuleCommands } from './commands/pcbRules';
+import { pcbRuleProfileCommands } from './commands/pcbRuleProfiles';
 import { pcbGroupingCommands } from './commands/pcbGrouping';
+import { pcbEditBatchCommands } from './commands/pcbEditBatch';
+import { pcbRatlineCommands } from './commands/pcbRatlines';
+import { pcbPadPairCommands } from './commands/pcbPadPairs';
 import { pcbRegionMarkerCommands } from './commands/pcbRegionMarkers';
 import { pcbLayerColorCommands } from './commands/pcbLayerColor';
 import { libraryCommands, projectCommands } from './commands/project';
@@ -55,7 +69,18 @@ function registerAllCommands(): void {
 		...editorCommands,
 		...schematicCommands,
 		...pcbCommands,
+		...pcbCanvasOriginCommands,
+		...pcbPlacementPrimitiveCommands,
+		...pcbPlacementImageCommands,
+		...localRoutingReviewCommands,
+		...copperShapeReviewCommands,
+		...copperKeepoutCommands,
+		...kiRoutingCommands,
+		...pcbNativeAutomationCommands,
+		...pcbNativeJobCommands,
+		...pcbElectricalPlacementCommands,
 		...pcbRuleCommands,
+		...pcbRuleProfileCommands,
 		...diffPairCommands,
 		...padBranchCommands,
 		...lengthTuneCommands,
@@ -69,6 +94,9 @@ function registerAllCommands(): void {
 		...netSilkscreenCommands,
 		...dfmCommands,
 		...pcbGroupingCommands,
+		...pcbEditBatchCommands,
+		...pcbRatlineCommands,
+		...pcbPadPairCommands,
 		...pcbRegionMarkerCommands,
 		...pcbLayerColorCommands,
 		...moduleCommands,
@@ -418,11 +446,11 @@ export async function pcbAutoRouteStopMenu(): Promise<void> {
 }
 
 export async function pcbAutoRouteFetchMenu(): Promise<void> {
-	await startPcbMenuAction('pcb-tools-route-fetch', '取回已完成 SES');
+	await startPcbMenuAction('pcb-tools-route-fetch', '取回布线结果或日志');
 }
 
 export async function pcbAutoRouteImportMenu(): Promise<void> {
-	await startPcbMenuAction('pcb-tools-route-import', '显式导入已取回 SES');
+	await startPcbMenuAction('pcb-tools-route-import', '预检并导入布线结果');
 }
 
 export async function pcbMarkSchematicRegionsMenu(): Promise<void> {

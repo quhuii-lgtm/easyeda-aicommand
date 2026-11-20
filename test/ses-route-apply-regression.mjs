@@ -25,18 +25,18 @@ const sourceText = state => {
 		{ type: 'DOCHEAD', ticket: 1, data: { docType: 'PCB', uuid: boardUuid, updateTime: 1 } },
 		{ type: 'POURED', id: 'pour-real', ticket: 2 },
 		...state.lines.map((line, index) => ({ type: 'LINE', id: line.id, ticket: index + 3 })),
-		...state.vias.map((via, index) => ({ type: 'VIA', id: via.id, ticket: index + 20 })),
+		...state.vias.map((via, index) => ({ type: 'VIA', id: via.id, ticket: index + 20, data: { netName: via.net, centerX: via.x, centerY: via.y, viaDiameter: via.sourceViaDiameterMil ?? via.diameterMil, holeDiameter: via.holeDiameterMil, viaType: via.viaType === 0 ? 'NORMAL' : via.viaType === 1 ? 'BLIND' : 'BURIED', locked: via.locked ?? false } })),
 		...state.arcs.map((arc, index) => ({ type: 'ARC', id: arc.id, ticket: index + 40 })),
 	]
 	return records.map(record => `${JSON.stringify(record)}||${JSON.stringify(record.data ?? { keep: true })}`).join('|\n')
 }
-const routeObj = (type, item) => {
+const routeObj = (type, item, sdkViaRounding = false) => {
 	if (type === 'LINE') return { ...getters({ PrimitiveId: item.id, Net: item.net, Layer: item.layer, LineWidth: item.widthMil, StartX: item.a.x, StartY: item.a.y, EndX: item.b.x, EndY: item.b.y, PrimitiveLock: Boolean(item.locked) }) }
-	if (type === 'VIA') return { ...getters({ PrimitiveId: item.id, Net: item.net, X: item.x, Y: item.y, Diameter: item.diameterMil, HoleDiameter: item.holeDiameterMil, ViaType: item.viaType ?? 0, PrimitiveLock: Boolean(item.locked) }) }
+	if (type === 'VIA') return { ...getters({ PrimitiveId: item.id, Net: item.net, X: item.x, Y: item.y, Diameter: sdkViaRounding ? Math.round(item.diameterMil * 10) / 10 : item.diameterMil, HoleDiameter: sdkViaRounding ? Math.round(item.holeDiameterMil * 10) / 10 : item.holeDiameterMil, ViaType: item.viaType ?? 0, PrimitiveLock: Boolean(item.locked) }) }
 	return { ...getters({ PrimitiveId: item.id, Net: item.net, Layer: item.layer, LineWidth: item.widthMil, StartX: item.start.x, StartY: item.start.y, EndX: item.end.x, EndY: item.end.y, ArcAngle: item.angle, PrimitiveLock: Boolean(item.locked) }) }
 }
 
-function makeBoard({ shortLineMissing = false, nativeVia = false, oldLine = false, deleteFails = false, compensationDeleteFails = false, createThrows = false, createHangs = false, unknownExtra = false, oldDriftAfterCreate = false, ratlineResult = true, ratlineThrows = false, ratlineHangs = false, mergeLineAtCall = 0, mergeFault = undefined, mergeWithExisting = false, replaceViaAtMerge = false, reuseMergeCandidateAtCall = 0, splitMergedLineAtCall = 0, splitFault = undefined, splitBaselineLineAtCall = 0, splitAtX = undefined, finalSplitAtRouteRead = 0, finalSplitFault = undefined, failRouteReadAt = 0 } = {}) {
+function makeBoard({ shortLineMissing = false, nativeVia = false, oldLine = false, deleteFails = false, compensationDeleteFails = false, createThrows = false, createHangs = false, unknownExtra = false, oldDriftAfterCreate = false, ratlineResult = true, ratlineThrows = false, ratlineHangs = false, mergeLineAtCall = 0, mergeFault = undefined, mergeWithExisting = false, replaceViaAtMerge = false, reuseMergeCandidateAtCall = 0, splitMergedLineAtCall = 0, splitFault = undefined, splitBaselineLineAtCall = 0, splitAtX = undefined, finalSplitAtRouteRead = 0, finalSplitFault = undefined, failRouteReadAt = 0, sdkViaRounding = false, sourceViaDiameterOverride = undefined } = {}) {
 	const state = {
 		lines: oldLine ? [mergeWithExisting ? { id: 'line-old', net: 'N1', layer: 1, widthMil: 10.05, a: { x: 0, y: 0 }, b: { x: 10, y: 0 }, locked: false } : { id: 'line-old', net: 'OLD', layer: 1, widthMil: 8, a: { x: 10, y: 0 }, b: { x: 20, y: 0 }, locked: false }] : [],
 		vias: [],
@@ -137,16 +137,16 @@ function makeBoard({ shortLineMissing = false, nativeVia = false, oldLine = fals
 			delete: async ids => { state.events.push('delete-line'); state.deleteLineCalls.push([...ids]); if (deleteFails || (compensationDeleteFails && ids.every(id => id.startsWith('line-new-')))) return false; state.lines = state.lines.filter(item => !ids.includes(item.id)); return true },
 		},
 		pcb_PrimitiveVia: {
-			getAll: async () => state.vias.map(item => routeObj('VIA', item)),
+			getAll: async () => state.vias.map(item => routeObj('VIA', item, sdkViaRounding)),
 			getAllPrimitiveId: async () => state.vias.map(item => item.id),
-			get: async id => { state.events.push('read-via'); return state.vias.some(item => item.id === id) ? routeObj('VIA', state.vias.find(item => item.id === id)) : undefined },
-			create: async (net, x, y, holeDiameterMil, diameterMil) => { state.createViaCalls++; state.events.push('create-via'); const item = { id: `via-new-${state.createViaCalls}`, net, x, y, holeDiameterMil, diameterMil, viaType: 0, locked: false }; state.vias.push(item); return { getState_PrimitiveId: () => item.id } },
+			get: async id => { state.events.push('read-via'); return state.vias.some(item => item.id === id) ? routeObj('VIA', state.vias.find(item => item.id === id), sdkViaRounding) : undefined },
+			create: async (net, x, y, holeDiameterMil, diameterMil) => { state.createViaCalls++; state.events.push('create-via'); const item = { id: `via-new-${state.createViaCalls}`, net, x, y, holeDiameterMil, diameterMil, sourceViaDiameterMil: sourceViaDiameterOverride, viaType: 0, locked: false }; state.vias.push(item); return { getState_PrimitiveId: () => item.id } },
 			delete: async ids => { state.events.push('delete-via'); state.deleteViaCalls.push([...ids]); state.vias = state.vias.filter(item => !ids.includes(item.id)); return true },
 		},
 		pcb_PrimitiveArc: { getAll: async () => state.arcs.map(item => routeObj('ARC', item)), delete: async ids => { state.deleteArcCalls.push([...ids]); return true } },
 		pcb_Document: { startCalculatingRatline: async () => { state.events.push('ratline'); state.ratlineCalls++; if (ratlineHangs) return await new Promise(() => {}); if (ratlineThrows) throw new Error('mock ratline rejected'); return ratlineResult }, importAutoRouteSesFile: async () => {
 			state.nativeImportCalls++
-			if (nativeVia) state.vias.push({ id: 'via-native-1', net: 'NATIVE', x: 50, y: 60, diameterMil: 24, holeDiameterMil: undefined, viaType: 0, locked: false })
+			if (nativeVia) state.vias.push({ id: 'via-native-1', net: 'NATIVE', x: 50, y: 60, diameterMil: 24, holeDiameterMil: 12, viaType: 0, locked: false })
 			return true
 		} },
 	}
@@ -305,6 +305,19 @@ const genericViaContext = makeContext(genericViaBoard, genericViaPrepared)
 await genericViaContext.apply(guardedWrite(genericViaContext))
 assert.deepEqual(genericViaBoard.state.events, ['create-line', 'create-via', 'read-via'], 'generic append retains line-first order and does not request ratline calculation')
 assert.equal(genericViaBoard.state.ratlineCalls, 0)
+
+const roundedViaBoard = makeBoard({ sdkViaRounding: true })
+const preciseVia = { ...via(10, 'N1', 11.812), diameterMil: 23.623 }
+const roundedViaPrepared = await prepare(roundedViaBoard, [], [preciseVia])
+const roundedViaContext = makeContext(roundedViaBoard, roundedViaPrepared)
+assert.equal((await roundedViaContext.apply(guardedWrite(roundedViaContext))).result.verified, true, 'fresh getter and full source readback preserve planned VIA precision across SDK one-decimal projection')
+assert.deepEqual(roundedViaBoard.state.events, ['create-via', 'read-via'])
+
+const wrongSourceBucketBoard = makeBoard({ sdkViaRounding: true, sourceViaDiameterOverride: 23.64 })
+const wrongSourceBucketPrepared = await prepare(wrongSourceBucketBoard, [], [preciseVia])
+const wrongSourceBucketContext = makeContext(wrongSourceBucketBoard, wrongSourceBucketPrepared)
+await assert.rejects(() => wrongSourceBucketContext.apply(guardedWrite(wrongSourceBucketContext)), /新过孔 .*几何读回失败/, 'SDK 23.6 cannot hide source 23.64 when the plan requires 23.623')
+assert.deepEqual(wrongSourceBucketBoard.state.events, ['create-via', 'read-via'], 'failed immediate source-paired readback blocks further work')
 
 const replaceViaBoard = makeBoard({ oldLine: true })
 const replaceViaPrepared = await prepare(replaceViaBoard, [line(30, 80)], [via(10)], 'replace-unlocked')
@@ -497,7 +510,7 @@ assert.equal(nativeResult.result.verified, true)
 assert.equal(nativeBoard.state.sourceWrites, 0)
 
 const alreadyBoard = makeBoard()
-alreadyBoard.state.vias.push({ id: 'via-existing', net: 'NATIVE', x: 50, y: 60, diameterMil: 24, holeDiameterMil: undefined, viaType: 0, locked: false })
+alreadyBoard.state.vias.push({ id: 'via-existing', net: 'NATIVE', x: 50, y: 60, diameterMil: 24, holeDiameterMil: 12, viaType: 0, locked: false })
 const alreadyPrepared = await prepare(alreadyBoard, [], [nativeVia])
 assert.equal(alreadyPrepared.plan.alreadyPresent, true)
 const alreadyContext = makeContext(alreadyBoard, alreadyPrepared)

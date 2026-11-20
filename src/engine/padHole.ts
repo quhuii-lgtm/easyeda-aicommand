@@ -1,7 +1,8 @@
 export type PadLayer = 'top' | 'bottom';
-export type PadShape =
-	| { shape: 'circle'; diameter: number }
-	| { shape: 'rectangle'; width: number; height: number; cornerRadius: number };
+export type PadShape
+	= { shape: 'circle'; diameter: number }
+		| { shape: 'oval'; width: number; height: number }
+		| { shape: 'rectangle'; width: number; height: number; cornerRadius: number };
 
 export interface PadMaskExpansion {
 	topSolderMask?: number;
@@ -25,6 +26,7 @@ export interface PlacePadInput {
 	y: number;
 	layer: PadLayer;
 	shape: PadShape['shape'];
+	padType: 'normal' | 'test';
 	diameter?: number;
 	width?: number;
 	height?: number;
@@ -33,9 +35,9 @@ export interface PlacePadInput {
 	solderMaskAndPasteMaskExpansion?: PadMaskExpansion;
 }
 
-const commonKeys = new Set(['__docUuid', '_timeoutMs']);
+const commonKeys = new Set(['__docUuid', '__projectUuid', '_timeoutMs']);
 const holeKeys = new Set(['x', 'y', 'holeDiameter', 'plated', 'padDiameter', 'net', 'solderMaskAndPasteMaskExpansion']);
-const padKeys = new Set(['x', 'y', 'layer', 'shape', 'diameter', 'width', 'height', 'cornerRadius', 'net', 'solderMaskAndPasteMaskExpansion']);
+const padKeys = new Set(['x', 'y', 'layer', 'shape', 'padType', 'diameter', 'width', 'height', 'cornerRadius', 'net', 'solderMaskAndPasteMaskExpansion']);
 const maskKeys = new Set(['topSolderMask', 'bottomSolderMask', 'topPasteMask', 'bottomPasteMask']);
 
 function ensureOnlyKeys(params: Record<string, unknown>, allowed: Set<string>, command: string): void {
@@ -97,8 +99,12 @@ export function validatePlacePad(params: Record<string, any>): PlacePadInput {
 	const y = finiteNumber(params.y, 'y');
 	if (params.layer !== 'top' && params.layer !== 'bottom')
 		throw new Error('layer 必须明确为 top 或 bottom；多层焊盘不属于 pcb.placePad');
-	if (params.shape !== 'circle' && params.shape !== 'rectangle')
-		throw new Error('shape 必须是 circle 或 rectangle');
+	if (params.shape === 'ellipse')
+		throw new Error('真椭圆焊盘暂不支持：保存重开会退化成圆形；未执行写入。请改用 circle 或 oval');
+	if (!['circle', 'oval', 'rectangle'].includes(params.shape))
+		throw new Error('shape 必须是 circle、oval 或 rectangle');
+	if (params.padType !== undefined && params.padType !== 'normal' && params.padType !== 'test')
+		throw new Error('padType 只能是 normal 或 test');
 	if (Object.hasOwn(params, 'net') && typeof params.net !== 'string')
 		throw new Error('net 必须是字符串');
 	let shape: PadShape;
@@ -107,7 +113,7 @@ export function validatePlacePad(params: Record<string, any>): PlacePadInput {
 			throw new Error('圆形焊盘只接受 diameter，不接受 width/height/cornerRadius');
 		shape = { shape: 'circle', diameter: finiteNumber(params.diameter, 'diameter', true) };
 	}
-	else {
+	else if (params.shape === 'rectangle') {
 		if (Object.hasOwn(params, 'diameter'))
 			throw new Error('矩形焊盘使用 width 和 height，不接受 diameter');
 		const width = finiteNumber(params.width, 'width', true);
@@ -117,21 +123,29 @@ export function validatePlacePad(params: Record<string, any>): PlacePadInput {
 			throw new Error('cornerRadius 必须在 0 到 min(width,height)/2 之间');
 		shape = { shape: 'rectangle', width, height, cornerRadius };
 	}
+	else {
+		if (Object.hasOwn(params, 'diameter') || Object.hasOwn(params, 'cornerRadius'))
+			throw new Error('长圆焊盘使用 width 和 height，不接受 diameter/cornerRadius');
+		shape = { shape: 'oval', width: finiteNumber(params.width, 'width', true), height: finiteNumber(params.height, 'height', true) };
+	}
 	const mask = validateMaskExpansion(params.solderMaskAndPasteMaskExpansion);
 	return {
 		x,
 		y,
 		layer: params.layer,
 		...shape,
+		padType: params.padType ?? 'normal',
 		...(params.net === undefined ? {} : { net: params.net }),
 		...(mask === undefined ? {} : { solderMaskAndPasteMaskExpansion: mask }),
 	};
 }
 
 export function padShapeForSdk(input: PadShape): [string, number, number] | [string, number, number, number] {
-	return input.shape === 'circle'
-		? ['ELLIPSE', input.diameter, input.diameter]
-		: ['RECT', input.width, input.height, 200 * input.cornerRadius / Math.min(input.width, input.height)];
+	if (input.shape === 'circle')
+		return ['ELLIPSE', input.diameter, input.diameter];
+	if (input.shape === 'oval')
+		return ['OVAL', input.width, input.height];
+	return ['RECT', input.width, input.height, 200 * input.cornerRadius / Math.min(input.width, input.height)];
 }
 
 export function circlePolygonSource(x: number, y: number, diameter: number): ['CIRCLE', number, number, number] {

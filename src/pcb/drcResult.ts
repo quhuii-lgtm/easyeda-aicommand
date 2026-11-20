@@ -59,7 +59,11 @@ export const parseDrcResult = (value: unknown, editorVersion?: string): DrcResul
 	const violations: DrcViolation[] = []
 	const unrecognizedNodes: DrcResult['unrecognizedNodes'] = []
 	const categories = new Set<string>()
-	const rawCoordinatesAre10Mil = editorVersion === '4.1.78'
+	let positionedLeafCount = 0
+	let unknownPositionedLeafCount = 0
+	// Retained only for compatibility with existing callers. Coordinate recognition is
+	// based on the returned native record structure, never an editor-version whitelist.
+	void editorVersion
 	const walk = (node: unknown, groupPath: string[]) => {
 		if (Array.isArray(node)) {
 			for (const child of node)
@@ -91,15 +95,38 @@ export const parseDrcResult = (value: unknown, editorVersion?: string): DrcResul
 
 		const explanation = asRecord(record.explanation) ?? {}
 		const errData = asRecord(record.errData) ?? asRecord(explanation.errData) ?? {}
-		const pos = asRecord(record.pos) ?? asRecord(errData.position) ?? {}
+		const recordPosition = asRecord(record.pos)
+		const rawPosition = recordPosition ?? asRecord(errData.position) ?? {}
+		const nativeErrData = asRecord(explanation.errData)
+		const nativePosition = asRecord(nativeErrData?.position)
 		const severity = getSeverity(record, groupPath)
 		const objectIds = Array.isArray(record.objs)
 			? record.objs.map(String)
 			: errData.obj1 != null ? [String(errData.obj1)] : []
-		const hasPosition = pos.x != null || pos.y != null
-		const convertedPosition = rawCoordinatesAre10Mil
-			&& typeof pos.x === 'number' && Number.isFinite(pos.x)
-			&& typeof pos.y === 'number' && Number.isFinite(pos.y)
+		const hasPosition = rawPosition.x != null || rawPosition.y != null
+		const finitePosition = (position: Record<string, any> | undefined): position is Record<string, number> =>
+			typeof position?.x === 'number' && Number.isFinite(position.x)
+			&& typeof position?.y === 'number' && Number.isFinite(position.y)
+		const positionsAgree = finitePosition(recordPosition) && finitePosition(nativePosition)
+			&& recordPosition.x === nativePosition.x && recordPosition.y === nativePosition.y
+		const nativeObj1 = nativeErrData?.obj1 == null ? undefined : String(nativeErrData.obj1)
+		const nativeIndex = nativeErrData?.globalIndex == null ? undefined : String(nativeErrData.globalIndex)
+		const recordIndex = record.globalIndex == null ? undefined : String(record.globalIndex)
+		const hasNativeParent = /^DRCTab\|_\|(?:Errors|Warnings)\|_\|/i.test(String(record.parentId ?? ''))
+		const objectsContainNativeObj = nativeObj1 !== undefined
+			&& Array.isArray(record.objs)
+			&& record.objs.some((id: unknown) => String(id) === nativeObj1)
+		const nativePositionEvidence = positionsAgree
+			&& nativeIndex !== undefined && nativeIndex.length > 0 && nativeIndex === recordIndex
+			&& hasNativeParent && objectsContainNativeObj
+		const convertedX = nativePositionEvidence ? rawPosition.x * 10 : undefined
+		const convertedY = nativePositionEvidence ? rawPosition.y * 10 : undefined
+		const convertedPosition = Number.isFinite(convertedX) && Number.isFinite(convertedY)
+		if (hasPosition) {
+			positionedLeafCount++
+			if (!convertedPosition)
+				unknownPositionedLeafCount++
+		}
 		const category = groupPath[0]
 		violations.push({
 			type: severity,
@@ -113,11 +140,18 @@ export const parseDrcResult = (value: unknown, editorVersion?: string): DrcResul
 			...(objectIds.length ? { primitiveId: objectIds[0], primitiveIds: objectIds } : {}),
 			...(record.errorObjType != null || errData.obj1Type != null ? { objectType: String(record.errorObjType ?? errData.obj1Type) } : {}),
 			...(errData.obj1Suffix != null ? { objectName: String(errData.obj1Suffix) } : {}),
-			...(pos.x != null ? { x: pos.x } : {}),
-			...(pos.y != null ? { y: pos.y } : {}),
+			...(rawPosition.x != null ? { x: rawPosition.x } : {}),
+			...(rawPosition.y != null ? { y: rawPosition.y } : {}),
 			...(hasPosition ? {
-				rawCoordinateUnit: rawCoordinatesAre10Mil ? '10mil' : 'unknown',
-				...(convertedPosition ? { xMil: Math.round(pos.x * 10 * 1_000_000) / 1_000_000, yMil: Math.round(pos.y * 10 * 1_000_000) / 1_000_000, coordinateUnit: 'mil' } : {}),
+				rawCoordinateUnit: convertedPosition ? '10mil' : 'unknown',
+				...(convertedPosition ? {
+					xMil: convertedX,
+					yMil: convertedY,
+					coordinateUnit: 'mil',
+					coordinateBasis: 'data-origin',
+					coordinateConversionFactor: 10,
+					coordinateEvidence: 'native-drc-verbose-position-source-association-empirical',
+				} : {}),
 			} : {}),
 			...(Array.isArray(errData.layerIds) ? { layerIds: errData.layerIds } : {}),
 			groupPath,
@@ -150,7 +184,7 @@ export const parseDrcResult = (value: unknown, editorVersion?: string): DrcResul
 			result: 'returned',
 			passedMeaning: 'no-findings-in-returned-results',
 		},
-		rawCoordinateUnit: rawCoordinatesAre10Mil ? '10mil' : 'unknown',
-		coordinateUnit: rawCoordinatesAre10Mil ? 'mil' : 'unknown',
+		rawCoordinateUnit: positionedLeafCount > 0 && unknownPositionedLeafCount === 0 ? '10mil' : 'unknown',
+		coordinateUnit: positionedLeafCount > 0 && unknownPositionedLeafCount === 0 ? 'mil' : 'unknown',
 	}
 }

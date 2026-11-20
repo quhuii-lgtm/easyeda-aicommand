@@ -22,7 +22,8 @@ export interface ReportedCopperLayer {
 export interface ReportedCopperDifference { layerId: number; requestedOz: number; reportedOz: number }
 export interface ReportedCopper { status: 'available' | 'partial' | 'unavailable'; layers: ReportedCopperLayer[]; matchesTarget: boolean | null; differences: ReportedCopperDifference[]; messages: string[] }
 export interface DfmRun { results: CheckResult[]; expectedCount: number; issues: DfmIssue[]; coverage: string[]; upstreamPassed: boolean; complete: boolean; passed: boolean; reportedCopper?: ReportedCopper }
-type DfmParams = {material?:string;thickness?:number;standard?:'economy'|'standard';minSpacingMm?:number;outerCopperOz?:number;innerCopperOz?:number}
+export type PadPurposeEvidence = { padId: string; classification: 'nc' | 'reserved' | 'mechanical' | 'other'; reason: string; source: string }
+type DfmParams = {material?:string;thickness?:number;standard?:'economy'|'standard';minSpacingMm?:number;outerCopperOz?:number;innerCopperOz?:number;padPurposeEvidence?: PadPurposeEvidence[]}
 export const UPSTREAM_INFO = { repository: 'https://github.com/easyeda/eext-jlc-order-dfm-checker', commit: 'afd538786d510f537ad4fa47c6329e6a99dc7625', version: '1.0.4', license: 'Apache-2.0' } as const;
 export { JLC_SUPPORTED_MATERIALS };
 export const DFM_COVERAGE = ['线距只检查正间隙 Line；不含接触、重叠、Arc 和 Polyline。', '长圆及不等边焊环按最大轴近似。', '同网焊盘间距使用胶囊体及内接圆近似。', '部分检查按有效铜图元层数启发式判定；第12/13项按设计铜层数分档。', 'EIA/BGA 按封装名称启发式识别。', '定位 ID 使用两组列表索引辅助匹配。'];
@@ -285,7 +286,7 @@ const ESYS_LogType: any = {INFO:0,WARNING:1,ERROR:2};
   return `外层${params.outerCopperOz}oz最小${outer.width}mm/${outer.spacing}mm；${designCount > 2 ? `内层${params.innerCopperOz}oz最小${inner.width}mm/${inner.spacing}mm` : '内层不适用'}（设计${designCount}层）`;
  };
  const runPcb = async (): Promise<CheckResult[]> => {
-  const checks: Array<[number,string,()=>Promise<CheckResult>|CheckResult]> = [[1,'板材类型',()=>checkMaterialType()],[2,'层数',()=>checkLayerCount()],[3,'纵横尺寸',()=>checkBoardSize()],[4,'板厚',()=>checkBoardThickness()],[5,'外层铜厚',()=>checkOuterCopperThickness()],[6,'内层铜厚',()=>checkInnerCopperThickness()],[7,'过孔类型',()=>checkViaType()],[8,'过孔钻孔直径',()=>checkHoleDiameter()],[9,'过孔/焊盘外径',()=>checkViaPadDiameter()],[10,'有铜槽孔',()=>checkSlotWithCopper()],[11,'无铜槽孔',()=>checkSlotWithoutCopper()],[12,'最小线宽',()=>checkMinTraceWidth()],[13,'最小线距',()=>checkMinTraceSpacing()],[14,'焊盘/过孔到线间距',()=>checkPadToLineSpacing()],[15,'有铜插件焊盘焊环',()=>checkPluginPadRingWithCopper()],[16,'无铜插件焊盘焊环',()=>checkPluginPadRingWithoutCopper()],[17,'BGA焊盘',()=>checkBgaPad()],[18,'丝印字符',()=>checkString()]];
+  const checks: Array<[number,string,()=>Promise<CheckResult>|CheckResult]> = [[1,'板材类型',()=>checkMaterialType()],[2,'层数',()=>checkLayerCount()],[3,'纵横尺寸',()=>checkBoardSize()],[4,'板厚',()=>checkBoardThickness()],[5,'外层铜厚',()=>checkOuterCopperThickness()],[6,'内层铜厚',()=>checkInnerCopperThickness()],[7,'过孔类型',()=>checkViaType()],[8,'过孔钻孔直径',()=>checkHoleDiameter()],[9,'过孔/焊盘外径',()=>checkViaPadDiameter()],[10,'有铜槽孔',()=>checkSlotWithCopper()],[11,'无铜槽孔',()=>checkSlotWithoutCopper()],[12,'最小线宽',()=>checkMinTraceWidth()],[13,'最小线距',()=>checkMinTraceSpacing()],[14,'焊盘/过孔到线间距',()=>checkPadToLineSpacing(params.padPurposeEvidence ?? [])],[15,'有铜插件焊盘焊环',()=>checkPluginPadRingWithCopper()],[16,'无铜插件焊盘焊环',()=>checkPluginPadRingWithoutCopper()],[17,'BGA焊盘',()=>checkBgaPad()],[18,'丝印字符',()=>checkString()]];
   const out: CheckResult[]=[]; for(const [n,item,fn] of checks){try{out.push(await fn())}catch(e){issues.push({code:'check_failed',item:n,message:String(e)});out.push(CHECK_FAILURE(n,item,'检查失败：'+String(e)))}} return out;
  };
  const runSmt = async (): Promise<CheckResult[]> => {
@@ -776,7 +777,7 @@ async function checkViaType(): Promise<CheckResult> {
 		let buried = 0;
 		let unknown = 0;
 		const supportsBlind = standard ? standard.viaTypes.includes('blind') : true;
-		const violations: { x: number; y: number; id: string; reason: string; type: string; locateType?: string }[] = [];
+ const violations: { x: number; y: number; id: string; reason: string; type: string; locateType?: string }[] = [];
 
 		for (const via of vias) {
 			const ruleName = via.designRuleBlindViaName ?? via.state?.designRuleBlindViaName ?? null;
@@ -1770,7 +1771,7 @@ function padOvalToSegClearanceMil(padX: number, padY: number, halfW: number, hal
 	return dAxis - r - lineHalfWidth;
 }
 
-async function checkPadToLineSpacing(): Promise<CheckResult> {
+async function checkPadToLineSpacing(projectPurposeEvidence: PadPurposeEvidence[] = []): Promise<CheckResult> {
 	const result: CheckResult = {
 		number: 14,
 		item: '焊盘/过孔到线间距',
@@ -1843,6 +1844,7 @@ async function checkPadToLineSpacing(): Promise<CheckResult> {
 		const lineCache = lines.map((line: any) => {
 			const l = line;
 			return {
+				id: l.getState_PrimitiveId?.() ?? l.primitiveId ?? '',
 				net: netById.get(l.getState_PrimitiveId?.() ?? l.primitiveId ?? '') ?? netOf(l),
 				layer: String(l.getState_Layer?.() ?? l.layer ?? l.layerId ?? 0),
 				widthMil: l.getState_LineWidth?.() ?? l.lineWidth ?? l.width ?? 0,
@@ -1872,11 +1874,12 @@ async function checkPadToLineSpacing(): Promise<CheckResult> {
 		// 预构建铜皮(pour)区域:网络 + 层 + 轮廓点/外接框
 		// 用于判定焊盘/过孔是否落在铜皮内(焊盘常仅经铜皮连到某网络,需由铜皮网络反推)
 		const pours = await eda.pcb_PrimitivePour.getAll();
-		const pourRegions: { net: string; layer: string; pts?: { x: number; y: number }[]; bbox?: { minX: number; maxX: number; minY: number; maxY: number } }[] = [];
+		const pourRegions: { id: string; net: string; layer: string; pts?: { x: number; y: number }[]; bbox?: { minX: number; maxX: number; minY: number; maxY: number } }[] = [];
 		for (const pour of pours) {
 			const pr: any = pour;
 			const net = pr.getState_Net?.() ?? '';
 			const layer = String(pr.getState_Layer?.() ?? pr.layer ?? 0);
+			const id = pr.getState_PrimitiveId?.() ?? pr.primitiveId ?? '';
 			if (!net)
 				continue;
 			let poly: any = null;
@@ -1913,7 +1916,7 @@ async function checkPadToLineSpacing(): Promise<CheckResult> {
 				/* 离散化失败则只用外接框 */
 			}
 			if (pts || bbox)
-				pourRegions.push({ net, layer, pts, bbox });
+				pourRegions.push({ id, net, layer, pts, bbox });
 		}
 		// 点是否落在铜皮区域内(优先精确轮廓 pointInPolygon,否则外接框)
 		const inRegion = (x: number, y: number, rg: any): boolean => {
@@ -1926,8 +1929,20 @@ async function checkPadToLineSpacing(): Promise<CheckResult> {
 		// 检查焊盘到线的间距(同层 + 仅不同网络)
 		// 注:Pad.getState_Net() 对 SMT 焊盘常返回 undefined,故焊盘网络改由相接走线/过孔推断
 		// (走线 getState_Net 可靠);相接线视为同网络,不判间距。
+		const padNetworkClassification: Array<Record<string, unknown>> = [];
+		const padIds = pads.map((pad: any) => String(pad.getState_PrimitiveId?.() ?? pad.primitiveId ?? '')).filter(Boolean);
+		const idCounts = new Map<string, number>();
+		for (const id of padIds) idCounts.set(id, (idCounts.get(id) ?? 0) + 1);
+		const evidenceById = new Map(projectPurposeEvidence.map(evidence => [evidence.padId, evidence]));
+		const matchedEvidenceIds = new Set<string>();
+		const evaluatedEvidenceIds = new Set<string>();
 		for (const pad of pads) {
 			const p: any = pad;
+			const pid = p.getState_PrimitiveId?.() ?? p.primitiveId ?? '';
+			const evidenceKey = String(pid);
+			const suppliedPurpose = evidenceById.get(evidenceKey);
+			if (suppliedPurpose)
+				matchedEvidenceIds.add(evidenceKey);
 			const _padLayerRaw = p.getState_Layer?.() ?? p.layer ?? p.layerId ?? 0;
 			const padLayer = String(_padLayerRaw);
 			const padIsMulti = Number(_padLayerRaw) === 12; // EPCB_LayerId.MULTI=12: 多层/通孔焊盘贯穿所有铜层
@@ -1937,7 +1952,6 @@ async function checkPadToLineSpacing(): Promise<CheckResult> {
 			const padX = p.getState_X?.() ?? p.x ?? 0;
 			const padY = p.getState_Y?.() ?? p.y ?? 0;
 			const padRadiusMil = outerMil / 2;
-			const pid = p.getState_PrimitiveId?.() ?? p.primitiveId ?? '';
 			// pad shape: rectangle exact clearance; non-rect falls back to circular max/2
 			const padShapeRaw: any = p.getState_Pad?.() ?? p.pad ?? null;
 			let padHalfW = padRadiusMil; let padHalfH = padRadiusMil; let padRotRad = 0; let padIsRect = false;
@@ -1956,9 +1970,12 @@ async function checkPadToLineSpacing(): Promise<CheckResult> {
 				padIsRect ? padRectToSegClearanceMil(padX, padY, padHalfW, padHalfH, padRotRad, seg, lineHalfW) : padOvalToSegClearanceMil(padX, padY, padHalfW, padHalfH, padRotRad, seg, lineHalfW);
 			// 焊盘网络集合 = 自身网络 ∪ 相接走线网络 ∪ 相接过孔网络
 			const padNets = new Set<string>();
+			const networkEvidence: Array<{ source: string; id?: string; net: string }> = [];
 			const pn = netById.get(pid) ?? netOf(p);
-			if (pn)
+			if (pn) {
 				padNets.add(pn);
+				networkEvidence.push({ source: netById.has(pid) ? 'pcb_Net.getAllPrimitivesByNet' : 'pad.getState_Net', id: pid, net: pn });
+			}
 			// Connectivity-based (most reliable; sees through teardrops): read nets of primitives the API says connect to this pad.
 			try {
 				const conn: any[] = await p.getConnectedPrimitives?.(false);
@@ -1966,8 +1983,10 @@ async function checkPadToLineSpacing(): Promise<CheckResult> {
 					for (const c of conn) {
 						const cid = c.getState_PrimitiveId?.() ?? c.primitiveId ?? '';
 						const cn = (cid && netById.get(cid)) || netOf(c);
-						if (cn)
+						if (cn) {
 							padNets.add(cn);
+							networkEvidence.push({ source: 'pad.getConnectedPrimitives', id: cid || undefined, net: cn });
+						}
 					}
 				}
 			}
@@ -1979,24 +1998,67 @@ async function checkPadToLineSpacing(): Promise<CheckResult> {
 			// getState_Net 对自动网络($1N)返回不一致名,网络名已不可靠,故以"物理贴/穿焊盘"作为同网络的可靠判据。
 			// 代价:异网络走线真短路(相接)也会并入同网络跳过;但本项是间距检查(查边距>0 过近),不查短路。
 			for (const lc of sameLayerLines) {
-				if (clrPadLine(lc.seg, lc.widthMil / 2) <= 0 && lc.net)
+				if (clrPadLine(lc.seg, lc.widthMil / 2) <= 0 && lc.net) {
 					padNets.add(lc.net);
+					networkEvidence.push({ source: 'same-layer-line-contact', id: lc.id || undefined, net: lc.net });
+				}
 			}
 			for (const vc of viaCache) {
 				if (vc.radiusMil <= 0)
 					continue;
 				const dx = vc.x - padX;
 				const dy = vc.y - padY;
-				if (Math.sqrt(dx * dx + dy * dy) <= padRadiusMil + vc.radiusMil && vc.net)
+				if (Math.sqrt(dx * dx + dy * dy) <= padRadiusMil + vc.radiusMil && vc.net) {
 					padNets.add(vc.net);
+					networkEvidence.push({ source: 'via-contact', id: vc.pid || undefined, net: vc.net });
+				}
 			}
 			// 焊盘若落在同层铜皮内,并入该铜皮网络
 			for (const rg of pourRegions) {
-				if (rg.layer === padLayer && inRegion(padX, padY, rg))
+				if (rg.layer === padLayer && inRegion(padX, padY, rg)) {
 					padNets.add(rg.net);
+					networkEvidence.push({ source: 'same-layer-pour-containment', id: rg.id || undefined, net: rg.net });
+				}
 			}
-			if (padNets.size === 0)
+			if (suppliedPurpose && (idCounts.get(evidenceKey) ?? 0) !== 1) {
+				evaluatedEvidenceIds.add(evidenceKey);
+				issues.push({ code: 'pad_purpose_evidence_ambiguous', item: 14, message: `项目用途证据的焊盘ID ${evidenceKey} 在当前PCB不唯一，未应用分类` });
+				padNetworkClassification.push({ padId: evidenceKey, classification: suppliedPurpose.classification, status: 'ambiguous-primitive-id', reason: suppliedPurpose.reason, source: suppliedPurpose.source, provenance: 'caller-supplied-project-evidence', purposeConfirmed: false });
+			}
+			else if (suppliedPurpose && padNets.size > 0) {
+				evaluatedEvidenceIds.add(evidenceKey);
+				issues.push({ code: 'pad_purpose_evidence_conflict', item: 14, message: `项目用途证据将焊盘 ${evidenceKey} 标为 ${suppliedPurpose.classification}，但当前PCB可读到有效网络 ${[...padNets].join(', ')}；未应用用途分类` });
+				padNetworkClassification.push({ padId: evidenceKey, classification: suppliedPurpose.classification, status: 'conflicted-effective-net', reason: suppliedPurpose.reason, source: suppliedPurpose.source, provenance: 'caller-supplied-project-evidence', effectiveNetworks: [...padNets], networkEvidence, purposeConfirmed: false, geometricClearanceStatus: 'not-confirmed-by-purpose-evidence' });
+			}
+			else if (padNets.size === 0) {
+				if (suppliedPurpose)
+					evaluatedEvidenceIds.add(evidenceKey);
 				issues.push({ code: 'pad_net_missing', item: 14, message: `焊盘 ${pid || '未知 ID'} 无法从自身、网络、连接关系或铜皮推断网络` });
+				const padType = p.getState_PadType?.() ?? p.padType;
+				const hole = p.getState_Hole?.() ?? p.hole;
+				const metallization = p.getState_Metallization?.() ?? p.metallization;
+				const classification = padType === 2 ? 'mark-point-without-network'
+					: padType === 1 ? 'test-pad-without-network'
+						: Array.isArray(hole) && Number(hole[1]) > 0 && metallization === false ? 'non-plated-hole-pad-without-network'
+							: 'unclassified-empty-network';
+				padNetworkClassification.push({
+					padId: pid || null,
+					padNumber: p.getState_PadNumber?.() ?? p.padNumber ?? null,
+					layer: padLayer,
+					classification: suppliedPurpose?.classification ?? classification,
+					...(suppliedPurpose ? { hostTypeClassification: classification } : {}),
+					status: suppliedPurpose ? 'explicit-project-evidence' : classification === 'unclassified-empty-network' ? 'unknown' : 'type-evidence-only',
+					...(suppliedPurpose ? { reason: suppliedPurpose.reason, source: suppliedPurpose.source, provenance: 'caller-supplied-project-evidence', sourceIndependentlyVerified: false } : {}),
+					evidence: {
+						padType: padType === undefined ? { status: 'unavailable' } : { status: 'value', value: padType },
+						hole: Array.isArray(hole) ? { status: 'value', value: hole } : { status: hole == null ? 'none' : 'unavailable' },
+						metallization: typeof metallization === 'boolean' ? { status: 'value', value: metallization } : { status: 'unavailable' },
+						networkEvidence,
+					},
+					purposeConfirmed: false,
+					geometricClearanceStatus: 'not-confirmed-by-purpose-evidence',
+				});
+			}
 			// 检查同层走线:同网络跳过;不同网络边距小于阈值即报。
 			// 相接(边距≤0):仅当两方网络都明确且不同才判短路;任一方网络不明则视为同网络跳过,避免误报从焊盘出来的走线
 			for (const lc of sameLayerLines) {
@@ -2017,6 +2079,17 @@ async function checkPadToLineSpacing(): Promise<CheckResult> {
 						type: 'pad-line',
 					});
 				}
+			}
+		}
+		for (const evidence of projectPurposeEvidence) {
+			if (!matchedEvidenceIds.has(evidence.padId)) {
+				issues.push({ code: 'pad_purpose_evidence_unmatched', item: 14, message: `项目用途证据引用的焊盘ID ${evidence.padId} 不存在于当前PCB；未应用分类` });
+				padNetworkClassification.push({ padId: evidence.padId, classification: evidence.classification, status: 'primitive-id-not-found', reason: evidence.reason, source: evidence.source, provenance: 'caller-supplied-project-evidence', purposeConfirmed: false });
+			}
+			else if (!evaluatedEvidenceIds.has(evidence.padId)) {
+				const duplicate = (idCounts.get(evidence.padId) ?? 0) !== 1;
+				issues.push({ code: duplicate ? 'pad_purpose_evidence_ambiguous' : 'pad_purpose_evidence_not_evaluated', item: 14, message: duplicate ? `项目用途证据的焊盘ID ${evidence.padId} 在当前PCB不唯一，未应用分类` : `项目用途证据的焊盘 ${evidence.padId} 缺少可用尺寸/几何，无法完成网络冲突核对；未应用分类` });
+				padNetworkClassification.push({ padId: evidence.padId, classification: evidence.classification, status: duplicate ? 'ambiguous-primitive-id' : 'geometry-or-network-unavailable', reason: evidence.reason, source: evidence.source, provenance: 'caller-supplied-project-evidence', effectiveNetworkStatus: 'unknown', geometricClearanceStatus: 'unknown', purposeConfirmed: false });
 			}
 		}
 		// 检查过孔到线的间距(过孔贯穿各层,不按层过滤;仅不同网络,网络同理由相接走线推断)
@@ -2060,6 +2133,13 @@ async function checkPadToLineSpacing(): Promise<CheckResult> {
 			result.result = 'error';
 			result.violations = violations;
 		}
+		Object.assign(result, {
+			padNetworkClassification: {
+			status: padNetworkClassification.length === 0 ? 'no-unclassified-pads' : padNetworkClassification.some(item => item.status === 'unknown') ? 'contains-unknown-purpose' : padNetworkClassification.some(item => item.provenance === 'caller-supplied-project-evidence') ? 'contains-project-evidence-annotations' : 'type-evidence-only',
+				unclassifiedPads: padNetworkClassification,
+				purposeConfirmation: '网络可由焊盘属性、网络成员、连接对象或实际铜接触推断。PAD类型只标识测试点或标识点等类型，不能证明NC、机械用途或预留用途。padPurposeEvidence 是调用方按项目资料提供的精确焊盘ID、分类、理由和来源，只作分类标注，不由PCB独立验证；有效网络冲突时不应用。用途标注不能代替几何间距、板边或阻焊开窗检查；相关几何无法确认时仍保留未知。',
+			},
+		});
 
 		if (minActualSpacing !== Infinity) {
 			result.actualValue = `最小${Math.max(0, eda.sys_Unit.milToMm(minActualSpacing)).toFixed(3)}mm`;
@@ -2569,6 +2649,9 @@ async function checkString(): Promise<CheckResult> {
 		// 两类都有 getState_FontSize(字高)/getState_LineWidth(笔画粗细)/getState_X/Y。
 		const allTexts: any[] = [...strings, ...attrs];
 		const violations: { x: number; y: number; id: string; reason: string; type: 'string' }[] = [];
+		const rawFindings: Array<Record<string, unknown>> = [];
+		const excludedLayerFindings: Array<Record<string, unknown>> = [];
+		let unknownLayerTextCount = 0;
 		let minFontMm = Infinity;
 		let minWidthMm = Infinity;
 		let count = 0;
@@ -2578,19 +2661,48 @@ async function checkString(): Promise<CheckResult> {
 			const lineWidthMil = (t as any).getState_LineWidth?.() ?? 0;
 			if (fontSizeMil <= 0)
 				continue;
-			count++;
+			const rawLayer = (t as any).getState_Layer?.() ?? (t as any).layer ?? (t as any).layerId;
+			const layerId = typeof rawLayer === 'number' && Number.isInteger(rawLayer) ? rawLayer : undefined;
+			const id = stringLocateMap.get(readPrimitiveId(t)) || (t as any).getState_PrimitiveId?.() || (t as any).primitiveId || '';
+			const layerRole = layerId === 3 ? 'top-silkscreen' : layerId === 4 ? 'bottom-silkscreen' : layerId === 13 ? 'document' : layerId === undefined ? 'unknown' : 'non-production-layer';
 			const fontMm = eda.sys_Unit.milToMm(fontSizeMil);
 			const widthMm = eda.sys_Unit.milToMm(lineWidthMil);
+			const belowStandard = fontMm < minHeight || (widthMm > 0 && widthMm < minWidth);
+			const measured = {
+				id,
+				layerId: layerId ?? null,
+				layerRole,
+				fontSizeMil,
+				lineWidthMil,
+				fontMm,
+				lineWidthMm: widthMm,
+				belowStandard,
+			};
+			if (belowStandard)
+				rawFindings.push(measured);
+			if (layerId === undefined) {
+				unknownLayerTextCount++;
+				issues.push({ code: 'silkscreen_layer_unknown', item: 18, message: `文字 ${id || '未知 ID'} 的图层无法读取，不能确认是否属于生产丝印` });
+				if (belowStandard)
+					excludedLayerFindings.push(measured);
+				continue;
+			}
+			if (layerId !== 3 && layerId !== 4) {
+				if (belowStandard)
+					excludedLayerFindings.push(measured);
+				continue;
+			}
+			count++;
 			if (fontMm < minFontMm)
 				minFontMm = fontMm;
 			if (widthMm > 0 && widthMm < minWidthMm)
 				minWidthMm = widthMm;
 
-			if (fontMm < minHeight || (widthMm > 0 && widthMm < minWidth)) {
+			if (belowStandard) {
 				violations.push({
 					x: (t as any).getState_X?.() ?? 0,
 					y: (t as any).getState_Y?.() ?? 0,
-					id: stringLocateMap.get(readPrimitiveId(t)) || (t as any).getState_PrimitiveId?.() || '',
+					id,
 					reason: `字符 高度${fontMm.toFixed(3)}/粗细${widthMm.toFixed(3)}mm 小于 高度${minHeight}/粗细${minWidth}mm`,
 					type: 'string',
 				});
@@ -2598,16 +2710,32 @@ async function checkString(): Promise<CheckResult> {
 		}
 
 		result.standardValue = `高度≥${minHeight}mm, 粗细≥${minWidth}mm`;
+		Object.assign(result, {
+			manufacturingSilkscreen: {
+				checkedLayerIds: [3, 4],
+				rawBelowStandardFindings: rawFindings,
+				excludedNonManufacturingFindings: excludedLayerFindings,
+				unknownLayerTextCount,
+				manufacturingGeometry: {
+					status: 'not-checked',
+					reason: '本项只按生产丝印层核对文字字高和笔画线宽；不核对文字、图形与实际板框/阻焊开窗的几何距离。请使用 pcb.checkSilkscreen 获取制造几何证据。',
+				},
+			},
+		});
 
 		if (count === 0) {
 			result.actualValue = '无丝印字符';
+			if (unknownLayerTextCount > 0)
+				result.result = 'warning';
 		}
 		else {
-			result.actualValue = `检查${count}个字符,最小高度${minFontMm.toFixed(3)}/粗细${minWidthMm.toFixed(3)}mm`;
+			result.actualValue = `检查${count}个生产丝印字符,最小高度${minFontMm === Infinity ? '未知' : minFontMm.toFixed(3)}/粗细${minWidthMm === Infinity ? '未知' : minWidthMm.toFixed(3)}mm`;
 			if (violations.length > 0) {
 				result.result = 'error';
 				result.violations = violations;
 			}
+			else if (unknownLayerTextCount > 0)
+				result.result = 'warning';
 		}
 	}
 	catch (error) {

@@ -3,14 +3,17 @@
  *
  * 注意：PCB 坐标默认单位为 mil（与 PCB 编辑器内部一致，界面显示 mm 时注意换算，1mm ≈ 39.37mil）
  */
-import { frRequest } from '../bridge/freerouting'
-import type { ICommandDef } from '../engine/types'
+import { frRequest, frSetAndVerifyJobSettings } from '../bridge/freerouting'
+import type { ICommandContext, ICommandDef } from '../engine/types'
 import { repairDsnClassNetReferences } from '../engine/dsnExport'
 import { applyDsnLayerWidthRules } from '../engine/dsnLayerWidths'
 import { requireEda42 } from '../engine/edaVersion'
-import { assertSnapshotFocused, captureDocumentSnapshot, withDocumentRecovery } from '../engine/documentRecovery'
+import { assertSnapshotFocused, captureDocumentSnapshot, compareDocumentSources, withDocumentRecovery } from '../engine/documentRecovery'
 import { widthForCurrent } from '../knowledge/rules'
 import { blobToBase64, fileToResult } from './util'
+import { editorCommands } from './editor'
+import { createGeometryHost } from '../pcb/geometryHost'
+import { describePlacementFile, inspectManufacturingPackage, preflightAssembly, listManufacturingFiles } from '../pcb/manufacturingPreflight'
 import { beginTask, failTask, finishTask, taskProgress } from '../engine/tasks'
 import { parseSourceLog, resolveRecords } from '../pcb/sourcelog'
 import { importAndVerifyChanges } from '../engine/pcbImport'
@@ -18,13 +21,16 @@ import { applySesViaHoleDiameters, mapSesRoutes, parseAutoRouteSes, planSesImpor
 import { readRouteSnapshot, verifySourceChanges, type HostRouteSnapshot } from '../engine/autoRouteSesHost'
 import { createSesRouteApplyContext } from '../engine/sesRouteApply'
 import { prepareDsnWithPouredPlanes } from '../pcb/dsnPreparation'
-import { comparePcbSourceSnapshots } from '../pcb/dsnSourceSnapshot'
+import { comparePcbSourceSnapshots, pcbRevisionDigest, pcbSourceRevision } from '../pcb/dsnSourceSnapshot'
 import { prepareDsnWithSlotClearances } from '../pcb/dsnSlots'
 import { prepareViaEndpointRefresh, refreshViaEndpointLines } from '../engine/viaEndpointRefresh'
 import { buildRoutingWidthSnapshot, checkSesWidthRules, compareDsnWidthRules } from '../engine/routingWidthRules'
 import { readEditorVersion } from '../pcb/pouredUnits'
 import { assertSesRouteBaselineMatchesDsn, buildSesRouteBaseline, resolveSesArcCoverage, type SesRouteBaseline } from '../pcb/sesArcCoverage'
 import { parseDrcResult } from '../pcb/drcResult'
+import { assertMinimumRouteSegmentLength } from '../engine/routeSegmentRules'
+import { copperPolygonSource, isSupportedCopperPolygonSource, normalizeCopperPolygonSource, sameCopperPolygonSource, type CopperPolygonSource } from '../pcb/copperPolygon'
+import { withCopperConnectivityProtection } from './pcbRatlines'
 
 /** 0.10.42：给无保护 await 加超时（官方偶发永不 resolve，曾致整批删除挂死 300s 无结果） */
 async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
@@ -37,6 +43,245 @@ async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise
 	}
 	finally {
 		if (timer !== undefined) clearTimeout(timer)
+	}
+}
+
+async function readBoundPcbSnapshot(ctx?: ICommandContext): Promise<{ source: string, digest: string } | undefined> {
+	const documentUuid = ctx?.documentTarget?.uuid
+	if (!documentUuid)
+		return undefined
+	await ctx?.assertDocumentTarget?.()
+	let snapshot: { source: string, digest: string } | undefined
+	try {
+		const source = await withTimeout(eda.sys_FileManager.getDocumentSource(), 5000, '读取 PCB 修订')
+		if (typeof source === 'string')
+			snapshot = { source, digest: await pcbSourceRevision(source, documentUuid) }
+	}
+	catch {
+		// Some hosts cannot supply a usable source snapshot. Keep the raw DRC evidence.
+	}
+	await ctx?.assertDocumentTarget?.()
+	return snapshot
+}
+
+async function readBoundPcbRevision(ctx?: ICommandContext): Promise<string | undefined> {
+	return (await readBoundPcbSnapshot(ctx))?.digest
+}
+
+/**
+ * Save/reopen-only allowance for a host serialization change observed on new named SOLID fills.
+ * Keep compareDocumentSources strict for snapshots, recovery and DRC; this adapter is used only
+ * after pcb.save.verifyReopen has reopened the same PCB.
+ */
+function compareSaveReopenSources(expectedSource: string, actualSource: string) {
+	const original = compareDocumentSources(expectedSource, actualSource)
+	if (original.equal)
+		return original
+	try {
+		const expected = parseSourceLog(expectedSource)
+		const actual = parseSourceLog(actualSource)
+		if (expected.docType !== 'PCB' || actual.docType !== 'PCB' || expected.uuid !== actual.uuid)
+			return original
+		const fillsById = (records: typeof expected.records) => {
+			const fills = new Map<string, typeof expected.records[number]>()
+			const ambiguous = new Set<string>()
+			for (const record of records) {
+				if (record.header.type !== 'FILL' || (typeof record.header.id !== 'string' && typeof record.header.id !== 'number'))
+					continue
+				const id = String(record.header.id)
+				if (fills.has(id))
+					ambiguous.add(id)
+				else
+					fills.set(id, record)
+			}
+			for (const id of ambiguous)
+				fills.delete(id)
+			return fills
+		}
+		const expectedFills = fillsById(expected.records)
+		const actualFills = fillsById(actual.records)
+		const normalized = new Map<string, string>()
+		const isNamedNonBridgingSolidFill = (data: unknown): data is Record<string, unknown> => {
+			if (!data || typeof data !== 'object' || Array.isArray(data))
+				return false
+			const fill = data as Record<string, unknown>
+			return typeof fill.netName === 'string' && fill.netName.trim().length > 0
+				&& fill.fillStyle === 'SOLID'
+				&& fill.isBridgingCopper === false
+				&& Array.isArray(fill.networkList) && fill.networkList.length === 0
+		}
+		const stableValue = (value: unknown): string => {
+			if (Array.isArray(value))
+				return `[${value.map(stableValue).join(',')}]`
+			if (value && typeof value === 'object') {
+				const object = value as Record<string, unknown>
+				return `{${Object.keys(object).sort().map(key => `${JSON.stringify(key)}:${stableValue(object[key])}`).join(',')}}`
+			}
+			return JSON.stringify(value) ?? String(value)
+		}
+		for (const [id, expectedRecord] of expectedFills) {
+			const actualRecord = actualFills.get(id)
+			if (!actualRecord || !isNamedNonBridgingSolidFill(expectedRecord.data) || !isNamedNonBridgingSolidFill(actualRecord.data))
+				continue
+			const expectedData = expectedRecord.data
+			const actualData = actualRecord.data
+			if (!Array.isArray(expectedData.refs) || expectedData.refs.length !== 1 || expectedData.refs[0] !== null || actualData.refs !== null)
+				continue
+			const expectedWithoutRefs = { ...expectedData }
+			const actualWithoutRefs = { ...actualData }
+			delete expectedWithoutRefs.refs
+			delete actualWithoutRefs.refs
+			if (stableValue(expectedWithoutRefs) !== stableValue(actualWithoutRefs))
+				continue
+			normalized.set(id, `FILL ${id}: host serialized refs [null] as null for a named, non-bridging SOLID fill with empty networkList`)
+		}
+		if (!normalized.size)
+			return original
+		const normalizedSource = actualSource.split(/\r?\n/).map(line => {
+			if (!line.trim())
+				return line
+			const separator = line.indexOf('||')
+			if (separator < 0)
+				return line
+			try {
+				const header = JSON.parse(line.slice(0, separator))
+				const id = header?.type === 'FILL' ? String(header.id ?? '') : ''
+				if (!normalized.has(id))
+					return line
+				const dataText = line.slice(separator + 2).replace(/\|$/, '')
+				const data = JSON.parse(dataText)
+				return `${JSON.stringify(header)}||${JSON.stringify({ ...data, refs: [null] })}|`
+			}
+			catch {
+				return line
+			}
+		}).join('\n')
+		const comparison = compareDocumentSources(expectedSource, normalizedSource)
+		const normalizationDetails = [...normalized].map(([id, reason]) => ({ recordType: 'FILL', recordId: id, reason }))
+		return {
+			...comparison,
+			rawDifference: original.difference,
+			originalRecordsDiffer: true,
+			normalizationDetails,
+			normalizations: [...(comparison.normalizations ?? []), ...normalizationDetails.map(item => item.reason)],
+		}
+	}
+	catch {
+		return original
+	}
+}
+
+async function runBoundPcbDrc(ctx?: ICommandContext) {
+	const before = await readBoundPcbRevision(ctx)
+	const rulesBefore = await readBoundDrcRules(ctx)
+	await ctx?.assertDocumentTarget?.()
+	const raw = await eda.pcb_Drc.check(true, false, true)
+	await ctx?.assertDocumentTarget?.()
+	const rulesAfter = await readBoundDrcRules(ctx)
+	const after = await readBoundPcbRevision(ctx)
+	return {
+		raw,
+		revision: {
+			target: ctx?.documentTarget, before, after, rulesBefore, rulesAfter,
+			source: 'document-source-records', ruleExecutionCoverage: 'unknown',
+			freshness: revisionFreshness(before, after, rulesBefore, rulesAfter, true),
+		},
+	}
+}
+
+async function readBoundDrcRules(ctx?: ICommandContext): Promise<string | undefined> {
+	if (!ctx?.documentTarget || typeof eda.pcb_Drc.getCurrentRuleConfiguration !== 'function')
+		return undefined
+	await ctx.assertDocumentTarget?.()
+	let digest: string | undefined
+	try {
+		const configuration = await withTimeout(eda.pcb_Drc.getCurrentRuleConfiguration(), 5000, '读取 DRC 规则配置')
+		if (configuration && typeof configuration === 'object' && Object.keys(configuration).length)
+			digest = await pcbRevisionDigest(configuration)
+	}
+	catch {
+		// The host may expose results without exposing the current configuration.
+	}
+	await ctx.assertDocumentTarget?.()
+	return digest
+}
+
+function revisionFreshness(before?: string, after?: string, rulesBefore?: string, rulesAfter?: string, requireRules = false) {
+	if ((before && after && before !== after) || (rulesBefore && rulesAfter && rulesBefore !== rulesAfter))
+		return 'stale'
+	return before && after && (!requireRules || (rulesBefore && rulesAfter)) ? 'current' : 'unknown'
+}
+
+async function saveAndVerifyPcb(expectedDigest: unknown, params: Record<string, unknown>, ctx?: ICommandContext) {
+	const target = ctx?.documentTarget
+	if (!ctx || !target || typeof target.parentProjectUuid !== 'string' || typeof target.tabId !== 'string')
+		throw new Error('保存重开需要完整的工程、PCB 和页签身份')
+	const before = await readBoundPcbSnapshot(ctx)
+	if (!before || before.digest !== expectedDigest)
+		throw new Error('当前 PCB 修订与预期不一致或无法核对，未保存')
+	const phases: Record<string, unknown> = { before: before.digest }
+	const assertProject = async () => {
+		ctx.stopSignal?.assertActive()
+		const project = await eda.dmt_Project.getCurrentProjectInfo()
+		ctx.stopSignal?.assertActive()
+		if (!project || project.uuid !== target.parentProjectUuid || !project.data?.some(document =>
+			'pcb' in document ? document.pcb?.uuid === target.uuid : document.uuid === target.uuid))
+			throw new Error('无法在指定工程中确认目标 PCB')
+	}
+	let phase = 'save'
+	try {
+		await ctx.assertDocumentTarget?.()
+		phases.saved = await eda.pcb_Document.save() === true
+		if (!phases.saved)
+			throw new Error('宿主未确认保存，未关闭页签')
+		phase = 'close'
+		const atClose = await readBoundPcbSnapshot(ctx)
+		if (!atClose || (atClose.digest !== before.digest && !compareDocumentSources(before.source, atClose.source).equal))
+			throw new Error('保存后当前 PCB 内容已变化或无法核对，未关闭页签')
+		await ctx.assertDocumentTarget?.()
+		const closed = await editorCommands.find(def => def.name === 'editor.closeDocument')!.handler({
+			tabId: target.tabId, _timeoutMs: params._timeoutMs,
+		}, ctx)
+		phases.closed = closed.closed
+		phase = 'reopen'
+		ctx.stopSignal?.assertActive()
+		await assertProject()
+		const opened = await editorCommands.find(def => def.name === 'editor.openDocument')!.handler({ uuid: target.uuid, __projectUuid: target.parentProjectUuid }, ctx)
+		ctx.stopSignal?.assertActive()
+		phases.reopenedTabId = opened.tabId
+		const reopenedContext: ICommandContext = {
+			...ctx,
+			documentTarget: { ...target, tabId: opened.tabId },
+			assertDocumentTarget: async () => {
+				ctx.stopSignal?.assertActive()
+				const project = await eda.dmt_Project.getCurrentProjectInfo()
+				ctx.stopSignal?.assertActive()
+				if (project?.uuid !== target.parentProjectUuid)
+					throw new Error('重开后当前工程与原目标工程不一致')
+				const focused = await eda.dmt_SelectControl.getCurrentDocumentInfo()
+				ctx.stopSignal?.assertActive()
+				if (focused?.documentType !== target.documentType || focused.uuid !== target.uuid
+					|| focused.tabId !== opened.tabId
+					|| (typeof focused.parentProjectUuid === 'string' && focused.parentProjectUuid !== target.parentProjectUuid))
+					throw new Error('重开后焦点 PCB 与原目标文档不一致')
+			},
+		}
+		phase = 'compare'
+		const after = await readBoundPcbSnapshot(reopenedContext)
+		const comparison = after ? compareSaveReopenSources(before.source, after.source) : undefined
+		const persistenceVerified = after?.digest === before.digest || comparison?.equal === true
+		if (!persistenceVerified) {
+			phases.after = after?.digest
+			phases.comparison = comparison
+			throw new Error(after ? '重开后 PCB 内容不一致' : '重开后 PCB 内容无法核对')
+		}
+		return { saved: true, persistenceVerified, target, phases, after: after?.digest, comparison,
+			status: 'verified' }
+	}
+	catch (error) {
+		throw new Error(`保存重开停在 ${phase}：${error instanceof Error ? error.message : String(error)}`, {
+			cause: { phase, target, phases, partial: true, retryable: false },
+		})
 	}
 }
 
@@ -183,13 +428,6 @@ const consumedRouteJobs = new Set<string>()
 const routeJobRecoveryState = new Map<string, 'applying' | 'applied' | 'recoveryRequired'>()
 
 const ROUTE_SOURCE_TYPES = new Set(['LINE', 'VIA', 'ARC', 'TRACK'])
-const MIN_ROUTE_SEGMENT_LENGTH_MIL = 1
-
-function assertMinimumRouteSegmentLength(a: { x: number, y: number }, b: { x: number, y: number }, label: string): void {
-	const lengthMil = Math.hypot(b.x - a.x, b.y - a.y)
-	if (lengthMil < MIN_ROUTE_SEGMENT_LENGTH_MIL)
-		throw new Error(`${label}长度 ${lengthMil} mil 小于最低允许 ${MIN_ROUTE_SEGMENT_LENGTH_MIL} mil`)
-}
 
 function decodeSesUtf8(encoded: string): string {
 	let binary: string
@@ -1344,6 +1582,7 @@ export const pcbCommands: Array<ICommandDef> = [
 			{ name: 'y', type: 'number', required: true, description: '坐标 Y' },
 			{ name: 'holeDiameter', type: 'number', required: true, description: '孔径' },
 			{ name: 'diameter', type: 'number', required: true, description: '外径' },
+			{ name: 'viaType', type: 'number', description: '过孔类型：0 普通过孔（默认），2 缝合孔；不支持盲埋孔类型通过此参数创建' },
 		],
 		returns: '{ primitiveId, readbackVerified:true, ratlineCalculation:{ requested:true, accepted:true }, endpointRefresh:{attempted,skipped?,reason?,completedLineIds,results}, connectivityVerified:false }；端点刷新失败时 error.cause 保留已创建过孔和已完成 LINE 列表，partial:true,retryable:false',
 		example: { cmd: 'pcb.placeVia', params: { net: 'GND', x: 100, y: 100, holeDiameter: 12, diameter: 24 } },
@@ -1357,6 +1596,9 @@ export const pcbCommands: Array<ICommandDef> = [
 					throw new Error(`${name} 必须是有限数值`)
 			}
 			const { x, y, holeDiameter, diameter } = params as { x: number, y: number, holeDiameter: number, diameter: number }
+			const viaType = params.viaType === undefined ? 0 : params.viaType
+			if (viaType !== 0 && viaType !== 2)
+				throw new Error('viaType 仅支持 0（普通过孔）或 2（缝合孔）')
 			if (holeDiameter <= 0 || diameter <= 0 || holeDiameter >= diameter)
 				throw new Error('holeDiameter 和 diameter 必须大于 0，且 holeDiameter 小于 diameter')
 			const MAX_TIMER_MS = 2147483647
@@ -1408,7 +1650,7 @@ export const pcbCommands: Array<ICommandDef> = [
 					y,
 					holeDiameter,
 					diameter,
-					0,
+					viaType,
 				))
 			}
 			catch (err) {
@@ -1455,7 +1697,7 @@ export const pcbCommands: Array<ICommandDef> = [
 					diameter: safeState<unknown>(readback, 'getState_Diameter'),
 					viaType: safeState<unknown>(readback, 'getState_ViaType'),
 				}
-				if (actual.primitiveId !== verifiedPrimitiveId || actual.net !== net || !sameRoundtripNumber(actual.x, x) || !sameRoundtripNumber(actual.y, y) || !sameRoundtripNumber(actual.holeDiameter, holeDiameter) || !sameRoundtripNumber(actual.diameter, diameter) || actual.viaType !== 0)
+				if (actual.primitiveId !== verifiedPrimitiveId || actual.net !== net || !sameRoundtripNumber(actual.x, x) || !sameRoundtripNumber(actual.y, y) || !sameRoundtripNumber(actual.holeDiameter, holeDiameter) || !sameRoundtripNumber(actual.diameter, diameter) || actual.viaType !== viaType)
 					throw new Error(`过孔读回与请求不匹配（${JSON.stringify(actual)}）`)
 			}
 			catch (err) {
@@ -1484,19 +1726,20 @@ export const pcbCommands: Array<ICommandDef> = [
 	},
 	{
 		name: 'pcb.pourCopper',
-		summary: '矩形铺铜（GND 平面等）；preserveSilos 可选控制是否保留孤岛，省略时沿用 SDK 默认行为',
+		summary: '矩形或顶点铺铜（GND 平面等）；preserveSilos 可选控制是否保留孤岛，省略时沿用 SDK 默认行为',
 		params: [
 			{ name: 'net', type: 'string', required: true, description: '网络名，通常为 GND（须已存在于 PCB）' },
 			{ name: 'layer', type: 'string | number', description: `图层名称或数字层号，默认 top；内层可用 inner1(15) 等名称。目标铜层须已在 PCB 中启用。${LAYER_HELP}` },
-			{ name: 'x', type: 'number', required: true, description: '矩形左下角 X' },
-			{ name: 'y', type: 'number', required: true, description: '矩形左下角 Y' },
-			{ name: 'width', type: 'number', required: true, description: '矩形宽度' },
-			{ name: 'height', type: 'number', required: true, description: '矩形高度' },
+			{ name: 'x', type: 'number', description: '矩形左下角 X；与 vertices 二选一' },
+			{ name: 'y', type: 'number', description: '矩形左下角 Y；与 vertices 二选一' },
+			{ name: 'width', type: 'number', description: '矩形宽度；与 vertices 二选一' },
+			{ name: 'height', type: 'number', description: '矩形高度；与 vertices 二选一' },
+			{ name: 'vertices', type: 'Array<{x:number,y:number}>', description: '简单直边多边形顶点，按边界顺序给出，坐标单位 mil；与矩形参数二选一。不支持弧边/孔洞，轮廓须不自交' },
 			{ name: 'preserveSilos', type: 'boolean', description: '是否保留铺铜孤岛；省略时不传该SDK参数，使用宿主默认值' },
 		],
 		returns: '{ primitiveId, readback: { verified, net, layer, preserveSilos, path } }；仅确认铺铜边框属性与源码，未触发填充/重建',
-		example: { cmd: 'pcb.pourCopper', params: { net: 'GND', layer: 'bottom', x: 0, y: 0, width: 2000, height: 1500, preserveSilos: true } },
-		handler: async (params) => {
+		example: { cmd: 'pcb.pourCopper', params: { net: 'VBAT', layer: 'top', vertices: [{ x: 100, y: 100 }, { x: 500, y: 100 }, { x: 500, y: 300 }, { x: 300, y: 300 }, { x: 300, y: 600 }, { x: 100, y: 600 }] } },
+		handler: async (params, ctx) => {
 			const monotonicStart = performance.now()
 			const MAX_TIMER_MS = 2147483647
 			const requestedTimeout = params._timeoutMs == null ? 290_000 : Number(params._timeoutMs)
@@ -1540,6 +1783,8 @@ export const pcbCommands: Array<ICommandDef> = [
 			if (focus?.documentType !== 3 || typeof focus?.uuid !== 'string' || !focus.uuid.trim())
 				throw new Error(`焦点文档不是有效 PCB（documentType=${focus?.documentType ?? '未知'}, uuid=${focus?.uuid ?? '无'}）`)
 			const assertFocus = async (phase: string) => {
+				if (ctx?.assertDocumentTarget)
+					return await awaitWithinBudget(`${phase}复核焦点`, ctx.assertDocumentTarget)
 				const latest = await awaitWithinBudget(`${phase}复核焦点`, () => eda.dmt_SelectControl.getCurrentDocumentInfo())
 				if (latest?.documentType !== 3 || latest.uuid !== focus.uuid)
 					throw new Error(`${phase}时 PCB 焦点已变化（原页=${focus.uuid}, 当前=${latest?.uuid ?? '未知'}）`)
@@ -1554,39 +1799,35 @@ export const pcbCommands: Array<ICommandDef> = [
 			if (netNames && !netNames.includes(String(params.net)))
 				throw new Error(`网络 "${String(params.net)}" 在当前 PCB 中不存在（现有 ${netNames.length} 个网络${netNames.length ? ': ' + netNames.slice(0, 10).join(', ') + (netNames.length > 10 ? '…' : '') : ''}）。请先确认原理图中该网络已连接并从原理图导入（pcb.importChanges），或检查网络名拼写`)
 			await assertFocus('网络检查后')
-			// 官方 'R' 矩形的 (x,y) 是**左上角**（画布 +Y 向上，矩形向下延伸），
-			// 本指令对外约定 (x,y) 为**左下角**，此处换算：官方y = 左下角y + height
-			// （0.10.65 修复：此前未换算，铺铜整体偏移一个板高——与 drawOutline 同一约定）
-			const polygon = eda.pcb_MathPolygon.createPolygon([
-				'R',
-				Number(params.x), Number(params.y) + Number(params.height),
-				Number(params.width), Number(params.height),
-				0, 0,
-			])
+			const rectangleKeys = ['x', 'y', 'width', 'height'] as const
+			const rectangleProvided = rectangleKeys.some(key => params[key] !== undefined)
+			const verticesProvided = params.vertices !== undefined
+			if (rectangleProvided === verticesProvided)
+				throw new Error('必须且只能提供一组几何参数：x/y/width/height 矩形参数，或 vertices 多边形顶点')
+			let expectedSource: CopperPolygonSource | unknown
+			if (verticesProvided) {
+				expectedSource = copperPolygonSource(params.vertices)
+			}
+			else {
+				if (rectangleKeys.some(key => typeof params[key] !== 'number' || !Number.isFinite(params[key])))
+					throw new Error('矩形 x/y/width/height 必须都是有限数值')
+				if (Number(params.width) <= 0 || Number(params.height) <= 0)
+					throw new Error('矩形 width/height 必须大于 0')
+				// 官方 'R' 矩形的 (x,y) 是左上角；对外仍沿用左下角约定。
+				expectedSource = ['R', Number(params.x), Number(params.y) + Number(params.height), Number(params.width), Number(params.height), 0, 0]
+			}
+			const polygon = eda.pcb_MathPolygon.createPolygon(expectedSource as any)
 			if (!polygon || typeof polygon.getSource !== 'function')
 				throw new Error('矩形铺铜多边形创建失败或缺少源码读取接口')
 			const expectedPath = polygon.getSource()
-			const inspectRectanglePath = (raw: unknown) => {
-				let format: 'flat-R' | 'single-R-wrapper' | 'invalid' = 'invalid'
-				let candidate: unknown = raw
-				if (Array.isArray(raw) && raw.length === 1 && Array.isArray(raw[0])) {
-					format = 'single-R-wrapper'
-					candidate = raw[0]
-				}
-				else if (Array.isArray(raw))
-					format = 'flat-R'
-				const valid = Array.isArray(candidate) && candidate.length === 7 && candidate[0] === 'R'
-					&& candidate.slice(1).every(value => typeof value === 'number' && Number.isFinite(value))
-				return {
-					raw,
-					format: valid ? format : 'invalid' as const,
-					valid,
-					normalized: valid ? candidate as Array<string | number> : null,
-				}
+			const expectedPathInfo = { raw: expectedPath, normalized: normalizeCopperPolygonSource(expectedPath), valid: isSupportedCopperPolygonSource(expectedPath) }
+			const inspectPolygonPath = (raw: unknown) => {
+				const normalized = normalizeCopperPolygonSource(raw)
+				const valid = isSupportedCopperPolygonSource(raw) && sameCopperPolygonSource(raw, expectedSource as CopperPolygonSource)
+				return { raw, format: valid ? (Array.isArray(raw) && Array.isArray(raw[0]) ? 'single-ring-wrapper' : 'flat') : 'invalid', valid, normalized: valid ? normalized : null }
 			}
-			const expectedPathInfo = inspectRectanglePath(expectedPath)
-			if (!expectedPathInfo.valid)
-				throw new Error('请求矩形轮廓不是合法的一维 R 或单个 R 外层包装格式')
+			if (!expectedPathInfo.valid || !sameCopperPolygonSource(expectedPath, expectedSource as CopperPolygonSource))
+				throw new Error('宿主构造的铺铜轮廓与请求顶点不一致，未创建')
 			const layer = resolveLayerEx(params.layer === '' ? undefined : params.layer, 1) as any
 			const readSource = async (phase: string) => {
 				await assertFocus(`${phase}前读取源码`)
@@ -1672,11 +1913,10 @@ export const pcbCommands: Array<ICommandDef> = [
 					throw new Error(`保留孤岛读回不匹配（API=${String(preserveSilos)}, source=${String(targetData.keepIsland)}）`)
 				if (params.preserveSilos !== undefined && (preserveSilos !== params.preserveSilos || targetData.keepIsland !== params.preserveSilos))
 					throw new Error(`保留孤岛读回与请求不匹配（读回=${String(preserveSilos)}, 请求=${String(params.preserveSilos)}）`)
-				const getterPathInfo = inspectRectanglePath(readPath)
-				const sourcePathInfo = inspectRectanglePath(targetData.path)
-				const matchesExpected = (actual: typeof expectedPathInfo) => expectedPathInfo.valid && actual.valid
-					&& expectedPathInfo.normalized!.length === actual.normalized!.length
-					&& expectedPathInfo.normalized!.every((value, index) => value === actual.normalized![index])
+				const getterPathInfo = inspectPolygonPath(readPath)
+				const sourcePathInfo = inspectPolygonPath(targetData.path)
+				const matchesExpected = (actual: typeof getterPathInfo) => expectedPathInfo.valid && actual.valid
+					&& sameCopperPolygonSource(actual.raw, expectedPath as CopperPolygonSource)
 				pathComparison = {
 					expectedPath,
 					getterPath: readPath,
@@ -1691,7 +1931,7 @@ export const pcbCommands: Array<ICommandDef> = [
 					},
 				}
 				if (!matchesExpected(getterPathInfo) || !matchesExpected(sourcePathInfo))
-					throw new Error('铺铜轮廓读回与请求矩形不匹配')
+					throw new Error('铺铜轮廓读回与请求形状不匹配')
 				if (JSON.stringify(snapshotEffectiveSourceRecords(after.doc, undefined, candidateId)) !== JSON.stringify(beforeNonTargetRecords))
 					throw new Error('创建同时改变了非目标源码记录（包括原POURED/POUR/其他对象），已保留候选并停止')
 				if (remaining() <= 0)
@@ -1717,23 +1957,13 @@ export const pcbCommands: Array<ICommandDef> = [
 		name: 'pcb.runDrc',
 		summary: '运行 PCB DRC 并保留官方原始分组树；passed仅表示本次API返回中没有违规，实际规则覆盖范围仍未知',
 		params: [],
-		returns: '{ passed:仅表示本次API返回无违规, violations:官方原始分组树, totalCount:违规叶数, errorCount, fatalCount:errorCount, warnCount, unknownCount, categoryCount, unrecognizedCount, incomplete, coverage:{ruleCoverage:"unknown"}, rawCoordinateUnit, coordinateUnit }',
+		returns: '{ passed:仅表示本次API返回无违规, violations:官方原始分组树, totalCount:违规叶数, errorCount, fatalCount:errorCount, warnCount, unknownCount, categoryCount, unrecognizedCount, incomplete, coverage:{ruleCoverage:"unknown"}, rawCoordinateUnit, coordinateUnit }；原始树中的坐标始终保留原值，不能把 coordinateUnit 用来直接解释原树 x/y。需要 mil 定位坐标时调用 pcb.runDrcDetailed，按逐条 xMil/yMil 和 coordinateBasis 使用',
 		example: { cmd: 'pcb.runDrc' },
 		handler: async (_params, ctx) => {
-			await ctx?.assertDocumentTarget?.()
-			const raw = await eda.pcb_Drc.check(true, false, true)
-			await ctx?.assertDocumentTarget?.()
-			let editorVersion: string | undefined
-			try {
-				const version = eda.sys_Environment?.getEditorCurrentVersion?.()
-				if (typeof version === 'string' && /^\d+\.\d+\.\d+(?:$|[-+\s])/.test(version.trim()))
-					editorVersion = version.trim()
-			}
-			catch {
-				// Keep raw coordinates and mark units unknown when the host version endpoint is unavailable.
-			}
-			const result = parseDrcResult(raw, editorVersion)
+			const { raw, revision } = await runBoundPcbDrc(ctx)
+			const result = parseDrcResult(raw)
 			return {
+				revision,
 				passed: result.passed,
 				violations: result.rawResult,
 				totalCount: result.totalCount,
@@ -1753,24 +1983,34 @@ export const pcbCommands: Array<ICommandDef> = [
 	},
 	{
 		name: 'pcb.runDrcDetailed',
-		summary: '运行 PCB DRC 并返回逐条违规明细及完整原始树；passed仅表示本次API返回无违规，实际规则覆盖范围仍未知。仅 EDA 4.1.78 已核实原始 x/y 单位为 10mil；其他版本单位 unknown',
+		summary: '运行 PCB DRC，保留完整原始树并返回逐条明细；已实证的原生详细位置结构提供数据原点 mil 坐标，其余保留 unknown；不按宿主版本决定换算',
 		params: [],
-		returns: '{ passed:仅表示本次API返回无违规, totalCount:识别违规叶数, errorCount, fatalCount:errorCount, warnCount, unknownCount:已识别但严重程度未知的叶数, categoryCount, unrecognizedCount/unrecognizedNodes, incomplete, coverage:{source,ruleCoverage:"unknown",result,passedMeaning}, rawResult:完整官方分组树, violations:[扁平明细，raw保留原始叶] }；含未知严重程度或未识别节点时 passed=false。EDA 4.1.78 坐标按已有证据换算，其余单位 unknown',
+		returns: '{ passed:仅表示本次API返回无违规, totalCount:识别违规叶数, errorCount, fatalCount:errorCount, warnCount, unknownCount:已识别但严重程度未知的叶数, categoryCount, unrecognizedCount/unrecognizedNodes, incomplete, coverage:{source,ruleCoverage:"unknown",result,passedMeaning}, rawResult:完整官方分组树, violations:[扁平明细，raw保留原始叶] }；逐条匹配双位置、对象和索引关联的已实证原生结构后，保留原始 x/y，另给 xMil/yMil、coordinateUnit:"mil"、coordinateBasis:"data-origin"、coordinateConversionFactor:10 和经验来源 coordinateEvidence；使用坐标不叠加画布原点偏移；公开缩放接口可能返回成功而视野不变，按坐标缩放仍有限制，须核对实际画面；可用 pcb.select 按对象 ID 辅助查找。缺证、冲突或溢出条目不提供 mil 坐标；整体可能为 unknown。该换算是实机兼容证据，不是官方通用单位保证。passed 仅表示本次 API 未列出违规，实际规则覆盖范围仍未知',
 		example: { cmd: 'pcb.runDrcDetailed' },
 		handler: async (_params, ctx) => {
-			await ctx?.assertDocumentTarget?.()
-			const raw = await eda.pcb_Drc.check(true, false, true)
-			await ctx?.assertDocumentTarget?.()
-			let editorVersion: string | undefined
-			try {
-				const version = eda.sys_Environment?.getEditorCurrentVersion?.()
-				if (typeof version === 'string' && /^\d+\.\d+\.\d+(?:$|[-+\s])/.test(version.trim()))
-					editorVersion = version.trim()
+			const { raw, revision } = await runBoundPcbDrc(ctx)
+			return { ...parseDrcResult(raw), revision }
+		},
+	},
+	{
+		name: 'pcb.getRevision',
+		summary: '读取当前 PCB 内容修订，可核对先前保存读回或 DRC 报告是否过期',
+		params: [
+			{ name: 'expectedDigest', type: 'string', description: '可选，先前同一 PCB 的修订摘要' },
+			{ name: 'expectedRulesDigest', type: 'string', description: '核查旧 DRC 报告时传入对应的规则摘要。若旧报告缺规则摘要，不能据板卡相同判定该报告仍有效。' },
+		],
+		returns: '{ target, digest, freshness: current | stale | unknown }；摘要覆盖可读源码及其中的规则，无法证明宿主实际执行规则清单',
+		example: { cmd: 'pcb.getRevision' },
+		handler: async (params, ctx) => {
+			const { expectedDigest, expectedRulesDigest } = params
+			for (const value of [expectedDigest, expectedRulesDigest]) {
+				if (value !== undefined && (typeof value !== 'string' || !/^[0-9a-f]{64}$/.test(value)))
+					throw new Error('预期修订必须是 64 位十六进制摘要')
 			}
-			catch {
-				// DRC remains useful when the host version endpoint is unavailable; coordinates stay raw and unconverted.
-			}
-			return parseDrcResult(raw, editorVersion)
+			const digest = await readBoundPcbRevision(ctx)
+			const rulesDigest = await readBoundDrcRules(ctx)
+			return { target: ctx?.documentTarget, digest, rulesDigest,
+				freshness: revisionFreshness(expectedDigest, digest, expectedRulesDigest, rulesDigest, expectedRulesDigest !== undefined) }
 		},
 	},
 	{
@@ -1831,11 +2071,18 @@ export const pcbCommands: Array<ICommandDef> = [
 	{
 		name: 'pcb.save',
 		summary: '保存当前 PCB（注意：官方在无修改时返回 false，不代表失败）',
-		params: [],
-		returns: '{ saved, note? }',
+		params: [
+			{ name: 'verifyReopen', type: 'boolean', description: '显式启用保存、关闭、重开并核对目标 PCB 修订；请先备份并完成写后读回' },
+			{ name: 'expectedDigest', type: 'string', description: '启用 verifyReopen 时传入 pcb.getRevision 的写后修订摘要' },
+		],
+		returns: '{ saved, note?, persistenceVerified?, target?, phases?, after?, status? }；普通保存沿用既有行为；重开分支需预期修订相符',
 		example: { cmd: 'pcb.save' },
-		handler: async () => {
+		handler: async (params, ctx) => {
+			if (params.verifyReopen === true)
+				return saveAndVerifyPcb(params.expectedDigest, params, ctx)
+			await ctx?.assertDocumentTarget?.()
 			const saved = await eda.pcb_Document.save()
+			await ctx?.assertDocumentTarget?.()
 			return saved
 				? { saved: true }
 				: { saved: false, note: '官方在无修改时返回 false，不代表保存失败；若此前确有修改，请确认 PCB 文档处于正常可写状态' }
@@ -2300,21 +2547,66 @@ export const pcbCommands: Array<ICommandDef> = [
 	},
 	{
 		name: 'pcb.exportGerber',
-		summary: '导出 Gerber 打板文件（返回 base64，通常为 zip 压缩包，AI 可自行落盘）',
+		summary: '导出原生 Gerber ZIP，可显式选层并读取 ZIP 文件清单',
 		params: [
 			{ name: 'fileName', type: 'string', description: '文件名，默认 gerber' },
+			{ name: 'layerIds', type: 'number[]', description: '可选，当前板中明确选择的 SDK 图层 ID，按原方向导出。选层时请求金属化与非金属化钻孔，不请求钻孔图表和飞针文件；实际输出以文件清单为准' },
 		],
-		returns: '{ fileName, size, mimeType, base64 }',
+		returns: '{ fileName, size, mimeType, base64, target, requestedLayerIds, files }；files 为实际 ZIP 条目，解析不成功会报告 manifestError 并保留原文件',
 		example: { cmd: 'pcb.exportGerber' },
-		handler: async (params) => {
-			const file = await eda.pcb_ManufactureData.getGerberFile(
-				params.fileName ? String(params.fileName) : undefined,
-			)
+		handler: async (params, ctx) => {
+			const requested: unknown = params.layerIds
+			if (requested !== undefined && (!Array.isArray(requested) || !requested.length || !requested.every(id => typeof id === 'number' && Number.isInteger(id)) || new Set(requested).size !== requested.length))
+				throw new Error('layerIds 必须是非空、不重复的整数数组')
+			const layers = requested as number[] | undefined
+			await ctx?.assertDocumentTarget?.()
+			if (layers !== undefined) {
+				const current = await eda.pcb_Layer.getAllLayers()
+				if (!Array.isArray(current) || layers.some(id => !current.some(layer => layer.id === id))) throw new Error('所选图层不在当前 PCB 的图层清单中')
+				await ctx?.assertDocumentTarget?.()
+			}
+			const fileName = params.fileName ? String(params.fileName) : undefined
+			const file = layers
+				? await eda.pcb_ManufactureData.getGerberFile(
+					fileName, false, 'mm' as ESYS_Unit.MILLIMETER, { integerNumber: 4, decimalNumber: 5 },
+					{ metallicDrillingInformation: true, nonMetallicDrillingInformation: true, drillTable: false, flyingProbeTestingFile: false },
+					layers.map(layerId => ({ layerId, isMirror: false })) as Parameters<typeof eda.pcb_ManufactureData.getGerberFile>[5],
+				)
+				: await eda.pcb_ManufactureData.getGerberFile(fileName)
+			await ctx?.assertDocumentTarget?.()
 			const result = await fileToResult(file, 'gerber.zip')
 			if (!result)
 				throw new Error('Gerber 导出失败：官方返回空（请确认已激活 PCB 文档）')
-			return result
+			const context = { target: ctx?.documentTarget, requestedLayerIds: layers ?? null }
+			try {
+				return { ...result, ...context, files: await listManufacturingFiles(result.base64) }
+			}
+			catch (error) { return { ...result, ...context, files: null, manifestError: String(error) } }
 		},
+	},
+	{
+		name: 'pcb.inspectManufacturingPackage',
+		summary: '只读校验已导出的 Gerber ZIP，识别生产层、参考层、闭合板框和重复钻孔',
+		params: [
+			{ name: 'base64', type: 'string', required: true, description: '原始 Gerber ZIP 内容' },
+			{ name: 'selectedFiles', type: 'string[]', description: '可选，精确指定 ZIP 内条目路径，省略时校验全部' },
+			{ name: 'includeSelectedArchive', type: 'boolean', description: '与 selectedFiles 配合，返回仅包含选中条目的新 ZIP，条目字节保持' },
+		],
+		returns: '{ files, zipCrcChecked, outline, drill, selectedArchiveBase64?, scope }；当前逐孔检查支持明确镀层、绝对毫米坐标的圆孔程序；其他格式保留 incomplete',
+		handler: async params => inspectManufacturingPackage(String(params.base64), params.selectedFiles as string[] | undefined, params.includeSelectedArchive === true),
+	},
+	{
+		name: 'pcb.preflightAssembly',
+		summary: '只读按同一份位号规则筛选 SMT BOM 与贴片坐标，并可核对手装位号的原始锡膏开口',
+		params: [
+			{ name: 'bomBase64', type: 'string', required: true, description: '原始 BOM CSV/TSV 字节' },
+			{ name: 'placementBase64', type: 'string', required: true, description: '原始贴片坐标 CSV/TSV 字节，与 BOM 来自同一板修订' },
+			{ name: 'assignments', type: 'object', required: true, description: '按位号指定 manual（手装）、smt（机贴）或 omit（不装）；未分类会阻止生成两表' },
+			{ name: 'gerberBase64', type: 'string', description: '可选，原始 Gerber ZIP' },
+			{ name: 'pasteRegions', type: 'object[]', description: '可选，手装或不装位号的 Gerber 毫米区域，字段 designator、side(top/bottom)、minX、minY、maxX、maxY' },
+		],
+		returns: '{ complete, unassigned, issues, assignments, smtDesignators, bom, placement, paste }；两表返回带 BOM 字符的 TSV 文本，原始输入不变；锡膏核对限定调用方给定范围及可确认的闪光开口',
+		handler: async params => preflightAssembly(params as Parameters<typeof preflightAssembly>[0]),
 	},
 	{
 		name: 'pcb.exportPickPlace',
@@ -2324,9 +2616,9 @@ export const pcbCommands: Array<ICommandDef> = [
 			{ name: 'fileType', type: 'string', description: 'xlsx | csv，默认 csv' },
 			{ name: 'unit', type: 'string', description: 'mm | mil，默认 mm' },
 		],
-		returns: '{ fileName, size, mimeType, base64 }',
+		returns: '{ fileName, nativeFileName?, size, mimeType, base64, format, encoding?, delimiter? }；文件字节不转换，名称和格式按实际内容读回',
 		example: { cmd: 'pcb.exportPickPlace', params: { fileType: 'csv', unit: 'mm' } },
-		handler: async (params) => {
+		handler: async (params, ctx) => {
 			const fileType = String(params.fileType ?? 'csv').trim().toLowerCase()
 			if (fileType !== 'xlsx' && fileType !== 'csv')
 				throw new Error(`无效 fileType：${String(params.fileType)}（仅支持 xlsx | csv）`)
@@ -2339,10 +2631,11 @@ export const pcbCommands: Array<ICommandDef> = [
 				fileType,
 				unit,
 			)
+			await ctx?.assertDocumentTarget?.()
 			const result = await fileToResult(file, `pick-and-place.${fileType}`)
 			if (!result)
 				throw new Error('贴片坐标导出失败：官方返回空（请确认已激活 PCB 文档）')
-			return result
+			return { ...result, ...await describePlacementFile(result), target: ctx?.documentTarget, unit: unitName }
 		},
 	},
 	{
@@ -2891,9 +3184,9 @@ export const pcbCommands: Array<ICommandDef> = [
 			{ name: 'endY', type: 'number', description: '终点 Y' },
 			{ name: 'lineWidth', type: 'number', description: '线宽（mil）' },
 		],
-		returns: '{ modified }',
+		returns: '{ modified, status, target, changes, readback }；旧 ID 无法确认时停止后续步骤，返回几何匹配候选。',
 		example: { cmd: 'pcb.modifyLine', params: { primitiveId: 'xxx', lineWidth: 20 } },
-		handler: async (params) => {
+		handler: async (params, ctx) => {
 			if (!params.primitiveId)
 				throw new Error('缺少参数 primitiveId')
 			const property: Record<string, any> = {}
@@ -2923,26 +3216,89 @@ export const pcbCommands: Array<ICommandDef> = [
 				lineSteps.push(geoProps)
 			if (property.lineWidth != null)
 				lineSteps.push({ lineWidth: property.lineWidth })
-			const okAny = await modifyInSteps(async props => eda.pcb_PrimitiveLine.modify(lineId, props as any), lineSteps)
-			// 读回验证（0.10.24）
-			await new Promise(resolve => setTimeout(resolve, 300))
-			const lines = await eda.pcb_PrimitiveLine.getAll().catch(() => undefined)
-			const back = (lines ?? []).find((l: any) => safeState<string>(l, 'getState_PrimitiveId') === lineId)
-			const checks: Array<[string, string, any, 'num' | 'str' | 'bool']> = []
-			if (property.net != null)
-				checks.push(['net', 'getState_Net', property.net, 'str'])
-			if (property.layer != null)
-				checks.push(['layer', 'getState_Layer', property.layer, 'num'])
-			for (const k of ['startX', 'startY', 'endX', 'endY']) {
-				if (property[k] != null)
-					checks.push([k, `getState_${k[0].toUpperCase()}${k.slice(1)}`, property[k], 'num'])
+			for (const value of Object.values(property))
+				if (typeof value === 'number' && !Number.isFinite(value)) throw new Error('走线参数必须为有限数值')
+			const host = await createGeometryHost(eda, params, undefined, ctx)
+			const snapshot = () => host.read('读取走线', async () => {
+				const lines = await eda.pcb_PrimitiveLine.getAll()
+				if (!Array.isArray(lines)) throw new Error('走线读回不完整')
+				const rows = lines.map(line => ({
+					id: line.getState_PrimitiveId(), net: line.getState_Net(), layer: line.getState_Layer(),
+					startX: line.getState_StartX(), startY: line.getState_StartY(),
+					endX: line.getState_EndX(), endY: line.getState_EndY(), lineWidth: line.getState_LineWidth(),
+				}))
+				if (rows.some(row => !row.id || typeof row.net !== 'string' || ![row.layer, row.startX, row.startY, row.endX, row.endY, row.lineWidth].every(Number.isFinite))
+					|| new Set(rows.map(row => row.id)).size !== rows.length) throw new Error('走线读回包含不完整或重复对象')
+				return new Map(rows.map(row => [row.id, row]))
+			})
+			const before = await snapshot()
+			const original = before.get(lineId)
+			if (!original) throw new Error('当前 PCB 中不存在走线 ' + lineId)
+			const expected = { ...original }
+			let after = before
+			let completedSteps = 0
+			let latestReadback = true
+			const target = ctx?.documentTarget ?? { uuid: host.documentUuid }
+			type Line = typeof original
+			const overlaps = (row: Line, axis: Line) => {
+				if (row.net !== axis.net || row.layer !== axis.layer) return false
+				const dx = axis.endX - axis.startX, dy = axis.endY - axis.startY
+				const length = Math.hypot(dx, dy)
+				if (!length) return false
+				const project = (x: number, y: number) => (dx * (x - axis.startX) + dy * (y - axis.startY)) / length
+				const distance = (x: number, y: number) => Math.abs(dx * (y - axis.startY) - dy * (x - axis.startX)) / length
+				const a = project(row.startX, row.startY), b = project(row.endX, row.endY)
+				return distance(row.startX, row.startY) <= 0.001 && distance(row.endX, row.endY) <= 0.001
+					&& Math.min(length, Math.max(a, b)) - Math.max(0, Math.min(a, b)) > 0.001
 			}
-			if (property.lineWidth != null)
-				checks.push(['lineWidth', 'getState_LineWidth', property.lineWidth, 'num'])
-			const { readback, verified } = verifyReadback(back, checks)
-			if (!verified)
-				throw new Error(`走线 ${lineId} 修改读回不匹配（读回 ${JSON.stringify(readback)}，目标 ${JSON.stringify(property)}）——官方 modify 假成功，请重试`)
-			return { modified: okAny || verified, readback: { ...readback, verified } }
+			const changes = () => ({
+				target, requestedId: lineId, completedSteps, latestReadback,
+				added: [...after.values()].filter(row => !before.has(row.id)),
+				removed: [...before.values()].filter(row => !after.has(row.id)),
+				changed: [...after.values()].filter(row => before.has(row.id) && JSON.stringify(before.get(row.id)) !== JSON.stringify(row)),
+			})
+			const receipt = () => {
+				const delta = changes()
+				const candidates = [...delta.added, ...delta.changed]
+				return {
+					...delta,
+					replacementCandidates: delta.removed.map(row => ({
+						fromId: row.id,
+						candidateIds: candidates.filter(candidate => overlaps(candidate, row) || (row.id === lineId && overlaps(candidate, expected))).map(candidate => candidate.id),
+						verified: false,
+					})),
+				}
+			}
+			try {
+				for (const step of lineSteps) {
+					const prior = after.get(lineId)!
+					Object.assign(expected, step)
+					latestReadback = false
+					await host.write('修改走线', async () => {
+						ctx?.onProgress?.({ modifyLineDiagnostic: changes() })
+						await eda.pcb_PrimitiveLine.modify(lineId, step as any)
+					})
+					after = await snapshot()
+					latestReadback = true
+					const actual = after.get(lineId)
+					const matches = actual && actual.net === expected.net && actual.layer === expected.layer
+						&& (['startX', 'startY', 'endX', 'endY', 'lineWidth'] as const).every(key => Math.abs(actual[key] - expected[key]) <= 0.5)
+					if (!matches) {
+						const delta = changes()
+						const candidateIds = [...delta.added, ...delta.changed].filter(row => overlaps(row, expected) || overlaps(row, prior)).map(row => row.id)
+						throw new Error('走线修改已发出，旧 ID 或目标属性无法确认。请先核对实际变更对象。', {
+							cause: { mapping: { fromId: lineId, candidateIds, verified: false } },
+						})
+					}
+					completedSteps++
+					ctx?.onProgress?.({ modifyLineDiagnostic: changes() })
+				}
+				await host.finish()
+				return { modified: true, status: 'verified', target, changes: receipt(), readback: { ...after.get(lineId), verified: true } }
+			}
+			catch (error) {
+				return host.fail(error, { changes: receipt(), status: latestReadback ? 'partial' : 'unknown' })
+			}
 		},
 	},
 	{
@@ -2973,7 +3329,7 @@ export const pcbCommands: Array<ICommandDef> = [
 	},
 	{
 		name: 'pcb.modifyVia',
-		summary: '修改已有过孔（网络/位置/孔径/外径）',
+			summary: '修改已有过孔（网络/位置/孔径/外径/类型）；每项写入后读回核对',
 		params: [
 			{ name: 'primitiveId', type: 'string', required: true, description: '过孔图元 ID' },
 			{ name: 'net', type: 'string', description: '新网络名' },
@@ -2981,12 +3337,15 @@ export const pcbCommands: Array<ICommandDef> = [
 			{ name: 'y', type: 'number', description: '新坐标 Y' },
 			{ name: 'holeDiameter', type: 'number', description: '孔径（mil）' },
 			{ name: 'diameter', type: 'number', description: '外径（mil）' },
+			{ name: 'viaType', type: 'number', description: '0 普通过孔或 2 缝合孔；本参数不接受盲埋孔' },
 		],
 		returns: '{ modified }',
 		example: { cmd: 'pcb.modifyVia', params: { primitiveId: 'xxx', diameter: 24, holeDiameter: 12 } },
 		handler: async (params) => {
 			if (!params.primitiveId)
 				throw new Error('缺少参数 primitiveId')
+			if (params.viaType !== undefined && params.viaType !== 0 && params.viaType !== 2)
+				throw new Error('viaType 仅支持 0（普通过孔）或 2（缝合孔）')
 			const property: Record<string, any> = {}
 			if (params.net != null)
 				property.net = String(params.net)
@@ -2994,8 +3353,6 @@ export const pcbCommands: Array<ICommandDef> = [
 				if (params[k] != null)
 					property[k] = Number(params[k])
 			}
-			if (Object.keys(property).length === 0)
-				throw new Error('至少提供一个要修改的属性')
 			const viaId = String(params.primitiveId)
 			// 0.10.24 原子化（P10）——网络 / 位置 / 孔径 / 外径各自独立步骤
 			const viaSteps: Array<Record<string, any>> = []
@@ -3013,6 +3370,12 @@ export const pcbCommands: Array<ICommandDef> = [
 				viaSteps.push({ holeDiameter: property.holeDiameter })
 			if (property.diameter != null)
 				viaSteps.push({ diameter: property.diameter })
+			if (params.viaType !== undefined) {
+				property.viaType = params.viaType
+				viaSteps.push({ viaType: params.viaType })
+			}
+			if (Object.keys(property).length === 0)
+				throw new Error('至少提供一个要修改的属性')
 			const okAny = await modifyInSteps(async props => eda.pcb_PrimitiveVia.modify(viaId, props as any), viaSteps)
 			// 读回验证（0.10.24）
 			await new Promise(resolve => setTimeout(resolve, 300))
@@ -3029,9 +3392,11 @@ export const pcbCommands: Array<ICommandDef> = [
 				checks.push(['holeDiameter', 'getState_HoleDiameter', property.holeDiameter, 'num'])
 			if (property.diameter != null)
 				checks.push(['diameter', 'getState_Diameter', property.diameter, 'num'])
+			if (property.viaType != null)
+				checks.push(['viaType', 'getState_ViaType', property.viaType, 'num'])
 			const { readback, verified } = verifyReadback(back, checks)
-			if (!verified)
-				throw new Error(`过孔 ${viaId} 修改读回不匹配（读回 ${JSON.stringify(readback)}，目标 ${JSON.stringify(property)}）——官方 modify 假成功，请重试`)
+			if (!verified || (property.viaType != null && readback.viaType !== property.viaType))
+				throw new Error(`过孔 ${viaId} 修改读回不匹配（读回 ${JSON.stringify(readback)}，目标 ${JSON.stringify(property)}）；写入结果未确认，请先核对当前对象，不要重试`, { cause: { partial: true, retryable: false, phase: 'modifyVia.readback', primitiveId: viaId, requested: property, readback } })
 			return { modified: okAny || verified, readback: { ...readback, verified } }
 		},
 	},
@@ -3139,7 +3504,7 @@ export const pcbCommands: Array<ICommandDef> = [
 	},
 	{
 		name: 'pcb.modifyPour',
-		summary: '修改已有铺铜；网络和名称仅允许同值确认，改网/改名会在写入前拒绝；可修改层/优先级/线宽',
+		summary: '修改已有铺铜；网络和名称仅允许同值确认，改网/改名会在写入前拒绝；可修改层/优先级/线宽或以顶点替换简单多边形轮廓',
 		params: [
 			{ name: 'primitiveId', type: 'string', required: true, description: '铺铜图元 ID' },
 			{ name: 'net', type: 'string', description: '只允许与当前网络相同；暂时禁止改变已有铺铜网络。创建新铺铜时可指定网络' },
@@ -3147,13 +3512,26 @@ export const pcbCommands: Array<ICommandDef> = [
 			{ name: 'pourName', type: 'string', description: '仅允许与当前名称一致；禁止修改已有铺铜名称' },
 			{ name: 'pourPriority', type: 'number', description: '铺铜优先级（数字小先铺）' },
 			{ name: 'lineWidth', type: 'number', description: '铺铜线宽（mil）' },
+			{ name: 'vertices', type: 'Array<{x:number,y:number}>', description: '可选的新多边形顶点（mil），按边界顺序给出；只接受简单直边多边形，不支持弧边/孔洞，不能与其他属性混用' },
 		],
-		returns: '{ modified, readback: { verified, ... }, apiPriority?, sourceOrder?, sourceOrders }；优先级按 PCB 源码 order 验收；当前宿主可能将请求 priority 映射为同层锚点排序，读回不符时停止后续字段并标记 partial，不自动重试或保存',
+		returns: '{ modified, readback: { verified, ... }, apiPriority?, sourceOrder?, sourceOrders, fillInvalidated? }；轮廓编辑后若宿主移除了该铜区的实填充，返回 fillInvalidated:true，须重铺再读回。优先级按 PCB 源码 order 验收；读回不符时停止后续字段并标记 partial，不自动重试或保存',
 		example: { cmd: 'pcb.modifyPour', params: { primitiveId: 'xxx', pourPriority: 1 } },
-		handler: async (params) => {
+		handler: async (params, ctx) => {
 			if (!params.primitiveId)
 				throw new Error('缺少参数 primitiveId')
 			const property: Record<string, any> = {}
+			let requestedPolygon: CopperPolygonSource | undefined
+			if (params.vertices !== undefined) {
+				if (Object.keys(params).some(key => !['primitiveId', 'vertices', '_timeoutMs', '__docUuid', '__projectUuid', '__tabId'].includes(key) && params[key] != null))
+					throw new Error('vertices 轮廓替换本次必须单独执行，不能与其他铺铜属性混合修改')
+				requestedPolygon = copperPolygonSource(params.vertices)
+				const complexPolygon = eda.pcb_MathPolygon.createPolygon(requestedPolygon)
+				if (!complexPolygon || typeof complexPolygon.getSource !== 'function')
+					throw new Error('多边形轮廓创建失败或缺少源码读取接口')
+				if (!sameCopperPolygonSource(complexPolygon.getSource(), requestedPolygon))
+					throw new Error('宿主构造的铺铜轮廓与请求顶点不一致，未修改')
+				property.complexPolygon = complexPolygon
+			}
 			if (params.net != null)
 				property.net = String(params.net)
 			if (params.layer != null)
@@ -3197,6 +3575,8 @@ export const pcbCommands: Array<ICommandDef> = [
 			if (focus?.documentType !== 3 || typeof focus?.uuid !== 'string' || !focus.uuid.trim())
 				throw new Error(`焦点文档不是有效 PCB（documentType=${focus?.documentType ?? '未知'}, uuid=${focus?.uuid ?? '无'}）`)
 			const assertSameFocus = async () => {
+				if (ctx?.assertDocumentTarget)
+					return await awaitSdk('复核焦点文档', ctx.assertDocumentTarget)
 				const latestFocus = await awaitSdk('复核焦点文档', () => eda.dmt_SelectControl.getCurrentDocumentInfo())
 				if (latestFocus?.documentType !== 3 || latestFocus.uuid !== focus.uuid)
 					throw new Error(`当前 PCB 文档已变化（原页=${focus.uuid}, 当前=${latestFocus?.uuid ?? '未知'}）`)
@@ -3219,13 +3599,20 @@ export const pcbCommands: Array<ICommandDef> = [
 					target: target.data as Record<string, any>,
 					orders: all.filter(item => item.data.layerId === target.data.layerId).map(item => ({ primitiveId: item.id, layer: item.data.layerId, sourceOrder: item.data.order })).sort((a, b) => String(a.primitiveId).localeCompare(String(b.primitiveId))),
 					pouredRecords: snapshotEffectiveSourceRecords(doc, 'POURED'),
+					protectedRecords: property.complexPolygon
+						? snapshotEffectiveSourceRecords(doc, undefined, pourId).filter(([key]) => !key.startsWith('POURED\u0000'))
+						: [],
 				}
 			}
-			const names = ['net', 'layer', 'pourName', 'pourPriority', 'lineWidth'] as const
-			const sourceField: Record<(typeof names)[number], string> = { net: 'netName', layer: 'layerId', pourName: 'name', pourPriority: 'order', lineWidth: 'width' }
+			const names = ['net', 'layer', 'pourName', 'pourPriority', 'lineWidth', 'complexPolygon'] as const
+			const sourceField: Record<(typeof names)[number], string> = { net: 'netName', layer: 'layerId', pourName: 'name', pourPriority: 'order', lineWidth: 'width', complexPolygon: 'path' }
 			const sourceValue = (data: Record<string, any>, key: (typeof names)[number]) => data[sourceField[key]]
-			const equivalent = (key: (typeof names)[number], actual: unknown, expected: unknown) => key === 'net' || key === 'pourName' ? actual === expected : typeof actual === 'number' && actual === expected
-			const requested = Object.fromEntries(names.filter(key => property[key] != null).map(key => [key, property[key]]))
+			const equivalent = (key: (typeof names)[number], actual: unknown, expected: unknown) => {
+				if (key === 'net' || key === 'pourName') return actual === expected
+				if (key === 'complexPolygon') return sameCopperPolygonSource(actual, (expected as any)?.getSource?.() ?? expected as CopperPolygonSource)
+				return typeof actual === 'number' && actual === expected
+			}
+			const requested = Object.fromEntries(names.filter(key => property[key] != null).map(key => [key, key === 'complexPolygon' ? requestedPolygon : property[key]]))
 			let previousSource: Awaited<ReturnType<typeof readSource>> | undefined
 			const sourceOrders: { before: Array<Record<string, unknown>>, after?: Array<Record<string, unknown>> } = { before: [] }
 			const attemptedFields: Array<string> = []
@@ -3233,6 +3620,7 @@ export const pcbCommands: Array<ICommandDef> = [
 			const verifiedFields: Array<string> = []
 			const readback: Record<string, unknown> = {}
 			let apiPriority: number | undefined
+			let fillInvalidated = false
 			let lastSource: Record<string, any> = {}
 			let readbackStatus: 'current' | 'lastKnown' = 'current'
 			const refreshVerifiedFields = (data: Record<string, any>) => {
@@ -3360,12 +3748,23 @@ export const pcbCommands: Array<ICommandDef> = [
 					const sameLayerChanged = key !== 'pourPriority' && key !== 'layer' && JSON.stringify(stepBefore.orders) !== JSON.stringify(after.orders)
 					refreshVerifiedFields(after.target)
 					const pouredRecordsChange = diffSourceRecordSnapshots(stepBefore.pouredRecords, after.pouredRecords)
-					if (pouredRecordsChange.added.length || pouredRecordsChange.removed.length || pouredRecordsChange.changed.length)
+					const targetFillKey = `POURED\u0000${JSON.stringify(['POURED', pourId])}`
+					const onlyTargetFillRemoved = key === 'complexPolygon' && !pouredRecordsChange.added.length
+						&& !pouredRecordsChange.changed.length && pouredRecordsChange.removed.length === 1
+						&& pouredRecordsChange.removed[0] === targetFillKey
+					if (onlyTargetFillRemoved)
+						fillInvalidated = true
+					else if (pouredRecordsChange.added.length || pouredRecordsChange.removed.length || pouredRecordsChange.changed.length)
 						failPartial(`铺铜 ${pourId} 属性修改同时新增、删除或修改了有效 POURED 填充记录，已停止后续字段`, { pouredRecordsChange })
+					if (key === 'complexPolygon') {
+						const protectedChange = diffSourceRecordSnapshots(stepBefore.protectedRecords, after.protectedRecords)
+						if (protectedChange.added.length || protectedChange.removed.length || protectedChange.changed.length)
+							failPartial(`铺铜 ${pourId} 轮廓修改同时改变了其他源码对象`, { protectedChange })
+					}
 					if (writeError)
 						failPartial(`铺铜 ${pourId} 字段 ${key} 修改失败或返回空值，已停止后续字段`, { writeError: String((writeError as any)?.message ?? writeError) }, writeError)
-					if (!equivalent(key, sourceValue(after.target, key), property[key])) {
-						const mismatch = { field: key, requested: property[key], actual: sourceValue(after.target, key) }
+					if (!equivalent(key, sourceValue(after.target, key), requested[key])) {
+						const mismatch = { field: key, requested: requested[key], actual: sourceValue(after.target, key) }
 						const message = key === 'pourPriority'
 							? `铺铜 ${pourId} 目标排序未达成（请求 priority=${property[key]}, source order=${sourceValue(after.target, key)}）；宿主排序参数可能不等于 source order，请检查后决定是否再次操作`
 							: `铺铜 ${pourId} 字段 ${key} 源码读回不匹配（请求=${JSON.stringify(property[key])}, source=${JSON.stringify(sourceValue(after.target, key))}）`
@@ -3374,7 +3773,7 @@ export const pcbCommands: Array<ICommandDef> = [
 					if (sameLayerChanged)
 						failPartial(`铺铜 ${pourId} 字段 ${key} 修改同时改变了同层铺铜 source order，已停止后续字段`, { sourceOrderChanged: true })
 					for (const field of names) {
-						if (field !== key && sourceValue(after.target, field) !== sourceValue(stepBefore.target, field))
+						if (field !== key && JSON.stringify(sourceValue(after.target, field)) !== JSON.stringify(sourceValue(stepBefore.target, field)))
 							failPartial(`铺铜 ${pourId} 字段 ${key} 修改同时改变了其他字段 ${field}，已停止后续字段`, { unintendedFieldChange: { field, before: sourceValue(stepBefore.target, field), after: sourceValue(after.target, field) } })
 					}
 					previousSource = after
@@ -3397,6 +3796,7 @@ export const pcbCommands: Array<ICommandDef> = [
 				...(noOpFields.length ? { noOpFields: [...noOpFields] } : {}),
 				readback: { ...readback, verified: true },
 				...(property.pourPriority != null ? { apiPriority, sourceOrder: sourceValue(lastSource, 'pourPriority') } : {}),
+				...(property.complexPolygon ? { fillInvalidated } : {}),
 				sourceOrders,
 			}
 		},
@@ -3406,10 +3806,11 @@ export const pcbCommands: Array<ICommandDef> = [
 		summary: '重建铺铜填充（0.10.43，GPT PCB电源铺铜反馈 R1）——官方 rebuildCopperRegion(s) 封装；只触发重建并读回，不保存、不切层',
 		params: [
 			{ name: 'primitiveId', type: 'string', description: '铺铜边框图元 ID（pcb.listPours 查）；留空=重建全板全部铺铜' },
+			{ name: 'protectNets', type: 'string[]', description: '需保护的电源地等准确网络名。重铺前后核对飞线；若新增端点对，返回部分完成并停止依赖步骤。已发生的重铺不会自动撤销。' },
 		],
-		returns: '{ status: completed|no-fill|failed|timeout, primitiveId?, net?, layer?, fillBefore, fillAfter, rebuiltFills?, error? }——completed 仅表示重建调用成功且合法读回含填充，不证明保存或板级制造状态；写入超时/拒绝会以 error.cause.partial=true 返回并停止宏（超时≠取消）',
+		returns: '{ status, primitiveId?, net?, layer?, fillBefore?, fillAfter?, rebuiltFills?, connectivity? }；指定 protectNets 时报告飞线变化。重铺已发生而保护网新增飞线或读回失败时，error.cause.partial=true，停止依赖步骤。completed 只表示重建调用成功并读回填充；飞线比较不能代替完整实铜连通和 DRC。',
 		example: { cmd: 'pcb.rebuildPour', params: { primitiveId: 'xxx' } },
-		handler: async (params) => {
+		handler: withCopperConnectivityProtection(async (params, ctx) => {
 			// 官方语义（pro-api-types 实锤）：
 			//  · pourCopper 只创建「覆铜边框」，不保证同步生成「覆铜填充」——填充由 rebuildCopperRegion(s) 生成；
 			//  · 单框重建 pour.rebuildCopperRegion() @beta，官方示例注明「当前版本在纯 API 创建的覆铜上重建可能报内部错误」——如实透传；
@@ -3418,6 +3819,7 @@ export const pcbCommands: Array<ICommandDef> = [
 			const fillInfo = (poured: any) => ({
 				fillPrimitiveId: poured ? safeState<string>(poured, 'getState_PrimitiveId') : undefined,
 				fillRegions: poured ? (safeState<Array<unknown>>(poured, 'getState_PourFills') ?? []).length : 0,
+				solidRegions: poured ? (safeState<Array<{ fill?: boolean }>>(poured, 'getState_PourFills') ?? []).filter(region => region?.fill === true).length : 0,
 			})
 			const validatePoured = (poured: any, label: string): void => {
 				if (poured === undefined)
@@ -3460,6 +3862,7 @@ export const pcbCommands: Array<ICommandDef> = [
 			}
 
 			if (params.primitiveId) {
+				await ctx?.assertDocumentTarget?.()
 				const pourId = String(params.primitiveId)
 				const pour = await eda.pcb_PrimitivePour.get(pourId).catch(() => undefined)
 				if (!pour)
@@ -3471,29 +3874,37 @@ export const pcbCommands: Array<ICommandDef> = [
 				}
 				const before = await withTimeout(pour.getCopperRegion(), FILL_READ_TIMEOUT_MS, 'getCopperRegion(before)')
 				validatePoured(before, 'getCopperRegion(before)')
+				const fillBefore = fillInfo(before)
 				let rebuildResult: any
+				await ctx?.assertDocumentTarget?.()
 				try {
-					const remaining = remainingRebuildMs('rebuildCopperRegion', { ...identity, fillBefore: fillInfo(before) })
+					const remaining = remainingRebuildMs('rebuildCopperRegion', { ...identity, fillBefore })
 					rebuildResult = await withTimeout(pour.rebuildCopperRegion(), remaining, 'rebuildCopperRegion')
-					remainingRebuildMs('rebuildCopperRegion', { ...identity, fillBefore: fillInfo(before) })
+					remainingRebuildMs('rebuildCopperRegion', { ...identity, fillBefore })
 				}
 				catch (err: any) {
 					const message = String(err?.message ?? err)
-					throw writeOutcomeError('rebuildCopperRegion', err, /超时/.test(message) ? 'timeout' : 'failed', { ...identity, fillBefore: fillInfo(before) })
+					throw writeOutcomeError('rebuildCopperRegion', err, /超时/.test(message) ? 'timeout' : 'failed', { ...identity, fillBefore })
 				}
 				let after: any
 				try {
+					await ctx?.assertDocumentTarget?.()
 					after = await withTimeout(pour.getCopperRegion(), FILL_READ_TIMEOUT_MS, 'getCopperRegion(after)')
 					validatePoured(after, 'getCopperRegion(after)')
-					remainingRebuildMs('getCopperRegion(after)', { ...identity, fillBefore: fillInfo(before) })
+					await ctx?.assertDocumentTarget?.()
+					remainingRebuildMs('getCopperRegion(after)', { ...identity, fillBefore })
 				}
 				catch (err) {
-					throw writeOutcomeError('getCopperRegion(after)', err, 'failed', { ...identity, fillBefore: fillInfo(before) })
+					throw writeOutcomeError('getCopperRegion(after)', err, 'failed', { ...identity, fillBefore })
 				}
 				const fillAfter = fillInfo(after)
-				if (after && fillAfter.fillRegions > 0)
-					return { status: 'completed', ...identity, fillBefore: fillInfo(before), fillAfter, rebuiltReturned: rebuildResult != null, freshnessVerified: false }
-				return { status: 'no-fill', ...identity, fillBefore: fillInfo(before), fillAfter, note: '官方调用未报错但未生成填充图元——可能需在界面手动重建（设计→覆铜），或以只读指令复核' }
+				if (after && fillAfter.fillRegions > 0) {
+					const sameParent = safeState<string>(after, 'getState_PourPrimitiveId') === pourId
+					const newFillObserved = sameParent && fillBefore.fillRegions === 0 && fillAfter.solidRegions > 0
+					return { status: 'completed', ...identity, fillBefore, fillAfter, rebuiltReturned: rebuildResult != null,
+						freshnessVerified: newFillObserved, freshnessEvidence: newFillObserved ? 'target-solid-fill-appeared' : 'unknown' }
+				}
+				return { status: 'no-fill', ...identity, fillBefore, fillAfter, note: '官方调用未报错但未生成填充图元——可能需在界面手动重建（设计→覆铜），或以只读指令复核' }
 			}
 
 			// 全板重建
@@ -3509,6 +3920,7 @@ export const pcbCommands: Array<ICommandDef> = [
 					throw new Error('getAll(pours)包含非法铺铜图元，已拒绝重建')
 			}
 			try {
+				await ctx?.assertDocumentTarget?.()
 				// 0.10.45：@alpha 静态 rebuildCopperRegions 在 EDA 4.1.60 运行时不存在（装机实测 "not a function"）——
 				// 退化为逐框 rebuildCopperRegion 循环，行为等价于界面"重建全部覆铜"。
 				if (typeof (eda.pcb_PrimitivePour as any).rebuildCopperRegions === 'function') {
@@ -3527,6 +3939,7 @@ export const pcbCommands: Array<ICommandDef> = [
 						if (!pid)
 							continue
 						try {
+							await ctx?.assertDocumentTarget?.()
 							const label = `rebuildCopperRegion(${pid})`
 							const remaining = remainingRebuildMs(label, { pourId: pid, mode: 'per-pour-loop', fillCountBefore: beforeAll.length })
 							const r = await withTimeout((p as any).rebuildCopperRegion(), remaining, label)
@@ -3551,7 +3964,9 @@ export const pcbCommands: Array<ICommandDef> = [
 			}
 			let afterAll: Array<any>
 			try {
+				await ctx?.assertDocumentTarget?.()
 				afterAll = validatePouredList(await eda.pcb_PrimitivePoured.getAll(), 'getAll(after)')
+				await ctx?.assertDocumentTarget?.()
 				remainingRebuildMs('getAll(after)', { fillCountBefore: beforeAll.length, mode: fallbackLoop ? 'per-pour-loop' : 'static' })
 			}
 			catch (err) {
@@ -3567,7 +3982,7 @@ export const pcbCommands: Array<ICommandDef> = [
 				...(fallbackLoop ? { mode: 'per-pour-loop' } : {}),
 				freshnessVerified: false,
 			}
-		},
+		}),
 	},
 	{
 		name: 'pcb.listStrings',
@@ -4330,13 +4745,13 @@ export const pcbCommands: Array<ICommandDef> = [
 		params: [
 			{ name: 'maxPasses', type: 'number', description: '最大布线轮数，默认 50' },
 			{ name: 'viaCosts', type: 'number', description: '过孔成本权重（越高越少过孔），默认 50' },
-			{ name: 'maxThreads', type: 'number', description: '并行线程数，默认 4' },
-			{ name: 'automaticNeckdown', type: 'boolean', description: '是否允许 FreeRouting 在窄焊盘处自动缩小走线宽度；默认 false。表示提交的设置，不代表服务器读回已验证' },
+			{ name: 'maxThreads', type: 'number', description: '布线优化阶段最大线程数，写入optimizer.max_threads，默认 4；FreeRouting自动布线pass本身为单线程' },
+			{ name: 'automaticNeckdown', type: 'boolean', description: '是否允许 FreeRouting 在窄焊盘处自动缩小走线宽度；默认 false。插件在启动前读回核对有效设置，实际线路仍须单独验收' },
 			{ name: 'applyLayerWidthRules', type: 'boolean', description: '可选：仅当源码稳定且逐层preferred线宽已知时，将确认的DEFAULT层rule与class layer_rule写入本次DSN；默认false，不修改EDA规则或SES' },
 			{ name: '__routeOperationId', type: 'string', description: '菜单内部使用：用于在启动响应丢失时恢复这一次启动操作' },
 			{ name: 'skipDrc', type: 'boolean', description: '兼容参数；自动回灌停用期间不会自动运行 DRC' },
 		],
-		returns: '{ jobId, outcome: "start-request-submitted", routingSettings: { automaticNeckdown, readbackVerified: false }, widthRuleComparison, dsnConversion: { changed, changes, warnings, limitations, slotClearance? }, routingConstraintsComplete:false, stateVerified: false, note }；线宽差异默认只报告；applyLayerWidthRules:true时显式补写已确认的DSN DEFAULT与class层宽，并在dsnConversion逐项披露。不会修改EDA规则或SES；布线约束仍不完整。TRACK字段、单位和启用层集合可确认时，NORMAL/mil/open的显式NET多行TRACK规则仅在源码、唯一简单NET selector、SDK NET绑定及全部启用SIGNAL层ID逐层一致时按层确认；层范围不同时网络对照的layers列出各层结果，聚合项不提供单层范围。DEFAULT、NET与NET_CLASS多行规则可在完整逐层证据满足时按层确认；结构可确认的NET SAFE+TRACK可在SAFE引用结构及SDK双绑定一致时独立确认TRACK，同原始SAFE ID的严格ticket历史可消解到唯一最新实体，未消解删除或冲突仍未知；NET_CLASS混合在NET明确TRACK-only或自身SAFE／TRACK均经唯一SDK确认时可独立确认TRACK，显式NET优先；空NET继承仍未知。无structure base但完整默认层覆盖时可比较，转换为缺失层写明确preferred，非法base不作缺省。槽孔仅在原默认SAFE profile及已核对TRACK-only类结构、有效PAD_NET或独立NORMAL焊盘网络覆盖下补偿，不解释新的SAFE间距语义。preferred是配置值，不证明交互落线宽度。routingSettings表示提交值，不代表服务器读回已验证；/start响应不确定时抛出partial=true,retryable=false和jobId；只能查状态或取消，不要重提',
+		returns: '{ jobId, outcome: "start-request-submitted", routingSettings: { requested, effective, readbackVerified: true }, widthRuleComparison, dsnConversion: { changed, changes, warnings, limitations, slotClearance? }, routingConstraintsComplete:false, stateVerified: false, note }；routingSettings列出requested与effective，且仅当autorouter.max_passes、scoring.via_costs、optimizer.max_threads、optimizer.improvement_threshold、trace_pull_tight_accuracy、scoring.start_ripup_costs、automatic_neckdown、allowed_via_types逐字段读回一致后才允许启动；optimizer.max_threads约束优化阶段线程，自动布线pass本身为单线程。这不证明实际路由行为遵从设置。设置读回失败或不匹配时返回partial=true,retryable=false和已知jobId，不上传DSN或启动；/start响应不确定时只能查状态或取消，不要重提。线宽差异默认只报告；applyLayerWidthRules:true时显式补写已确认的DSN DEFAULT与class层宽，并在dsnConversion逐项披露。不会修改EDA规则或SES；布线约束仍不完整。TRACK字段、单位和启用层集合可确认时，NORMAL/mil/open的显式NET多行TRACK规则仅在源码、唯一简单NET selector、SDK NET绑定及全部启用SIGNAL层ID逐层一致时按层确认；层范围不同时网络对照的layers列出各层结果，聚合项不提供单层范围。DEFAULT、NET与NET_CLASS多行规则可在完整逐层证据满足时按层确认；结构可确认的NET SAFE+TRACK可在SAFE引用结构及SDK双绑定一致时独立确认TRACK，同原始SAFE ID的严格ticket历史可消解到唯一最新实体，未消解删除或冲突仍未知；NET_CLASS混合在NET明确TRACK-only或自身SAFE／TRACK均经唯一SDK确认时可独立确认TRACK，显式NET优先；空NET继承仍未知。无structure base但完整默认层覆盖时可比较，转换为缺失层写明确preferred，非法base不作缺省。槽孔仅在原默认SAFE profile及已核对TRACK-only类结构、有效PAD_NET或独立NORMAL焊盘网络覆盖下补偿，不解释新的SAFE间距语义。preferred是配置值，不证明交互落线宽度',
 		example: { cmd: 'pcb.autoRouteStart', params: { maxPasses: 50 } },
 		handler: async (params) => {
 			if (params.applyLayerWidthRules !== undefined && typeof params.applyLayerWidthRules !== 'boolean')
@@ -4488,19 +4903,7 @@ export const pcbCommands: Array<ICommandDef> = [
 			if (typeof job?.id !== 'string' || !job.id.trim())
 				throw new Error('FreeRouting 创建任务未返回有效 jobId，无法绑定 PCB 文档')
 			routeJobDocumentUuids.set(job.id, routeDocumentUuid)
-			const settings: Record<string, unknown> = {
-				max_passes: maxPasses,
-				via_costs: params.viaCosts != null ? Number(params.viaCosts) : 50,
-				max_threads: params.maxThreads != null ? Number(params.maxThreads) : 4,
-				improvement_threshold: 0,
-				trace_pull_tight_accuracy: 500,
-				start_ripup_costs: 100,
-				automatic_neckdown: params.automaticNeckdown === true,
-				allowed_via_types: true,
-			}
-			await frRequest('POST', `/jobs/${job.id}/settings`, settings)
-			await frRequest('POST', `/jobs/${job.id}/input`, { filename: dsnFile.name, data: dsnBase64 })
-			if (routeBaseline) routeJobBaselines.set(job.id, routeBaseline)
+			currentRouteJobId = job.id
 			if (typeof focus.tabId === 'string' && focus.tabId.trim()) {
 				routeJobTabIds.set(job.id, focus.tabId)
 				const operationId = typeof params.__routeOperationId === 'string' ? params.__routeOperationId.trim() : ''
@@ -4510,7 +4913,29 @@ export const pcbCommands: Array<ICommandDef> = [
 					routeOperationJobs.set(operationKey, job.id)
 				}
 			}
-			currentRouteJobId = job.id
+			const settings: Record<string, unknown> = {
+				autorouter: { max_passes: maxPasses },
+				scoring: {
+					via_costs: params.viaCosts != null ? Number(params.viaCosts) : 50,
+					start_ripup_costs: 100,
+				},
+				optimizer: {
+					improvement_threshold: 0,
+					max_threads: params.maxThreads != null ? Number(params.maxThreads) : 4,
+				},
+				trace_pull_tight_accuracy: 500,
+				automatic_neckdown: params.automaticNeckdown === true,
+				allowed_via_types: true,
+			}
+			let effectiveSettings: Record<string, unknown> | undefined
+			try { effectiveSettings = await frSetAndVerifyJobSettings(job.id, settings) }
+			catch (error) {
+				throw new Error(`FreeRouting 布线设置未能确认（jobId=${job.id}）；任务未启动，只能使用 pcb.autoRouteStatus 查询或 pcb.autoRouteStop 取消，不要重提`, {
+					cause: { partial: true, retryable: false, jobId: job.id, outcome: 'settings-verification-failed', settingsRequest: 'applied-or-unknown', operationError: String((error as any)?.message ?? error) },
+				})
+			}
+			await frRequest('POST', `/jobs/${job.id}/input`, { filename: dsnFile.name, data: dsnBase64 })
+			if (routeBaseline) routeJobBaselines.set(job.id, routeBaseline)
 			try {
 				await frRequest('PUT', `/jobs/${job.id}/start`)
 			}
@@ -4522,7 +4947,7 @@ export const pcbCommands: Array<ICommandDef> = [
 			return {
 				jobId: job.id,
 				outcome: 'start-request-submitted',
-				routingSettings: { automaticNeckdown: settings.automatic_neckdown, readbackVerified: false },
+				routingSettings: { requested: settings, effective: effectiveSettings, readbackVerified: true },
 				widthRuleComparison,
 				dsnConversion: {
 					changed: dsnRepair.changed || dsnPrepared.changed || finalDsnPrepared.changed,
@@ -4539,7 +4964,7 @@ export const pcbCommands: Array<ICommandDef> = [
 	},
 	{
 		name: 'pcb.autoRouteStatus',
-		summary: '只查询 FreeRouting 自动布线任务状态；若启动回包丢失，可在同一 PCB 文档和标签页恢复本运行时已绑定任务，不盲取其他 PCB 的最近任务。COMPLETED 仅返回状态，不读取输出、不自动导入、不修改 PCB',
+		summary: '只查询 FreeRouting 自动布线任务状态；若启动回包丢失，可在同一 PCB 文档和标签页恢复本运行时已绑定任务，不盲取其他 PCB 的最近任务。COMPLETED 仅返回状态，不读取输出、不自动导入、不修改 PCB；需要取回结果时调用 pcb.autoRouteGetResult，再显式调用 pcb.importAutoRouteSes 导入',
 		params: [
 			{ name: 'jobId', type: 'string', description: '任务 ID；留空时仅按当前 PCB UUID、tabId 和本运行时布线任务绑定恢复，不会查询其他 PCB 的最近任务' },
 			{ name: '__docUuid', type: 'string', description: '菜单内部使用：目标 PCB 文档 UUID' },

@@ -22,8 +22,8 @@ const createPour = pourCommand.handler
 const record = (type, id, data, ticket) => `${JSON.stringify({ type, id, ticket })}||${JSON.stringify(data)}`
 const expectedPath = ['R', 10, 35, 20, 30, 0, 0]
 
-function install({ preserveGetter, sourceKeepIsland, getterPath, sourcePath, focusUuid = 'pcb-pour-create', sourceUuid = focusUuid, netLookup, sourceRead, createDelay, afterCreateSource } = {}) {
-	const state = { created: [], sourceReads: 0, netReads: 0, rebuildCalls: 0, getReads: 0, args: undefined, candidate: undefined }
+function install({ preserveGetter, sourceKeepIsland, getterPath, sourcePath, expectedPolygonSource = expectedPath, focusUuid = 'pcb-pour-create', sourceUuid = focusUuid, netLookup, sourceRead, createDelay, afterCreateSource } = {}) {
+	const state = { created: [], sourceReads: 0, netReads: 0, rebuildCalls: 0, getReads: 0, args: undefined, candidate: undefined, polygonSources: [] }
 	const focus = { uuid: focusUuid }
 	const baseline = [
 		record('DOCHEAD', 'head', { docType: 'PCB', uuid: sourceUuid, client: 'fixture' }, 1),
@@ -31,7 +31,7 @@ function install({ preserveGetter, sourceKeepIsland, getterPath, sourcePath, foc
 		record('POUR', 'old-pour', { netName: 'GND', layerId: 2, keepIsland: false, order: 0, path: [['R', 1, 1, 2, 2, 0, 0]], untouched: 'old' }, 3),
 	].join('\n')
 	let currentSource = baseline
-	const expectedArgs = expectedPath
+	const expectedArgs = expectedPolygonSource
 	const polygon = { getSource: () => expectedArgs }
 	const createObject = id => ({
 		getState_PrimitiveId: () => id,
@@ -47,7 +47,7 @@ function install({ preserveGetter, sourceKeepIsland, getterPath, sourcePath, foc
 		pcb_Net: { getAllNetsName: async () => { state.netReads++; return netLookup ? netLookup(focus) : ['GND', 'VCC'] } },
 		dmt_SelectControl: { getCurrentDocumentInfo: async () => ({ documentType: 3, uuid: focus.uuid }) },
 		sys_FileManager: { getDocumentSource: async () => { state.sourceReads++; return sourceRead ? sourceRead(state.sourceReads, currentSource) : currentSource } },
-		pcb_MathPolygon: { createPolygon: source => { assert.deepEqual(source, expectedArgs); return polygon } },
+		pcb_MathPolygon: { createPolygon: source => { state.polygonSources.push(source); assert.deepEqual(source, expectedArgs); return polygon } },
 		pcb_PrimitivePour: {
 			create: async (...args) => {
 				state.created.push(args)
@@ -72,6 +72,40 @@ function install({ preserveGetter, sourceKeepIsland, getterPath, sourcePath, foc
 		},
 	}
 	return { state, baseline }
+}
+
+// Concave simple polygons use the SDK documented L source while rectangle input stays compatible.
+{
+	const vertices = [{ x: 10, y: 10 }, { x: 50, y: 10 }, { x: 50, y: 30 }, { x: 30, y: 30 }, { x: 30, y: 60 }, { x: 10, y: 60 }]
+	const path = [10, 10, 'L', 50, 10, 50, 30, 30, 30, 30, 60, 10, 60, 10, 10]
+	const f = install({ expectedPolygonSource: path })
+	const result = await createPour({ net: 'GND', layer: 'bottom', vertices })
+	assert.equal(result.readback.verified, true)
+	assert.deepEqual(f.state.polygonSources, [path])
+	assert.deepEqual(f.state.args.slice(0, 2), ['GND', 2])
+	assert.deepEqual(f.state.args[2].getSource(), path)
+}
+{
+	const fixture = install()
+	eda.pcb_MathPolygon.createPolygon = source => ({ getSource: () => source.map((value, i) => i === 3 ? value + 1 : value) })
+	const vertices = [{ x: 10, y: 10 }, { x: 50, y: 10 }, { x: 10, y: 60 }]
+	await assert.rejects(() => createPour({ net: 'GND', layer: 'bottom', vertices }), /构造的铺铜轮廓与请求顶点不一致/)
+	assert.equal(fixture.state.args, undefined)
+}
+{
+	// CP66 real source outline, with the repeated closing vertex accepted.
+	const vertices = [
+		{ x: 2755.9055, y: 5767.7164 }, { x: 2755.9055, y: 5826.7715 }, { x: 3031.496, y: 5826.7715 },
+		{ x: 3090.5511, y: 5767.7164 }, { x: 3090.5511, y: 4940.9448 }, { x: 3051.0008, y: 4901.3945 },
+		{ x: 2968.6084, y: 4901.3945 }, { x: 2968.6084, y: 4960.6298 }, { x: 3031.496, y: 4960.6298 },
+		{ x: 3031.496, y: 5728.3463 }, { x: 2989.2455, y: 5770.5968 }, { x: 2758.7858, y: 5770.5968 },
+		{ x: 2755.9055, y: 5767.7164 },
+	]
+	const path = [2755.9055, 5767.7164, 'L', 2755.9055, 5826.7715, 3031.496, 5826.7715, 3090.5511, 5767.7164, 3090.5511, 4940.9448, 3051.0008, 4901.3945, 2968.6084, 4901.3945, 2968.6084, 4960.6298, 3031.496, 4960.6298, 3031.496, 5728.3463, 2989.2455, 5770.5968, 2758.7858, 5770.5968, 2755.9055, 5767.7164]
+	const f = install({ expectedPolygonSource: path, netLookup: async () => ['VBAT'] })
+	const result = await createPour({ net: 'VBAT', layer: 'top', vertices })
+	assert.equal(result.readback.verified, true)
+	assert.deepEqual(f.state.args[2].getSource(), path)
 }
 
 async function withClock(fn) {

@@ -401,7 +401,7 @@ await check('有效同网间距能完整通过', async () => {
 await check('同网距离的网络部分失败被保留为 issue', async () => {
   const p1 = pad('p1', 0)
   const sdk = makeSdk({ nets: ['GND', 'VCC'], pads: [p1], netRead: async name => { if (name === 'VCC') throw new Error('net read'); return [p1] } })
-  const result = await runOfficialDfm('spacing', {}, sdk)
+  const result = await runPcb(sdk)
   assert.equal(result.complete, false)
   assert.ok(result.issues.some(issue => issue.code === 'network_partial_failure'))
 })
@@ -416,16 +416,117 @@ await check('PCB 网络列表部分失败及 pad 尺寸缺失进入 issues', asy
   assert.equal(result.complete, false)
 })
 await check('焊盘缺少尺寸或网络不会当作无适用焊盘通过', async () => {
-  const sdk = makeSdk({ pads: [pad('missing-size', 0, { shape: null }), pad('missing-net', 20, { net: '' })] })
-  const result = await runOfficialDfm('spacing', {}, sdk)
+  const markPoint = pad('missing-net', 20, { net: '' })
+  markPoint.getState_PadType = () => 2
+  const sdk = makeSdk({ pads: [pad('missing-size', 0, { shape: null }), markPoint] })
+  const result = await runPcb(sdk)
   assert.equal(result.complete, false)
   assert.ok(result.issues.some(issue => issue.code === 'pad_shape_missing'))
   assert.ok(result.issues.some(issue => issue.code === 'pad_net_missing'))
+  assert.deepEqual(result.results[13].padNetworkClassification.unclassifiedPads, [{
+    padId: 'missing-net',
+    padNumber: null,
+    layer: '1',
+    classification: 'mark-point-without-network',
+    status: 'type-evidence-only',
+    evidence: {
+      padType: { status: 'value', value: 2 },
+      hole: { status: 'none' },
+      metallization: { status: 'unavailable' },
+      networkEvidence: [],
+    },
+    purposeConfirmed: false,
+    geometricClearanceStatus: 'not-confirmed-by-purpose-evidence',
+  }])
+})
+
+await check('精确图元ID的项目用途证据只标注无网焊盘并保留原始DFM问题', async () => {
+  const explicit = pad('pad-nc', 20, { net: '' })
+  const wired = pad('pad-wired', 40, { net: 'GND' })
+  const result = await runPcb(makeSdk({ nets: ['GND'], pads: [explicit, wired], netRead: async name => name === 'GND' ? [wired] : [] }), {
+    padPurposeEvidence: [
+      { padId: 'pad-nc', classification: 'nc', reason: '项目连接表标注 NC', source: 'project/netlist.xlsx!sheet1!B7' },
+      { padId: 'pad-wired', classification: 'reserved', reason: '历史预留脚', source: 'project/review.md#pad-wired' },
+      { padId: 'stale-pad', classification: 'mechanical', reason: '机械定位孔', source: 'project/mechanical.pdf:p2' },
+    ],
+  })
+  const classifications = result.results[13].padNetworkClassification.unclassifiedPads
+  assert.equal(classifications.find(item => item.padId === 'pad-nc').classification, 'nc')
+  assert.equal(classifications.find(item => item.padId === 'pad-nc').status, 'explicit-project-evidence')
+  assert.equal(classifications.find(item => item.padId === 'pad-nc').hostTypeClassification, 'unclassified-empty-network')
+  assert.equal(classifications.find(item => item.padId === 'pad-nc').sourceIndependentlyVerified, false)
+  assert.equal(classifications.find(item => item.padId === 'pad-nc').geometricClearanceStatus, 'not-confirmed-by-purpose-evidence')
+  assert.equal(classifications.find(item => item.padId === 'pad-wired').status, 'conflicted-effective-net')
+  assert.deepEqual(classifications.find(item => item.padId === 'pad-wired').effectiveNetworks, ['GND'])
+  assert.equal(classifications.find(item => item.padId === 'pad-wired').classification, 'reserved')
+  assert.ok(classifications.find(item => item.padId === 'pad-wired').networkEvidence.length > 0)
+  assert.equal(classifications.find(item => item.padId === 'stale-pad').status, 'primitive-id-not-found')
+  assert.ok(result.issues.some(issue => issue.code === 'pad_net_missing' && issue.message.includes('pad-nc')))
+  assert.ok(result.issues.some(issue => issue.code === 'pad_purpose_evidence_conflict' && issue.message.includes('pad-wired')))
+  assert.ok(result.issues.some(issue => issue.code === 'pad_purpose_evidence_unmatched' && issue.message.includes('stale-pad')))
+  assert.equal(result.complete, false)
+})
+
+await check('重复的当前图元ID不会应用项目用途分类', async () => {
+  const a = pad('duplicated-id', 20, { net: '' })
+  const b = pad('duplicated-id', 40, { net: '' })
+  const result = await runPcb(makeSdk({ pads: [a, b] }), {
+    padPurposeEvidence: [{ padId: 'duplicated-id', classification: 'nc', reason: '明确标注', source: 'project/netlist.csv' }],
+  })
+  assert.equal(result.results[13].padNetworkClassification.unclassifiedPads.filter(item => item.status === 'ambiguous-primitive-id').length, 2)
+  assert.ok(result.issues.some(issue => issue.code === 'pad_purpose_evidence_ambiguous'))
+  assert.equal(result.complete, false)
+})
+
+await check('焊盘几何缺失时项目用途证据保持未知而不静默应用', async () => {
+  const incomplete = pad('no-shape', 20, { net: '', shape: null })
+  const result = await runPcb(makeSdk({ pads: [incomplete] }), {
+    padPurposeEvidence: [{ padId: 'no-shape', classification: 'mechanical', reason: '项目机械图标注', source: 'project/mechanical.pdf:p3' }],
+  })
+  const classification = result.results[13].padNetworkClassification.unclassifiedPads.find(item => item.padId === 'no-shape')
+  assert.equal(classification.status, 'geometry-or-network-unavailable')
+  assert.equal(classification.effectiveNetworkStatus, 'unknown')
+  assert.equal(classification.geometricClearanceStatus, 'unknown')
+  assert.ok(result.issues.some(issue => issue.code === 'pad_shape_missing'))
+  assert.ok(result.issues.some(issue => issue.code === 'pad_purpose_evidence_not_evaluated'))
+  assert.equal(result.complete, false)
 })
 
 await check('无板框时全图元包围盒回退被标记', async () => {
   const result = await runPcb(makeSdk({ outline: false }))
   assert.ok(result.issues.some(issue => issue.code === 'board_outline_inferred'))
+  assert.equal(result.complete, false)
+})
+
+await check('丝印字号只检查顶/底生产层，并保留非生产层与原始发现', async () => {
+  const text = (id, layer, fontSizeMil = 20, lineWidthMil = 4) => ({
+    getState_PrimitiveId: () => id, getState_Layer: layer === undefined ? undefined : () => layer,
+    getState_FontSize: () => fontSizeMil, getState_LineWidth: () => lineWidthMil,
+    getState_X: () => 10, getState_Y: () => 20,
+  })
+  const attribute = (id, layer) => ({
+    getState_PrimitiveId: () => id, getState_Key: () => 'Designator',
+    getState_Layer: () => layer, getState_FontSize: () => 20, getState_LineWidth: () => 4,
+    getState_X: () => 30, getState_Y: () => 40,
+  })
+  const sdk = makeSdk({ outline: true })
+  sdk.pcb_PrimitiveString = {
+    getAll: async () => [text('top-small', 3), text('document-small', 13), text('bottom-pass', 4, 40, 6), text('unknown-small', undefined)],
+    getAllPrimitiveId: async () => ['top-small', 'document-small', 'bottom-pass', 'unknown-small'],
+  }
+  sdk.pcb_PrimitiveAttribute = {
+    getAll: async () => [attribute('designator-top', 3), attribute('document-attribute', 13)],
+    getAllPrimitiveId: async () => ['designator-top', 'document-attribute'],
+  }
+  const result = await runPcb(sdk)
+  const check = result.results[17]
+  assert.equal(check.result, 'error')
+  assert.deepEqual(check.violations.map(item => item.id).sort(), ['designator-top', 'top-small'])
+  assert.deepEqual(check.manufacturingSilkscreen.rawBelowStandardFindings.map(item => item.id).sort(), ['designator-top', 'document-attribute', 'document-small', 'top-small', 'unknown-small'])
+  assert.deepEqual(check.manufacturingSilkscreen.excludedNonManufacturingFindings.map(item => item.id).sort(), ['document-attribute', 'document-small', 'unknown-small'])
+  assert.equal(check.manufacturingSilkscreen.unknownLayerTextCount, 1)
+  assert.equal(check.manufacturingSilkscreen.manufacturingGeometry.status, 'not-checked')
+  assert.ok(result.issues.some(issue => issue.code === 'silkscreen_layer_unknown' && issue.item === 18))
   assert.equal(result.complete, false)
 })
 

@@ -118,7 +118,8 @@ async function main() {
 	const duplicateIndependentPad = compositionSource.replace(/(\{"type":"PAD","ticket":163[^\n]*\|)/u, '$1\n{"type":"PAD","ticket":200,"id":"extra-pad"}||' + JSON.stringify({ ...JSON.parse(compositionSource.split('\n').find(line => line.startsWith('{"type":"PAD","ticket":163')).split('||')[1].replace(/\|$/u, '')), netName: 'ACE113_P' }) + '|');
 	assert.ok(slotClearanceFromRuleConfiguration(composition.rules, duplicateIndependentPad, composition.dsn, compositionSdk), 'two independent NORMAL pads on one net count as one confirmed coverage entry');
 
-	const source = readFileSync(resolve(root, 'test/fixtures/ac-v059-reopened-slot.dsn'), 'utf8');
+	// Mutations below use LF needles; normalize fixture EOL so Windows checkouts exercise them too.
+	const source = readFileSync(resolve(root, 'test/fixtures/ac-v059-reopened-slot.dsn'), 'utf8').replaceAll('\r\n', '\n');
 	const slot = { id: '21abb4263d4bd871', x: 690, y: 200, width: 135, height: 45 };
 	const clearance = 6.03;
 	const className = `aceslot${slot.id}`;
@@ -176,7 +177,12 @@ async function main() {
 	rejectsWithoutChanges(sharedPadstack, 'a second pin sharing the slot padstack is rejected');
 	rejectsWithoutChanges(source.replace('(shape(polygon TopLayer 0.1 -67.5', '(shape(polygon TopLayer 0.1 -60'), 'non-rectangle or wrong-sized padstack is rejected');
 	rejectsWithoutChanges(source.replace('(resolution mil 1000)', '(resolution mm 1000)'), 'non-mil resolution is rejected');
-	rejectsWithoutChanges(source.replace('    (layer Inner2\n      (type signal)\n    )\n', ''), 'missing copper layer is rejected');
+	const innerLayerDeclaration = /    \(layer Inner2\r?\n      \(type signal\)\r?\n    \)\r?\n/g;
+	assert.equal([...source.matchAll(innerLayerDeclaration)].length, 1, 'missing-layer fixture selects exactly one declaration');
+	const missingLayerSource = source.replace(innerLayerDeclaration, '');
+	assert.notEqual(missingLayerSource, source, 'missing-layer variant must actually remove the declaration');
+	assert.equal(missingLayerSource.includes('(layer Inner2'), false, 'Inner2 declaration is absent in the negative fixture');
+	rejectsWithoutChanges(missingLayerSource, 'missing copper layer is rejected');
 	rejectsWithoutChanges(source.replace('(place u1 0 0 front 0', '(place u1 0 0 back 0'), 'back-side placement is rejected');
 	rejectsWithoutChanges(source.replace('(place u1 0 0 front 0', '(place u1 0 0 front 90'), 'rotated placement is rejected');
 	rejectsWithoutChanges(source.replace('(class +5V "+5V"', `(class ${className} "")\n    (class +5V "+5V"`), 'class-name collision is rejected');

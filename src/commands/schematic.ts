@@ -6196,7 +6196,7 @@ export const schematicCommands: Array<ICommandDef> = [
 	},
 	{
 		name: 'schematic.autoLayout',
-		summary: '【宏·原理图自动整理】把已放好网络（标签/导线）的一批器件重新排整齐并重建连线（0.10.19）：designators 或 region 二选一框定器件 → 网表导出连接表（NC/悬空自动跳过）→ 按网络聚类贪心排序 + cw32 模板行列排（横距 60 行距 90）→ 移动器件（官方 modify x/y，读回验证）→ rewire：删旧短桩导线（级联删标签）+ 清浮标 → 连接表转 batchWire（0.10.26 起 link 直连先于 label 短桩建，避免短桩先建占用引脚致 link 被拒；0.10.27 起删线前识别导线携带的外部引脚（带 1 个外部引脚的线删后自动补网重建、穿 ≥3 引脚的复杂长线保留不删进 skippedWires），link 因整段穿第三方引脚失败时自动降级两端 label 短桩（fallbacks）；未恢复的失败项在 rewireFailed/warning 里明列，插件不擅自恢复原连接）重建 → DRC 聚合。⚠️ 探针实锤：官方移动器件导线/标签不橡皮筋跟随，rewire 必须全量重建。dryRun 默认 true 只出排布方案+连接表预览，确认后 dryRun:false 才动画布',
+		summary: '【宏·原理图自动整理】把一批器件按网络关系排整齐并重建连线。写入前先读取目标和外部引脚、网表、导线拓扑并规划受影响分支；目标引脚读取不全时整批停止，外部引脚读取不全时保护关联网络及目标器件，其他独立网络继续。dryRun 默认 true；确认后 dryRun:false 才移动、删线和重建。连线使用 batchWire（link 先于 label），复杂长线保留，失败项明列；官方移动器件不带动导线/标签，rewire 需按读到的拓扑重建。',
 		params: [
 			{ name: 'designators', type: 'array', description: '器件位号清单，如 ["U1","C1","C2"]（与 region 二选一）' },
 			{ name: 'region', type: 'object', description: '框选范围 {x, y, width, height}，范围内器件全部参与（与 designators 二选一）' },
@@ -6204,7 +6204,7 @@ export const schematicCommands: Array<ICommandDef> = [
 			{ name: 'rewire', type: 'boolean', description: '重排后重建连线（默认 true）；false 只移动器件' },
 			{ name: 'dryRun', type: 'boolean', description: '只出排布方案与连接表预览（默认 true），false 才真移动+重建连线' },
 		],
-		returns: '{ dryRun, plan: [{designator, from, to}], connections: [{net, pins, style}], moved?, moveFailed?, rewired?: batchWire 结果, deletedWires?, prunedLabels?, drc?, failed? }',
+		returns: '{ dryRun, plan: [{designator, from, to}], connections: [{net, pins, style}], protectedBranches?: [{net, missingPinReads, stationaryTargets, reason}], moved?, rewired?: batchWire 结果, deletedWires?, prunedLabels?, drc?, failed? }（写入前拓扑证据不完整的关联网络会保护并跳过）',
 		example: { cmd: 'schematic.autoLayout', params: { designators: ['U1', 'C1', 'C2'], dryRun: true } },
 		handler: async (params) => {
 			const dryRun = params.dryRun !== false
@@ -6257,6 +6257,104 @@ export const schematicCommands: Array<ICommandDef> = [
 				pins.some(r => targetSet.has(r.split('.')[0])))
 			if (!involved.length)
 				throw new Error(`目标器件 ${[...targetSet].join('、')} 没有任何已入网引脚（网络关系不存在，无法用 autoLayout；请先接线或用 buildBlock 生成）`)
+			// ---------- ③ 写入前完整读取拓扑证据 ----------
+			// 移动或删线之前必须确认目标器件的已入网引脚位置。目标引脚读取不完整时整批停止；
+			// 外部器件读取不完整时，保护其所在网络及连接器件，其他互不相关的网络仍可继续整理。
+			const expectedRefsByDesignator = new Map<string, Set<string>>()
+			for (const [, pins] of involved) {
+				for (const ref of pins) {
+					const [designator] = ref.split('.')
+					const refs = expectedRefsByDesignator.get(designator) ?? new Set<string>()
+					refs.add(ref)
+					expectedRefsByDesignator.set(designator, refs)
+				}
+			}
+			const oldPinPts: Array<{ ref: string, x: number, y: number }> = []
+			const allPinRefs: Array<{ ref: string, x: number, y: number }> = []
+			const incompleteExternalDesignators = new Set<string>()
+			const allComps = (await eda.sch_PrimitiveComponent.getAll()) ?? []
+			for (const c of allComps) {
+				const cdes = safeState<string>(c, 'getState_Designator')
+				const cpid = safeState<string>(c, 'getState_PrimitiveId')
+				if (!cdes || !cpid)
+					continue
+				const expected = expectedRefsByDesignator.get(cdes) ?? new Set<string>()
+				if (!expected.size)
+					continue
+				let pins: any[]
+				try {
+					pins = (await eda.sch_PrimitiveComponent.getAllPinsByPrimitiveId(cpid)) ?? []
+				}
+				catch (e) {
+					if (targetSet.has(cdes))
+						throw new Error(`autoLayout 写入前无法读取目标器件 ${cdes} 的引脚位置；未移动器件、未删除导线、未改网络。请恢复引脚读取后重试`, { cause: e })
+					incompleteExternalDesignators.add(cdes)
+					continue
+				}
+				const observedRefs = new Set<string>()
+				for (const p of pins) {
+					const pn = String(p.getState_PinNumber?.() ?? '')
+					const ref = `${cdes}.${pn}`
+					const px = p.getState_X?.()
+					const py = p.getState_Y?.()
+					if (pn && px != null && py != null) {
+						allPinRefs.push({ ref, x: px, y: py })
+						observedRefs.add(ref)
+						if (targetSet.has(cdes))
+							oldPinPts.push({ ref, x: px, y: py })
+					}
+				}
+				const missing = [...expected].filter(ref => !observedRefs.has(ref))
+				if (missing.length) {
+					if (targetSet.has(cdes))
+						throw new Error(`autoLayout 写入前无法确认目标器件 ${cdes} 的引脚位置（${missing.join('、')}）；未移动器件、未删除导线、未改网络。请恢复引脚读取后重试`)
+					incompleteExternalDesignators.add(cdes)
+				}
+			}
+			const observedDesignators = new Set(allComps.map(c => safeState<string>(c, 'getState_Designator')).filter((x): x is string => !!x))
+			for (const designator of expectedRefsByDesignator.keys()) {
+				if (observedDesignators.has(designator))
+					continue
+				if (targetSet.has(designator))
+					throw new Error(`autoLayout 写入前找不到目标器件 ${designator} 的引脚位置；未移动器件、未删除导线、未改网络`)
+				incompleteExternalDesignators.add(designator)
+			}
+			const protectedNets = new Set<string>()
+			const protectedDesignators = new Set<string>()
+			for (const [net, pins] of involved) {
+				if (pins.some(ref => incompleteExternalDesignators.has(ref.split('.')[0])))
+					protectedNets.add(net)
+			}
+			// 保护器件的所有关联网，避免它因一个不可读分支不移动、却在另一个分支被重建而改变网络。
+			let protectionChanged = true
+			while (protectionChanged) {
+				protectionChanged = false
+				for (const [net, pins] of involved) {
+					if (protectedNets.has(net) || pins.some(ref => protectedDesignators.has(ref.split('.')[0]))) {
+						if (!protectedNets.has(net)) {
+							protectedNets.add(net)
+							protectionChanged = true
+						}
+						for (const ref of pins) {
+							const designator = ref.split('.')[0]
+							if (targetSet.has(designator) && !protectedDesignators.has(designator)) {
+								protectedDesignators.add(designator)
+								protectionChanged = true
+							}
+						}
+					}
+				}
+			}
+			const movingSet = new Set([...targetSet].filter(designator => !protectedDesignators.has(designator)))
+			const protectedBranches = [...protectedNets].map(net => ({
+				net,
+				missingPinReads: [...incompleteExternalDesignators].filter(designator => involved.find(([n, pins]) => n === net && pins.some(ref => ref.startsWith(`${designator}.`)))),
+				stationaryTargets: involved.find(([n]) => n === net)?.[1].map(ref => ref.split('.')[0]).filter((designator, index, values) => targetSet.has(designator) && protectedDesignators.has(designator) && values.indexOf(designator) === index) ?? [],
+				reason: '外部器件引脚位置读取不完整；保留关联网络和目标器件，未修改该分支',
+			}))
+			if (!movingSet.size)
+				return { dryRun, plan: [], connections: [], protectedBranches, moved: [], note: '目标网络的引脚读取不完整，已保护对应器件和分支；没有安全可移动目标，未写入图纸' }
+			const activeInvolved = involved.filter(([net, pins]) => !protectedNets.has(net) && pins.some(ref => movingSet.has(ref.split('.')[0])))
 			// ---------- ③ 排布：网络聚类贪心排序 + 行列网格 ----------
 			const compNets = new Map<string, Set<string>>()
 			for (const t of targets)
@@ -6269,7 +6367,7 @@ export const schematicCommands: Array<ICommandDef> = [
 				}
 			const natural = (a: string, b: string) =>
 				a.replace(/(\d+)/, m => m.padStart(6, '0')).localeCompare(b.replace(/(\d+)/, m => m.padStart(6, '0')))
-			const remaining = [...targets].sort((a, b) => natural(String(a.designator), String(b.designator)))
+			const remaining = targets.filter(t => movingSet.has(String(t.designator))).sort((a, b) => natural(String(a.designator), String(b.designator)))
 			const order: typeof targets = []
 			const placedNets = new Set<string>()
 			while (remaining.length) {
@@ -6297,71 +6395,29 @@ export const schematicCommands: Array<ICommandDef> = [
 			const origin = (tpl.origin && tpl.origin.x != null)
 				? { x: Number(tpl.origin.x), y: Number(tpl.origin.y) }
 				: { x: Number(order[0].x), y: Number(order[0].y) } // 缺省从排序后第一个器件的当前位置起排
-			const plan = order.map((t, i) => ({
+			const plannedItems = order.map((t, i) => ({
 				designator: String(t.designator),
 				primitiveId: String(t.primitiveId),
 				from: { x: t.x, y: t.y },
 				to: { x: origin.x + (i % maxCols) * colGap, y: origin.y - Math.floor(i / maxCols) * rowGap },
 			}))
-			const connections = involved.map(([net, pins]) => ({
+			const plan = plannedItems.filter(item => movingSet.has(item.designator))
+			const connections = activeInvolved.map(([net, pins]) => ({
 				net,
 				pins: pins.sort(),
 				style: pins.length === 2 && !isPowerNetName(net) ? 'link' : 'label',
-				targetPins: pins.filter(r => targetSet.has(r.split('.')[0])),
+				targetPins: pins.filter(r => movingSet.has(r.split('.')[0])),
 			}))
 			if (dryRun) {
 				return {
 					dryRun: true,
-					plan,
+					plan: plannedItems,
 					connections,
+					...(protectedBranches.length ? { protectedBranches } : {}),
 					note: `排布方案（未动画布）：${order.length} 个器件按网络聚类排序后行列排（横距 ${colGap} 行距 ${rowGap} 每行 ${maxCols} 个，原点 ${origin.x},${origin.y}）。rewire=${rewire}：真跑时先删旧短桩导线（级联删标签）再按连接表 batchWire 重建。确认后 dryRun:false 执行`,
 				}
 			}
-			// ---------- ④ 移动前记录旧引脚坐标（rewire 清理用；移动后引脚坐标就变） ----------
-			const oldPinPts: Array<{ ref: string, x: number, y: number }> = []
-			const involvedPinRefs = new Set<string>()
-			for (const [, pins] of involved)
-				for (const r of pins)
-					involvedPinRefs.add(r)
-			for (const t of targets) {
-				const pins = (await eda.sch_PrimitiveComponent.getAllPinsByPrimitiveId(String(t.primitiveId))) ?? []
-				for (const p of pins) {
-					const pn = String(p.getState_PinNumber?.() ?? '')
-					if (!involvedPinRefs.has(`${t.designator}.${pn}`))
-						continue // NC/悬空引脚不在连接表，跳过
-					const px = p.getState_X?.()
-					const py = p.getState_Y?.()
-					if (px != null && py != null)
-						oldPinPts.push({ ref: `${t.designator}.${pn}`, x: px, y: py })
-				}
-			}
-			// ---------- ⑤ 移动器件（读回验证，假失败前科不信返回值） ----------
-			const moved: Array<Record<string, unknown>> = []
-			for (const item of plan) {
-				try {
-					await moveComponentSafely(eda as any, item.primitiveId, { x: item.to.x, y: item.to.y }, layoutFocus)
-					moved.push({ designator: item.designator, from: item.from, to: item.to })
-				}
-				catch (e: any) {
-					const message = e instanceof Error ? e.message : String(e)
-					const partial = moved.length > 0 || e?.cause?.partial === true
-					const cause = e?.cause && typeof e.cause === 'object' ? e.cause : {}
-					const error = new Error(`autoLayout 在移动 ${item.designator} 时停止：${message}`, { cause: { ...cause, partial, retryable: false, moved, phase: 'schematic.autoLayout component movement', operationError: message } }) as Error & { partial?: boolean, retryable?: boolean, moved?: unknown, phase?: string }
-					error.partial = partial
-					error.retryable = false
-					error.phase = 'schematic.autoLayout component movement'
-					error.moved = moved
-					throw error
-				}
-			}
-			if (!rewire) {
-				return {
-					dryRun: false,
-					moved,
-					note: '已按方案移动器件（rewire:false 未重建连线；旧导线/标签原地未动——官方移动不跟随，需要时用 rewire:true 重跑）',
-				}
-			}
-			// ---------- ⑥ rewire：删碰旧引脚的导线（级联删标签）→ 清浮标 → batchWire 重建 ----------
+			// ---------- ④ 移动前读入导线并规划影响分支 ----------
 			const segDist = (px: number, py: number, x1: number, y1: number, x2: number, y2: number): number => {
 				const dx = x2 - x1
 				const dy = y2 - y1
@@ -6371,31 +6427,6 @@ export const schematicCommands: Array<ICommandDef> = [
 				return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy))
 			}
 			const wires = (await eda.sch_PrimitiveWire.getAll()) ?? []
-			// 全页引脚表（0.10.27）：目标器件用移动前坐标（oldPinPts），外部器件用当前坐标——
-			// 用于识别 incident 导线是否还穿着目标器件以外的引脚（删线会顺手拆掉外部引脚的连接，0.10.26 复测 R2.1/J4.1 掉网事故）
-			const allPinRefs: Array<{ ref: string, x: number, y: number }> = oldPinPts.map(p => ({ ...p }))
-			try {
-				const allComps = (await eda.sch_PrimitiveComponent.getAll()) ?? []
-				for (const c of allComps) {
-					const cdes = safeState<string>(c, 'getState_Designator')
-					const cpid = safeState<string>(c, 'getState_PrimitiveId')
-					if (!cdes || !cpid || targetSet.has(cdes))
-						continue
-					try {
-						const pins = (await eda.sch_PrimitiveComponent.getAllPinsByPrimitiveId(cpid)) ?? []
-						for (const p of pins) {
-							const pn = String(p.getState_PinNumber?.() ?? '')
-							const px = p.getState_X?.()
-							const py = p.getState_Y?.()
-							if (pn && px != null && py != null)
-								allPinRefs.push({ ref: `${cdes}.${pn}`, x: px, y: py })
-						}
-					}
-					catch { /* 单个器件取引脚失败不阻断 */ }
-				}
-			}
-			catch { /* 全页引脚表失败则退化为 0.10.26 行为（只按目标引脚判） */ }
-			// 按连接表找导线所属网络（involved 的 pins 是全成员 ref 表）
 			const netOfRefs = (refs: Array<string>): string => {
 				let best = ''
 				let bestHit = 0
@@ -6427,7 +6458,7 @@ export const schematicCommands: Array<ICommandDef> = [
 					for (const pt of allPinRefs) {
 						if (segDist(pt.x, pt.y, x1, y1, x2, y2) <= 3) {
 							wireRefs.add(pt.ref)
-							if (!hit && oldPinPts.some(o => o.ref === pt.ref))
+							if (!hit && movingSet.has(pt.ref.split('.')[0]))
 								hit = true
 						}
 					}
@@ -6435,18 +6466,20 @@ export const schematicCommands: Array<ICommandDef> = [
 				if (!hit)
 					continue
 				const refs = [...wireRefs]
-				const extRefs = refs.filter(r => !targetSet.has(r.split('.')[0]))
-				if (!extRefs.length) {
-					incidentIds.push(wid) // 纯内部线：照删
+				const net = netOfRefs(refs)
+				if (protectedNets.has(net)) {
+					skippedWires.push({ primitiveId: wid, net, pins: refs, reason: '引脚读取不完整的受保护网络；保留原线，未删除或重建' })
 					continue
 				}
-				const net = netOfRefs(refs)
+				const extRefs = refs.filter(r => !movingSet.has(r.split('.')[0]))
+				if (!extRefs.length) {
+					incidentIds.push(wid)
+					continue
+				}
 				if (refs.length > 2) {
-					// 复杂长线（穿 ≥3 个引脚）：保留原线不删，目标侧照常重建，可能留悬线，人工复核
 					skippedWires.push({ primitiveId: wid, net, pins: refs, reason: '该线穿过 3 个及以上引脚（复杂长线），保留原线未删；目标器件侧已照常重建，可能残留悬线/重复连接，请人工复核' })
 					continue
 				}
-				// 带 1 个外部引脚的短线：照删，外部侧补 label 重建（link 网由连接表 link 项覆盖两端，无需额外项）
 				const netPins = involved.find(([n]) => n === net)?.[1] ?? []
 				const isLinkNet = netPins.length === 2 && !isPowerNetName(net)
 				for (const r of extRefs) {
@@ -6456,6 +6489,37 @@ export const schematicCommands: Array<ICommandDef> = [
 				externalRewired.push({ primitiveId: wid, net, externalPins: extRefs, strategy: isLinkNet ? '由连接表 link 项重建两端' : '外部引脚补 label 短桩重建' })
 				incidentIds.push(wid)
 			}
+			if (!plan.length) {
+				return { dryRun: false, moved: [], protectedBranches, skippedWires, note: '目标网络的引脚读取不完整，已保护对应器件和分支；没有安全可移动目标，未写入图纸' }
+			}
+			// ---------- ⑤ 移动器件（拓扑和影响分支已在写入前完成规划） ----------
+			const moved: Array<Record<string, unknown>> = []
+			for (const item of plan) {
+				try {
+					await moveComponentSafely(eda as any, item.primitiveId, { x: item.to.x, y: item.to.y }, layoutFocus)
+					moved.push({ designator: item.designator, from: item.from, to: item.to })
+				}
+				catch (e: any) {
+					const message = e instanceof Error ? e.message : String(e)
+					const partial = moved.length > 0 || e?.cause?.partial === true
+					const cause = e?.cause && typeof e.cause === 'object' ? e.cause : {}
+					const error = new Error(`autoLayout 在移动 ${item.designator} 时停止：${message}`, { cause: { ...cause, partial, retryable: false, moved, phase: 'schematic.autoLayout component movement', operationError: message } }) as Error & { partial?: boolean, retryable?: boolean, moved?: unknown, phase?: string }
+					error.partial = partial
+					error.retryable = false
+					error.phase = 'schematic.autoLayout component movement'
+					error.moved = moved
+					throw error
+				}
+			}
+			if (!rewire) {
+				return {
+					dryRun: false,
+					moved,
+					...(protectedBranches.length ? { protectedBranches } : {}),
+					note: '已按方案移动器件（rewire:false 未重建连线；旧导线/标签原地未动——官方移动不跟随，需要时用 rewire:true 重跑）',
+				}
+			}
+			// ---------- ⑥ rewire：执行已在写入前确定的拆线/重建计划 ----------
 			const deletedWires: Array<string> = []
 			const deleteFailed: Array<string> = []
 			if (incidentIds.length) {
@@ -6474,10 +6538,10 @@ export const schematicCommands: Array<ICommandDef> = [
 			const prunedLabels: Array<string> = []
 			try {
 				const floats = await scanFloatingNetLabels()
-				const involvedNets = new Set(involved.map(([n]) => n))
+				const involvedNets = new Set(activeInvolved.map(([n]) => n))
 				const victims = floats.filter(f => involvedNets.has(f.net)
 					&& f.x != null && f.y != null
-					&& oldPinPts.some(pt => Math.hypot((f.x ?? 0) - pt.x, -(f.y ?? 0) - pt.y) <= 60))
+					&& oldPinPts.some(pt => movingSet.has(pt.ref.split('.')[0]) && Math.hypot((f.x ?? 0) - pt.x, -(f.y ?? 0) - pt.y) <= 60))
 				if (victims.length) {
 					const r = await deleteFloatingLabels(victims.map(v => v.primitiveId))
 					prunedLabels.push(...r.deleted)
@@ -6488,7 +6552,7 @@ export const schematicCommands: Array<ICommandDef> = [
 			// 再画短桩，避免短桩先建横穿第三方引脚占用网络后 link 被拒断网；0.10.24 终验 FBA 断网事故） ----------
 			const linkItems: Array<Record<string, unknown>> = []
 			const labelItems: Array<Record<string, unknown>> = []
-			for (const [net, pins] of involved) {
+			for (const [net, pins] of activeInvolved) {
 				if (pins.length === 2 && !isPowerNetName(net))
 					linkItems.push({ type: 'link', pins: [...pins].sort() })
 				else
@@ -6520,7 +6584,7 @@ export const schematicCommands: Array<ICommandDef> = [
 				const fPairs: Array<{ item: any, pins: [string, string] }> = []
 				for (const it of linkFailed) {
 					const [pa, pb] = it.item.pins as [string, string]
-					const net = involved.find(([, pins]) => pins.includes(pa) && pins.includes(pb))?.[0] ?? ''
+					const net = activeInvolved.find(([, pins]) => pins.includes(pa) && pins.includes(pb))?.[0] ?? ''
 					if (!net)
 						continue
 					fItems.push({ type: 'label', pin: pa, net }, { type: 'label', pin: pb, net })
@@ -6558,6 +6622,7 @@ export const schematicCommands: Array<ICommandDef> = [
 				prunedLabels,
 				...(externalRewired.length ? { externalRewired } : {}),
 				...(skippedWires.length ? { skippedWires } : {}),
+				...(protectedBranches.length ? { protectedBranches } : {}),
 				...(fallbacks.length ? { fallbacks } : {}),
 				rewired: wiring,
 				...(rewiredFailed.length ? {
@@ -6565,7 +6630,7 @@ export const schematicCommands: Array<ICommandDef> = [
 					warning: `⚠️ ${rewiredFailed.length} 项重连失败（旧导线已删，对应网络当前是断开的，插件不擅自恢复原连接）：${rewiredFailed.map((it: any) => `${JSON.stringify(it.item)}（${it.error ?? ''}）`).join('；')}。请按失败项逐条人工修复（labelWire/linkWire 重发或 drawWire+placeNetLabel），修完跑 schematic.runDrc + exportNetlist 审计`,
 				} : {}),
 				drc,
-				note: `已移动 ${moved.length}/${plan.length} 个器件，删旧导线 ${deletedWires.length} 根、清浮标 ${prunedLabels.length} 个，batchWire 重建 ${items.length} 项（link 先于 label 执行）${externalRewired.length ? `，其中 ${externalRewired.length} 根线带外部引脚已一并补网重建` : ''}${skippedWires.length ? `，${skippedWires.length} 根复杂长线保留未删（见 skippedWires，请人工复核）` : ''}${fallbacks.length ? `，${fallbacks.filter(f => f.ok).length}/${fallbacks.length} 个 link 失败项已降级 label 短桩${fallbacks.some(f => !f.ok) ? '（仍有失败的见 fallbacks）' : '恢复'}` : ''}${rewiredFailed.length ? `，其中 ${rewiredFailed.length} 项失败见 warning` : ''}。请目测画布确认排布与连线`,
+				note: `已移动 ${moved.length}/${plan.length} 个器件，删旧导线 ${deletedWires.length} 根、清浮标 ${prunedLabels.length} 个，batchWire 重建 ${items.length} 项（link 先于 label 执行）${externalRewired.length ? `，其中 ${externalRewired.length} 根线带外部引脚已一并补网重建` : ''}${skippedWires.length ? `，${skippedWires.length} 根导线保留未删（见 skippedWires，请人工复核）` : ''}${protectedBranches.length ? `，另有 ${protectedBranches.length} 个网络因外部引脚读取不完整而保护（见 protectedBranches）` : ''}${fallbacks.length ? `，${fallbacks.filter(f => f.ok).length}/${fallbacks.length} 个 link 失败项已降级 label 短桩${fallbacks.some(f => !f.ok) ? '（仍有失败的见 fallbacks）' : '恢复'}` : ''}${rewiredFailed.length ? `，其中 ${rewiredFailed.length} 项失败见 warning` : ''}。请目测画布确认排布与连线`,
 			}
 		},
 	},
@@ -6929,7 +6994,7 @@ export const schematicCommands: Array<ICommandDef> = [
 			{ name: 'fileName', type: 'string', description: '文件名，默认 schematic-bom' },
 			{ name: 'fileType', type: 'string', description: 'xlsx | csv，默认 xlsx' },
 		],
-		returns: '{ fileName, size, mimeType, base64, format, encoding?, delimiter?, note? }；base64 保留宿主原始字节，格式字段由文件头和表头识别',
+		returns: '{ fileName, nativeFileName, size, mimeType, base64, format, encoding?, delimiter?, note? }；base64 保留宿主原始字节，fileName 按识别后的格式给出，nativeFileName 保留宿主原名',
 		example: { cmd: 'schematic.exportBom', params: { fileType: 'csv' } },
 		handler: async (params) => {
 			if (params.fileType != null && params.fileType !== 'csv' && params.fileType !== 'xlsx')
@@ -6944,7 +7009,9 @@ export const schematicCommands: Array<ICommandDef> = [
 			const result = await fileToResult(file, `schematic-bom.${fileType}`)
 			if (!result)
 				throw new Error('BOM 导出失败：官方返回空（请确认已激活原理图图页且图中有器件）')
-			return { ...result, ...describeBomFile(result, fileType) }
+			const metadata = describeBomFile(result, fileType)
+			const extension = ['tsv', 'csv', 'xlsx'].includes(metadata.format) ? metadata.format : null
+			return { ...result, ...metadata, nativeFileName: result.fileName, fileName: extension ? result.fileName.replace(/\.(csv|tsv|xlsx)$/i, '') + '.' + extension : result.fileName }
 		},
 	},
 	{

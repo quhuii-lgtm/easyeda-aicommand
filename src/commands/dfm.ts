@@ -10,6 +10,32 @@ type DfmInputs = {
 	innerCopperOz?: 1
 	standard?: 'economy' | 'standard'
 	minSpacingMm?: number
+	padPurposeEvidence?: Array<{ padId: string; classification: 'nc' | 'reserved' | 'mechanical' | 'other'; reason: string; source: string }>
+}
+
+const PAD_PURPOSE_CLASSIFICATIONS = new Set(['nc', 'reserved', 'mechanical', 'other'])
+
+function validatePadPurposeEvidence(value: unknown): NonNullable<DfmInputs['padPurposeEvidence']> {
+	if (!Array.isArray(value) || value.length > 500)
+		throw new Error('padPurposeEvidence 必须是最多500项的数组')
+	const seen = new Set<string>()
+	return value.map((entry, index) => {
+		if (!entry || typeof entry !== 'object' || Array.isArray(entry))
+			throw new Error(`padPurposeEvidence[${index}] 必须是对象`)
+		const item = entry as Record<string, unknown>
+		if (typeof item.padId !== 'string' || !item.padId.trim() || item.padId.length > 256)
+			throw new Error(`padPurposeEvidence[${index}].padId 必须是非空精确图元ID`)
+		if (seen.has(item.padId))
+			throw new Error(`padPurposeEvidence 中 padId 重复：${item.padId}`)
+		seen.add(item.padId)
+		if (typeof item.classification !== 'string' || !PAD_PURPOSE_CLASSIFICATIONS.has(item.classification))
+			throw new Error(`padPurposeEvidence[${index}].classification 必须为 nc、reserved、mechanical 或 other`)
+		for (const field of ['reason', 'source'] as const) {
+			if (typeof item[field] !== 'string' || !item[field].trim() || item[field].length > 2000)
+				throw new Error(`padPurposeEvidence[${index}].${field} 必须是非空字符串（最多2000字符）`)
+		}
+		return { padId: item.padId, classification: item.classification as 'nc' | 'reserved' | 'mechanical' | 'other', reason: item.reason as string, source: item.source as string }
+	})
 }
 
 const DEFAULT_TIMEOUT_MS = 290_000
@@ -115,6 +141,8 @@ function guardedSdk(sdk: any, expectedUuid: string, budgetMs: number, startedAt:
 }
 
 function validateInputs(kind: DfmKind, params: Record<string, any>): DfmInputs {
+	if (kind !== 'pcb' && params.padPurposeEvidence !== undefined)
+		throw new Error('padPurposeEvidence 仅适用于 pcb.runDfm')
 	if (kind === 'pcb') {
 		if (typeof params.material !== 'string' || !JLC_SUPPORTED_MATERIALS.includes(params.material))
 			throw new Error(`material 必须是受支持板材之一：${JLC_SUPPORTED_MATERIALS.join('、')}`)
@@ -124,7 +152,10 @@ function validateInputs(kind: DfmKind, params: Record<string, any>): DfmInputs {
 			throw new Error('outerCopperOz 必须为数字 1 或 2')
 		if (params.innerCopperOz !== 1)
 			throw new Error('innerCopperOz 必须为数字 1（本次内层选项）')
-		return { material: params.material, thickness: params.thickness, outerCopperOz: params.outerCopperOz, innerCopperOz: params.innerCopperOz }
+		return {
+			material: params.material, thickness: params.thickness, outerCopperOz: params.outerCopperOz, innerCopperOz: params.innerCopperOz,
+			...(params.padPurposeEvidence === undefined ? {} : { padPurposeEvidence: validatePadPurposeEvidence(params.padPurposeEvidence) }),
+		}
 	}
 	if (kind === 'smt') {
 		if (params.standard !== 'economy' && params.standard !== 'standard')
@@ -184,6 +215,7 @@ export const dfmCommands: ICommandDef[] = [
 		{ name: 'thickness', type: 'number', required: true, description: '板厚，单位 mm，必须为有限正数' },
 		{ name: 'outerCopperOz', type: 'number', required: true, description: '下单外层铜厚，当前提供 1 或 2 oz；无默认值' },
 		{ name: 'innerCopperOz', type: 'number', required: true, description: '下单内层铜厚，本次提供 1 oz；无默认值' },
+		{ name: 'padPurposeEvidence', type: 'array', required: false, description: '可选项目证据标注：[{padId,classification:"nc"|"reserved"|"mechanical"|"other",reason,source}]。按当前PCB精确 Primitive ID 匹配；不替代PCB网络/几何证据，不抑制原始 DFM issue；有效网络冲突、ID缺失/重复均保留为冲突/unknown。source 和 reason 由调用方提供，不代表宿主独立验证。' },
 	], '执行基于嘉立创下单检查器 v1.0.4 的 PCB DFM 检查；结果 complete 与 passed 分开，覆盖边界见 coverage。reportedCopper 保留图纸原始厚度记录；当前源码厚度单位未确认，不换算为 mil/oz，也不据此判断下单铜重一致。输入铜重仍用于本次制造能力检查。'),
 	def('pcb.runSmtDfm', 'smt', [
 		{ name: 'standard', type: 'string', required: true, description: 'SMT标准：economy（经济型）或 standard（标准型）' },

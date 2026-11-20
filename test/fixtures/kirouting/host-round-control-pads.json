@@ -1,0 +1,12 @@
+{
+  "fixtureKind": "independent-testboard-sdk-readback",
+  "source": "module-integration/evidence/kirouting-validation/host-round-control-spec.json + host-round-control-readback.json",
+  "note": "Five isolated rectangular pads from a temporary testboard. SDK raw getState_Pad tuples and corresponding readback geometry are retained; no runtime EDA connection or production board is implied.",
+  "pads": [
+    { "designator": "R10", "shape": ["RECT", 157.5, 39.4, 20], "expectedCornerRadiusMil": 3.94, "layer": 1 },
+    { "designator": "R25", "shape": ["RECT", 157.5, 39.4, 50], "expectedCornerRadiusMil": 9.85, "layer": 1 },
+    { "designator": "R50", "shape": ["RECT", 157.5, 39.4, 100], "expectedCornerRadiusMil": 19.7, "layer": 1 },
+    { "designator": "R25X2", "shape": ["RECT", 157.5, 78.7, 50], "expectedCornerRadiusMil": 19.675, "layer": 1 },
+    { "designator": "R25B", "shape": ["RECT", 157.5, 78.7, 50], "expectedCornerRadiusMil": 19.675, "layer": 2 }
+  ]
+}

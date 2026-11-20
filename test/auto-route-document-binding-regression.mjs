@@ -50,11 +50,14 @@ const sourceRecord = (type, id, data) => {
 	if (!sourceTickets.has(key)) sourceTickets.set(key, ++nextSourceTicket)
 	return `${JSON.stringify({ type, id, ticket: sourceTickets.get(key) })}||${JSON.stringify(data)}`
 }
+const sourceViaType = value => value === 0 || value === 'through' || value === 'NORMAL' ? 'NORMAL'
+	: value === 1 || value === 'blind' || value === 'BLIND' ? 'BLIND'
+		: value === 2 || value === 'buried' || value === 'BURIED' ? 'BURIED' : value
 const documentSource = () => [
 	`${JSON.stringify({ type: 'DOCHEAD', ticket: 0 })}||${JSON.stringify({ docType: 'PCB', uuid: activeUuid })}`,
 	...(pouredPresent ? [sourceRecord('POURED', 'pour-1', { layer: 1, net: 'GND', outline: 'stable-pour' })] : []),
 	...routeLines.map(item => sourceRecord('LINE', item.id, { net: item.net, layer: item.layer, width: item.widthMil, a: item.a, b: item.b })),
-	...routeVias.map(item => sourceRecord('VIA', item.id, { net: item.net, x: item.x, y: item.y, diameter: item.diameterMil, hole: item.holeDiameterMil, viaType: item.viaType })),
+	...routeVias.map(item => sourceRecord('VIA', item.id, { netName: item.net, centerX: item.x, centerY: item.y, viaDiameter: item.diameterMil, holeDiameter: item.holeDiameterMil, viaType: sourceViaType(item.viaType), locked: item.locked ?? false })),
 ].join('|\n') + '|'
 const storage = new Map()
 const snapshotWrites = []
@@ -68,6 +71,7 @@ let recoveryWriteSucceeds = true
 let jobNumber = 0
 let drcThrows = false
 const statusSequences = new Map()
+const effectiveSettingsByJob = new Map()
 let failCancelPut = false
 const sdkItem = (values) => Object.fromEntries(Object.entries(values).map(([key, value]) => [`getState_${key}`, () => value]))
 const lineItem = item => sdkItem({ PrimitiveId: item.id, Net: item.net, Layer: item.layer, LineWidth: item.widthMil, StartX: item.a.x, StartY: item.a.y, EndX: item.b.x, EndY: item.b.y, PrimitiveLock: item.locked ?? false })
@@ -163,6 +167,10 @@ globalThis.eda = {
 	sys_ClientUrl: {
 		request: async (url, method, body) => {
 			calls.push({ url, method, body })
+			if (method === 'POST' && /\/jobs\/job-[A-Z]\/settings$/u.test(url)) {
+				const id = url.slice(url.lastIndexOf('/jobs/') + 6, url.lastIndexOf('/settings'))
+				effectiveSettingsByJob.set(id, JSON.parse(body))
+			}
 			if (method === 'PUT' && url.endsWith('/cancel') && failCancelPut)
 				throw new Error('cancel PUT failed')
 			return {
@@ -171,6 +179,10 @@ globalThis.eda = {
 				json: async () => {
 					if (url.endsWith('/sessions/create')) { jobNumber++; return { id: `session-${String.fromCharCode(64 + jobNumber)}` } }
 					if (url.endsWith('/jobs/enqueue')) return { id: `job-${String.fromCharCode(64 + jobNumber)}` }
+				if (method === 'GET' && /\/jobs\/job-[A-Z]\/settings$/u.test(url)) {
+					const id = url.slice(url.lastIndexOf('/jobs/') + 6, url.lastIndexOf('/settings'))
+					return effectiveSettingsByJob.get(id)
+				}
 					if (/\/jobs\/[^/]+$/.test(url)) {
 						const id = url.slice(url.lastIndexOf('/') + 1)
 						const states = statusSequences.get(id)

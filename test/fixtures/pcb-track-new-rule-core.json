@@ -1,0 +1,36 @@
+{
+  "capture": "PCB core new TRACK rule readback",
+  "documentUuid": "abbb1c25b04f1716",
+  "ruleName": "CFG_TRACK_ALT",
+  "request": {
+    "editName": "CFG_TRACK_ALT",
+    "unit": "mm",
+    "isSetDefault": false,
+    "form": {
+      "status": 1,
+      "data": {
+        "1": { "minValue": 0.3048, "defaultValue": 0.4572, "maxValue": 0.5588 },
+        "2": { "minValue": 0.381, "defaultValue": 0.635, "maxValue": 0.889 }
+      }
+    }
+  },
+  "getterAfter": {
+    "editName": "CFG_TRACK_ALT",
+    "unit": "mm",
+    "isSetDefault": false,
+    "form": {
+      "status": 1,
+      "data": {
+        "1": { "minValue": 0.30479999999999996, "defaultValue": 0.4572, "maxValue": 0.5588 },
+        "2": { "minValue": 0.381, "defaultValue": 0.635, "maxValue": 0.889 }
+      }
+    }
+  },
+  "sourceAfter": {
+    "unit": "mm",
+    "rows": [
+      { "layerId": 1, "stroMin": 12, "stroDef": 18, "stroMax": 22 },
+      { "layerId": 2, "stroMin": 15, "stroDef": 25, "stroMax": 35 }
+    ]
+  }
+}

@@ -20,6 +20,9 @@ export interface WidthComparisonLayerEntry { layerId: number; name?: string; sta
 export interface WidthComparisonEntry { net?: string; status: WidthStatus | 'matched' | 'mismatch' | 'incomplete'; eda?: WidthBounds; dsnWidthMil?: number; deviationFromPreferredMil?: number; withinEdaBounds?: boolean; ruleKey?: string; layers?: WidthComparisonLayerEntry[] }
 export interface DsnWidthComparison { status: 'matched' | 'mismatch' | 'incomplete'; defaultRule: WidthComparisonEntry; nets: WidthComparisonEntry[]; unknowns: string[] }
 export interface SesWidthCheck { status: 'compliant' | 'violation' | 'unknown'; violations: Array<{ lineIndex: number; net: string; widthMil: number; minMil: number; maxMil: number }>; unknowns: string[] }
+export interface RoutingNetAlias { geometryNet: string; ruleNet: string | null; sourceNet?: string; sdkTrack?: string; status: 'known' | 'unknown'; reason?: string }
+export interface RoutingNetAliasGeometry { name: string; padIds: string[] }
+export interface RoutingNetAliasSourceRecord { type: string; id?: string; data?: any }
 
 interface Rec { type: string; id?: string; idIsString?: boolean; ticket?: number; data: any }
 interface ParsedSource { records: Rec[]; unknowns: string[] }
@@ -236,6 +239,132 @@ function isConfirmedEmptyTrackNetSelector(selector: Rec | undefined, net: string
 	return isEmptyObject(data.ruleKeyValue) && isEmptyObject(data.copperValue) && isEmptyObject(data.innerPlaneValue);
 }
 
+function isConfirmedEmptyDifferentialPairSelector(selector: Rec, selectors: Rec[], netMap: Map<string, Rec>): boolean {
+	if (selector.idIsString !== true) return false;
+	const id = keyParts(selector.id);
+	if (id.length !== 2 || id[0] !== 'RULE_SELECTOR' || !Array.isArray(id[1]) || id[1].length !== 2 || id[1][0] !== 'DIFF_PAIR' || typeof id[1][1] !== 'string' || !id[1][1]) return false;
+	const pairName = id[1][1];
+	const pairSelectors = selectors.filter(record => {
+		if (record.idIsString !== true) return false;
+		const scope = keyParts(record.id)[1];
+		return Array.isArray(scope) && scope.length === 2 && scope[0] === 'DIFF_PAIR' && scope[1] === pairName;
+	});
+	if (pairSelectors.length !== 1 || pairSelectors[0] !== selector) return false;
+	const data = selector.data;
+	if (!data || typeof data !== 'object' || Array.isArray(data)
+		|| Object.keys(data).sort().join(',') !== 'copperValue,innerPlaneValue,parent,ruleKeyValue,ruleOrder'
+		|| data.ruleOrder !== 4 || data.parent !== null)
+		return false;
+	const isEmptyObject = (value: unknown): boolean => value !== null && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0;
+	if (!isEmptyObject(data.ruleKeyValue) || !isEmptyObject(data.copperValue) || !isEmptyObject(data.innerPlaneValue)) return false;
+	const members = [...netMap.entries()].filter(([, record]) => record.data?.differentialName === pairName);
+	return members.length === 2
+		&& new Set(members.map(([name]) => name)).size === 2
+		&& members.every(([name, record]) => Boolean(name) && typeof record.data?.isPositiveNet === 'boolean')
+		&& members.filter(([, record]) => record.data.isPositiveNet === true).length === 1
+		&& members.filter(([, record]) => record.data.isPositiveNet === false).length === 1;
+}
+
+function isConfirmedEmptyUnconnectedNetSelector(selector: Rec, selectors: Rec[], netMap: Map<string, Rec>, netRules: unknown): boolean {
+	if (selector.idIsString !== true) return false;
+	const id = keyParts(selector.id);
+	if (id.length !== 2 || id[0] !== 'RULE_SELECTOR' || !Array.isArray(id[1]) || id[1].length !== 2 || id[1][0] !== 'NET' || id[1][1] !== '') return false;
+	const emptySelectors = selectors.filter(record => {
+		if (record.idIsString !== true) return false;
+		const scope = keyParts(record.id)[1];
+		return Array.isArray(scope) && scope.length === 2 && scope[0] === 'NET' && scope[1] === '';
+	});
+	if (emptySelectors.length !== 1 || emptySelectors[0] !== selector) return false;
+	const data = selector.data;
+	if (!data || typeof data !== 'object' || Array.isArray(data)
+		|| Object.keys(data).sort().join(',') !== 'copperValue,innerPlaneValue,parent,ruleKeyValue,ruleOrder'
+		|| data.ruleOrder !== 4 || data.parent !== null) return false;
+	const isEmptyObject = (value: unknown): boolean => value !== null && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0;
+	const lengthDefault = data.ruleKeyValue !== null && typeof data.ruleKeyValue === 'object' && !Array.isArray(data.ruleKeyValue)
+		&& Object.keys(data.ruleKeyValue).length === 1 && Object.keys(data.ruleKeyValue)[0] === 'NET_LENGTH_TOLERANCE'
+		&& Array.isArray(data.ruleKeyValue.NET_LENGTH_TOLERANCE) && data.ruleKeyValue.NET_LENGTH_TOLERANCE.length === 2
+		&& data.ruleKeyValue.NET_LENGTH_TOLERANCE[0] === 'default' && data.ruleKeyValue.NET_LENGTH_TOLERANCE[1] === null;
+	if ((!isEmptyObject(data.ruleKeyValue) && !lengthDefault) || !isEmptyObject(data.copperValue) || !isEmptyObject(data.innerPlaneValue)) return false;
+	const record = netMap.get('');
+	if (!record || record.idIsString !== true) return false;
+	const netId = keyParts(record.id);
+	const fields = record.data && typeof record.data === 'object' && !Array.isArray(record.data) ? Object.keys(record.data).sort().join(',') : '';
+	if (netId.length !== 2 || netId[0] !== 'NET' || netId[1] !== '' || fields !== 'differentialName,equalLengthGroupName,isPositiveNet,netType,retLine,specialColor'
+		|| record.data.netType !== null || record.data.differentialName !== null || record.data.equalLengthGroupName !== null
+		|| record.data.isPositiveNet !== false || record.data.retLine !== true || record.data.specialColor !== null) return false;
+	const rows = sdkRuleRows(netRules);
+	if (!rows) return false;
+	let rowsValid = true;
+	const inspect = (items: any[]): void => {
+		for (const row of items) {
+			if (row?.type === 'net' && (typeof row.name !== 'string' || !row.name.trim() || row.sub !== undefined)) rowsValid = false;
+			if (row?.sub !== undefined) {
+				if (!Array.isArray(row.sub)) rowsValid = false
+				else inspect(row.sub)
+			}
+		}
+	}
+	inspect(rows)
+	return rowsValid
+}
+
+function sdkRuleRows(value: unknown): any[] | undefined {
+	const wrapperData = value && typeof value === 'object' ? (value as any).data ?? (value as any).result?.data : undefined;
+	return Array.isArray(value) ? value : Array.isArray(wrapperData) ? wrapperData : undefined;
+}
+
+function isConfirmedEmptyEqualLengthGroupSelector(selector: Rec, selectors: Rec[], netMap: Map<string, Rec>, netRules: unknown): boolean {
+	if (selector.idIsString !== true) return false;
+	const id = keyParts(selector.id);
+	if (id.length !== 2 || id[0] !== 'RULE_SELECTOR' || !Array.isArray(id[1]) || id[1].length !== 2 || id[1][0] !== 'EQ_LEN_GRP' || typeof id[1][1] !== 'string' || !id[1][1].trim()) return false;
+	const groupName = id[1][1];
+	const groupSelectors = selectors.filter(record => {
+		if (record.idIsString !== true) return false;
+		const scope = keyParts(record.id)[1];
+		return Array.isArray(scope) && scope.length === 2 && scope[0] === 'EQ_LEN_GRP' && scope[1] === groupName;
+	});
+	if (groupSelectors.length !== 1 || groupSelectors[0] !== selector) return false;
+	const data = selector.data;
+	if (!data || typeof data !== 'object' || Array.isArray(data)
+		|| Object.keys(data).sort().join(',') !== 'copperValue,innerPlaneValue,parent,ruleKeyValue,ruleOrder'
+		|| data.ruleOrder !== 4 || data.parent !== null)
+		return false;
+	const isEmptyObject = (value: unknown): boolean => value !== null && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0;
+	if (!isEmptyObject(data.ruleKeyValue) || !isEmptyObject(data.copperValue) || !isEmptyObject(data.innerPlaneValue)) return false;
+	const sourceGroups = new Map<string, Set<string>>();
+	for (const [net, record] of netMap) {
+		const sourceGroup = record.data?.equalLengthGroupName;
+		if (typeof sourceGroup !== 'string' || !sourceGroup.trim()) continue;
+		const members = sourceGroups.get(sourceGroup) ?? new Set<string>();
+		members.add(net);
+		sourceGroups.set(sourceGroup, members);
+	}
+	const sourceMembers = sourceGroups.get(groupName);
+	if (!sourceMembers || sourceMembers.size < 2 || [...sourceMembers].some(name => !name.trim())) return false;
+	const rows = sdkRuleRows(netRules);
+	if (!rows) return false;
+	const groupRows = rows.filter(row => row?.type === 'equalLengthGroup');
+	const groupNames = groupRows.map(row => row?.name);
+	if (groupRows.some(row => typeof row?.name !== 'string' || !row.name.trim() || !Array.isArray(row.sub))
+		|| new Set(groupNames).size !== groupNames.length
+		|| groupNames.length !== sourceGroups.size
+		|| groupNames.some(name => !sourceGroups.has(name))) return false;
+	const expectedMembers = [...sourceMembers].sort();
+	for (const group of groupRows) {
+		const children = group.sub as any[];
+		if (children.some(child => child?.type !== 'net' || typeof child.name !== 'string' || !child.name.trim() || child.sub !== undefined)
+			|| new Set(children.map(child => child.name)).size !== children.length) return false;
+		const childNames = children.map(child => child.name).sort();
+		if (JSON.stringify(childNames) !== JSON.stringify([...(sourceGroups.get(group.name) ?? [])].sort())) return false;
+		if (group.Track !== 'default' || group['Safe Spacing'] !== 'default' || group['Via Size'] !== 'default'
+			|| children.some(child => child.Track !== 'default' || child['Safe Spacing'] !== 'default' || child['Via Size'] !== 'default')) return false;
+		if (rows.some(row => row?.type === 'net' && (typeof row.name !== 'string' || !row.name.trim() || childNames.includes(row.name)))) return false;
+	}
+	const selectedGroup = groupRows.find(group => group.name === groupName)
+	return Boolean(selectedGroup)
+		&& JSON.stringify([...(sourceGroups.get(groupName) ?? [])].sort()) === JSON.stringify(expectedMembers);
+}
+
 function safeSpacingRuleMatches(rule: Rec | undefined, ruleName: string): boolean {
 	if (!rule || rule.idIsString !== true || rule.data?.ruleState !== 'NORMAL')
 		return false;
@@ -349,7 +478,8 @@ function isNormalSingleRowTrackRule(rule: Rec | undefined, enabledLayerIds: Read
 }
 
 function normalMultiLayerTrack(rule: Rec | undefined, enabled: ReturnType<typeof getEnabledLayers>, state: 'NORMAL' | 'DEFAULT' = 'NORMAL'): RoutingLayerWidth[] | undefined {
-	if (!rule || rule.data?.ruleState !== state || rule.data?.ruleContext?.unit !== 'mil')
+	const sourceUnit = rule?.data?.ruleContext?.unit;
+	if (!rule || rule.data?.ruleState !== state || (sourceUnit !== 'mil' && sourceUnit !== 'mm'))
 		return undefined;
 	const track = rule.data?.ruleContext?.track;
 	const content = track?.content;
@@ -401,6 +531,55 @@ function isConfirmedLengthOnlyNetSelector(selector: Rec): boolean {
 	return isEmptyObject(data.copperValue) && isEmptyObject(data.innerPlaneValue);
 }
 
+function isConfirmedCopperRegionPourSelector(selector: Rec, selectors: Rec[], pours: Rec[], rules: Rec[]): boolean {
+	if (selector.idIsString !== true)
+		return false;
+	const id = keyParts(selector.id);
+	const scope = id[1];
+	if (id.length !== 2 || id[0] !== 'RULE_SELECTOR' || !Array.isArray(scope) || scope.length !== 2 || scope[0] !== 'POUR'
+		|| typeof scope[1] !== 'string' || !scope[1].trim()) {
+		return false;
+	}
+	const pourId = scope[1];
+	const matchingSelectors = selectors.filter((record) => {
+		if (record.idIsString !== true)
+			return false;
+		const parts = keyParts(record.id);
+		return parts.length === 2 && parts[0] === 'RULE_SELECTOR' && Array.isArray(parts[1])
+			&& parts[1].length === 2 && parts[1][0] === 'POUR' && parts[1][1] === pourId;
+	});
+	if (matchingSelectors.length !== 1 || matchingSelectors[0] !== selector) {
+		return false;
+	}
+	const data = selector.data;
+	if (!data || typeof data !== 'object' || Array.isArray(data)
+		|| Object.keys(data).sort().join(',') !== 'copperValue,innerPlaneValue,parent,ruleKeyValue,ruleOrder'
+		|| data.ruleOrder !== 2 || data.parent !== null) {
+		return false;
+	}
+	const isEmptyObject = (value: unknown): boolean => value !== null && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0;
+	if (!isEmptyObject(data.copperValue) || !isEmptyObject(data.innerPlaneValue)) {
+		return false;
+	}
+	const ruleKeyValue = data.ruleKeyValue;
+	if (!ruleKeyValue || typeof ruleKeyValue !== 'object' || Array.isArray(ruleKeyValue)
+		|| Object.keys(ruleKeyValue).length !== 1 || Object.keys(ruleKeyValue)[0] !== 'SAFE'
+		|| typeof ruleKeyValue.SAFE !== 'string' || !ruleKeyValue.SAFE.trim()) {
+		return false;
+	}
+	const safeRules = rules.filter((record) => {
+		if (record.idIsString !== true)
+			return false;
+		const parts = keyParts(record.id);
+		return parts.length === 3 && parts[0] === 'RULE' && parts[1] === 'SAFE' && parts[2] === ruleKeyValue.SAFE;
+	});
+	if (safeRules.length !== 1 || !safeRules[0].data || typeof safeRules[0].data !== 'object' || Array.isArray(safeRules[0].data))
+		return false;
+	const matchingPours = pours.filter(record => record.idIsString === true && record.id === pourId);
+	return matchingPours.length === 1 && matchingPours[0].data !== null && typeof matchingPours[0].data === 'object'
+		&& !Array.isArray(matchingPours[0].data) && Object.keys(matchingPours[0].data).length > 0;
+}
+
 export function buildRoutingWidthSnapshot(input: BuildRoutingWidthSnapshotInput): RoutingWidthSnapshot {
 	const parsed = parseSource(input.source);
 	const unknowns = [...parsed.unknowns];
@@ -409,6 +588,7 @@ export function buildRoutingWidthSnapshot(input: BuildRoutingWidthSnapshotInput)
 	const ruleRecords = effectiveRecords(parsed.records, 'RULE');
 	const selectorRecords = effectiveRecords(parsed.records, 'RULE_SELECTOR');
 	const netRecords = effectiveRecords(parsed.records, 'NET');
+	const pourRecords = effectiveRecords(parsed.records, 'POUR');
 	unknowns.push(...ruleRecords.unknowns, ...selectorRecords.unknowns, ...netRecords.unknowns);
 	const allRules = ruleRecords.records;
 	const trackRules = allRules.filter(record => keyParts(record.id)[1] === 'TRACK');
@@ -469,6 +649,7 @@ export function buildRoutingWidthSnapshot(input: BuildRoutingWidthSnapshotInput)
 	const duplicateNetSelectors = new Set<string>();
 	const duplicateClassSelectors = new Set<string>();
 	let globalSelectorUnknown = false;
+	let emptySourceNetSelectorConfirmed = false;
 	const unknownNetReasons = new Map<string, string[]>();
 	const hasTombstones = parsed.records.some(record => record.data === '');
 	for (const tombstone of parsed.records.filter(record => record.data === '')) {
@@ -493,12 +674,22 @@ export function buildRoutingWidthSnapshot(input: BuildRoutingWidthSnapshotInput)
 	const sourceEvidenceAmbiguousWithoutTombstones = parsed.unknowns.length > 0 || ruleRecords.unknowns.length > 0 || selectorRecords.unknowns.length > 0 || netRecords.unknowns.length > 0;
 	const sourceEvidenceAmbiguous = sourceEvidenceAmbiguousWithoutTombstones || hasTombstones;
 	for (const selector of selectors) {
+		if (isConfirmedEmptyUnconnectedNetSelector(selector, selectors, netMap, input.netRules)) {
+			emptySourceNetSelectorConfirmed = true;
+			continue;
+		}
 		if (isConfirmedLengthOnlyNetSelector(selector))
+			continue;
+		if (isConfirmedEmptyDifferentialPairSelector(selector, selectors, netMap))
+			continue;
+		if (isConfirmedEmptyEqualLengthGroupSelector(selector, selectors, netMap, input.netRules))
 			continue;
 		const parts = keyParts(selector.id)[1];
 		const scope = Array.isArray(parts) ? parts[0] : undefined;
 		const name = Array.isArray(parts) ? String(parts[1] ?? '') : '';
 		if (scope !== 'NET') {
+			if (scope === 'POUR' && isConfirmedCopperRegionPourSelector(selector, selectors, pourRecords.records, ruleRecords.records))
+				continue;
 			if (scope === 'NET_CLASS') {
 				let matchedClassMember = false;
 				for (const [net, record] of netMap) {
@@ -534,9 +725,14 @@ export function buildRoutingWidthSnapshot(input: BuildRoutingWidthSnapshotInput)
 		if (selector.data?.parent !== null || selector.data?.ruleOrder !== 4)
 			unknownNetReasons.set(name, [...(unknownNetReasons.get(name) ?? []), 'NET selector的parent/ruleOrder不是已验证的null/4']);
 	}
+	const malformedSdkNetName = (sdkRuleRows(input.netRules) ?? []).some(row => row?.type === 'net' && (typeof row.name !== 'string' || !row.name.trim()));
+	if (((netMap.has('') || netApiRules.has('')) && !emptySourceNetSelectorConfirmed) || malformedSdkNetName) {
+		globalSelectorUnknown = true;
+		unknowns.push('存在未能严格确认的空名NET记录或SDK网络规则行');
+	}
 	if (globalSelectorUnknown)
 		unknowns.push('复杂selector可能改变任意网络的有效TRACK规则');
-	const netNames = new Set([...netMap.keys(), ...netApiRules.keys()]);
+	const netNames = new Set([...netMap.keys(), ...netApiRules.keys()].filter(name => !(name === '' && emptySourceNetSelectorConfirmed)));
 	const enabledLayerIds = new Set(enabled.layers.map(layer => layer.id));
 	const nets: RoutingNetWidth[] = [];
 	for (const net of netNames) {
@@ -911,11 +1107,98 @@ export function compareDsnWidthRules(snapshot: RoutingWidthSnapshot, dsnText: st
 	return { status, defaultRule, nets, unknowns: [...new Set(unknowns)] };
 }
 
-export function checkSesWidthRules(snapshot: RoutingWidthSnapshot, lines: Array<{ net: string; layer: number | string; widthMil: number }>): SesWidthCheck {
+function sourceIdParts(id: unknown): unknown[] {
+	if (typeof id !== 'string') return []
+	try { const value = JSON.parse(id); return Array.isArray(value) ? value : [] } catch { return [] }
+}
+
+/**
+ * Build a separate geometry-to-rule name proof. Case-folding is only a candidate
+ * lookup: source NET, selector, SDK row, geometry name, and PAD_NET ownership
+ * must each identify exactly one matching net before an alias is admitted.
+ */
+export function buildRoutingNetAliasSnapshot(
+	geometryNets: RoutingNetAliasGeometry[],
+	sourceRuleRecords: RoutingNetAliasSourceRecord[],
+	snapshot: RoutingWidthSnapshot,
+	sdkNetRules?: unknown,
+): RoutingNetAlias[] {
+	const folded = (name: string): string => name.toLocaleUpperCase('en-US')
+	const sourceNets = sourceRuleRecords.filter(record => record.type === 'NET').map(record => {
+		const parts = sourceIdParts(record.id)
+		return parts.length === 2 && parts[0] === 'NET' && typeof parts[1] === 'string' ? parts[1] : null
+	})
+	const selectors = sourceRuleRecords.filter(record => record.type === 'RULE_SELECTOR').map(record => {
+		const parts = sourceIdParts(record.id), scope = parts[1]
+		return parts.length === 2 && parts[0] === 'RULE_SELECTOR' && Array.isArray(scope) && scope.length === 2 && scope[0] === 'NET' && typeof scope[1] === 'string' ? scope[1] : null
+	})
+	const sdkNets = snapshot.nets.map(net => net.net)
+	const sdkRows = Array.isArray(sdkNetRules) ? sdkNetRules.filter((row: any) => row?.type === 'net') as Array<Record<string, any>> : []
+	const padOwners = new Map<string, string[]>()
+	for (const record of sourceRuleRecords.filter(item => item.type === 'PAD_NET')) {
+		const parts = sourceIdParts(record.id), padNet = record.data?.padNet
+		if (parts.length !== 4 || parts[0] !== 'PAD_NET' || typeof parts[1] !== 'string' || typeof parts[3] !== 'string' || typeof padNet !== 'string') continue
+		const owner = `${parts[1]}${parts[3]}`
+		const list = padOwners.get(owner) ?? []
+		list.push(padNet)
+		padOwners.set(owner, list)
+	}
+	return geometryNets.map(geometry => {
+		const exact = snapshot.nets.filter(net => net.net === geometry.name)
+		if (exact.length === 1) {
+			const sourceExact = sourceNets.filter(name => name === geometry.name)
+			return { geometryNet: geometry.name, ruleNet: geometry.name, ...(sourceExact.length === 1 ? { sourceNet: geometry.name } : {}), status: 'known' as const }
+		}
+		if (exact.length > 1) return { geometryNet: geometry.name, ruleNet: null, status: 'unknown' as const, reason: 'routing snapshot 中存在重复精确网名' }
+		const key = folded(geometry.name)
+		const unique = (names: Array<string | null>): boolean => {
+			const matches = names.filter((name): name is string => name !== null && folded(name) === key)
+			return matches.length === 1
+		}
+		const candidate = (names: Array<string | null>): string | null => {
+			const matches = names.filter((name): name is string => typeof name === 'string' && folded(name) === key)
+			return matches.length === 1 ? matches[0] : null
+		}
+		const sourceName = candidate(sourceNets)
+		const selectorName = candidate(selectors)
+		const ruleName = candidate(sdkNets)
+		const ruleEntry = ruleName === null ? undefined : snapshot.nets.find(net => net.net === ruleName)
+		const matchingSelectors = sourceRuleRecords.filter(record => {
+			const parts = sourceIdParts(record.id), scope = parts[1]
+			return record.type === 'RULE_SELECTOR' && parts.length === 2 && parts[0] === 'RULE_SELECTOR' && Array.isArray(scope) && scope.length === 2 && scope[0] === 'NET' && scope[1] === sourceName
+		})
+		const selectorData = matchingSelectors.length === 1 ? matchingSelectors[0].data : undefined
+		const selectedTrack = selectorData?.ruleKeyValue?.TRACK
+		const expectedSdkTrack = typeof selectedTrack === 'string' ? selectedTrack : 'default'
+		const matchingSdkRows = sdkRows.filter(row => row.name === ruleName)
+		const sdkRowProven = sdkNetRules !== undefined && matchingSdkRows.length === 1 && matchingSdkRows[0].Track === expectedSdkTrack
+		const geometryUnique = geometryNets.filter(item => folded(item.name) === key).length === 1
+		const sourceUnique = unique(sourceNets)
+		const selectorUnique = unique(selectors)
+		const sdkUnique = unique(sdkNets)
+		const ownedNames = geometry.padIds.map(id => padOwners.get(id) ?? [])
+		const padOwnershipProven = geometry.padIds.length > 0 && ownedNames.every(names => names.length === 1 && names[0] === geometry.name && folded(names[0]) === key)
+		if (!geometryUnique || !sourceUnique || !selectorUnique || !sdkUnique || !sourceName || selectorName !== sourceName || matchingSelectors.length !== 1 || ruleName === null || ruleEntry?.status !== 'known' || !sdkRowProven || !padOwnershipProven)
+			return { geometryNet: geometry.name, ruleNet: null, status: 'unknown' as const, reason: '大小写别名的 geometry/source NET/selector/SDK 唯一性、原始SDK规则行绑定或 PAD_NET 焊盘归属未证明' }
+		return { geometryNet: geometry.name, ruleNet: ruleName, sourceNet: sourceName, sdkTrack: expectedSdkTrack, status: 'known' as const }
+	})
+}
+
+export function checkSesWidthRules(
+	snapshot: RoutingWidthSnapshot,
+	lines: Array<{ net: string; layer: number | string; widthMil: number }>,
+	netAliases?: RoutingNetAlias[],
+	sdkNetRules?: unknown,
+): SesWidthCheck {
 	const violations: SesWidthCheck['violations'] = [];
 	const unknowns: string[] = [];
 	for (const [index, line] of lines.entries()) {
-		const netRule = snapshot.nets.find(rule => rule.net === line.net);
+		const aliases = netAliases?.filter(alias => alias.geometryNet === line.net) ?? []
+		const alias = aliases.length === 1 ? aliases[0] : undefined
+		const aliasRuleRows = alias && alias.ruleNet !== alias.geometryNet && Array.isArray(sdkNetRules) ? (sdkNetRules as any[]).filter(row => row?.type === 'net' && row.name === alias.ruleNet) : []
+		const aliasSdkBindingValid = alias === undefined || alias.ruleNet === alias.geometryNet || (alias.status === 'known' && sdkNetRules !== undefined && aliasRuleRows.length === 1 && aliasRuleRows[0].Track === alias.sdkTrack)
+		const ruleNet = netAliases === undefined ? line.net : alias?.status === 'known' && aliasSdkBindingValid ? alias.ruleNet : undefined
+		const netRule = ruleNet == null ? undefined : snapshot.nets.find(rule => rule.net === ruleNet);
 		const layerRule = netRule?.layers.find(layer => String(layer.layerId) === String(line.layer) || layer.name === String(line.layer));
 		if (snapshot.globalStatus !== 'known' || !netRule || netRule.status !== 'known' || !layerRule || layerRule.status !== 'known' || !Number.isFinite(line.widthMil)) {
 			const reasons: string[] = [];
@@ -924,7 +1207,7 @@ export function checkSesWidthRules(snapshot: RoutingWidthSnapshot, lines: Array<
 				reasons.push(...(globalReasons.length ? globalReasons : ['全局TRACK规则状态未知']));
 			}
 			if (!netRule)
-				reasons.push(`快照中缺少网络 ${line.net}`);
+				reasons.push(alias?.reason ?? (!aliasSdkBindingValid ? '导入时原始SDK网络规则行缺失、重复或 TRACK 选择冲突' : aliases.length > 1 ? '几何网络别名存在重复记录' : `快照中缺少网络 ${line.net}`));
 			else if (netRule.status !== 'known') {
 				const prefix = `网络 ${line.net}：`;
 				const netReasons = snapshot.unknowns.filter(reason => reason.startsWith(prefix)).map(reason => reason.slice(prefix.length));

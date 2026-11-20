@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { register } from 'node:module'
 
 const loader = `export async function resolve(specifier, context, nextResolve) {
@@ -8,7 +10,7 @@ const loader = `export async function resolve(specifier, context, nextResolve) {
 	return nextResolve(specifier, context)
 }`
 register(`data:text/javascript,${encodeURIComponent(loader)}`, import.meta.url)
-const [{ applyDsnLayerWidthRules }, { resolveDsnLayerId, dsnLayerNameMatchesSdk }] = await Promise.all([
+const [{ applyDsnLayerWidthRules }, { buildRoutingWidthSnapshot, checkSesWidthRules, compareDsnWidthRules, resolveDsnLayerId, dsnLayerNameMatchesSdk }] = await Promise.all([
 	import('../src/engine/dsnLayerWidths.ts'),
 	import('../src/engine/routingWidthRules.ts'),
 ])
@@ -63,6 +65,9 @@ const fixture = `(PCB probe
 )`
 
 const repaired = applyDsnLayerWidthRules(snapshot(), fixture)
+const repairedWithMmDisplayMarker = applyDsnLayerWidthRules({ ...snapshot(), sourceUnit: 'mm' }, fixture)
+assert.equal(repairedWithMmDisplayMarker.text, repaired.text, 'mm is retained as the design-rule display marker while DSN widths continue to use raw mil values')
+assert.deepEqual(repairedWithMmDisplayMarker.changes, repaired.changes, 'accepting an mm display marker does not convert raw mil values twice')
 assert.equal(repaired.changed, true)
 assert.equal(repaired.warnings.length, 0)
 assert.equal(repaired.changes.length, 3)
@@ -147,7 +152,7 @@ rejected('wrong DSN resolution', text => text.replace('(resolution mil 1000)', '
 rejected('wrong DSN unit', text => text.replace('(resolution mil 1000)', '(resolution mm 1000)'))
 rejected('invalid structure base width', text => text.replace('(rule (width 15))', '(rule (width 0))'))
 rejected('multiple structure base widths', text => text.replace('(rule (width 15))', '(rule (width 15)) (rule (width 16))'))
-rejected('wrong source unit', text => text, value => ({ ...value, sourceUnit: 'mm' }))
+rejected('unknown source unit', text => text, value => ({ ...value, sourceUnit: 'inch' }))
 rejected('unknown global evidence', text => text, value => ({ ...value, globalStatus: 'unknown' }))
 rejected('unknown target net', text => text, value => ({ ...value, nets: value.nets.map(net => net.net === 'TopNet' ? { ...net, status: 'unknown' } : net) }))
 rejected('unknown layer preference', text => text, value => ({ ...value, nets: value.nets.map(net => net.net === 'TopNet' ? { ...net, layers: net.layers.map(layer => layer.layerId === 2 ? { ...layer, status: 'unknown' } : layer) } : net) }))
@@ -169,4 +174,96 @@ rejected('unknown default width field', text => text.replace('(layer TopLayer (t
 rejected('non-positive default width', text => text.replace('(layer TopLayer (type signal))', '(layer TopLayer (type signal) (rule (width 0))'))
 rejected('non-signal structure layer override', text => text.replace('(layer BottomLayer (type signal))', '(layer BottomLayer (type signal))\n    (layer MysteryPlane (type power) (rule (width 99)))'))
 rejected('class precheck failure rejects all planned default changes', text => text.replace('(rule (width 20) (clearance 4)))\n    (class BottomClass', '(rule (width 20) (clearance 4)) (layer_rule BottomLayer (rule (width 31))))\n    (class BottomClass'))
+
+const manifest = JSON.parse(readFileSync(new URL('./fixtures/manifest.json', import.meta.url), 'utf8'))
+const readFixture = name => {
+	const bytes = readFileSync(new URL(`./fixtures/${name}`, import.meta.url))
+	const entry = manifest.entries.find(item => item.fixture === name)
+	assert.ok(entry, `${name} is registered in fixture manifest`)
+	assert.equal(bytes.length, entry.bytes, `${name} fixture byte count matches manifest`)
+	assert.equal(createHash('sha256').update(bytes).digest('hex'), entry.fixtureSha256, `${name} fixture hash matches manifest`)
+	return JSON.parse(bytes.toString('utf8'))
+}
+const hostDiffPair = readFixture('host-differential-empty-pair-selector.json')
+const hostDiffPairSnapshot = buildRoutingWidthSnapshot({ source: hostDiffPair.source, layers: hostDiffPair.layers, netRules: hostDiffPair.netRules })
+assert.equal(hostDiffPairSnapshot.globalStatus, 'known', JSON.stringify(hostDiffPairSnapshot.unknowns))
+assert.deepEqual(hostDiffPairSnapshot.defaultRule.layers.map(layer => [layer.layerId, layer.minMil, layer.preferredMil, layer.maxMil]), [[1, 5, 10, 100], [2, 5, 10, 100]])
+assert.ok(hostDiffPairSnapshot.nets.every(net => net.status === 'known'))
+assert.ok(hostDiffPairSnapshot.nets.every(net => net.layers.map(layer => [layer.layerId, layer.minMil, layer.preferredMil, layer.maxMil]).every((bounds, index) => JSON.stringify(bounds) === JSON.stringify([[1, 5, 10, 100], [2, 5, 10, 100]][index]))))
+assert.deepEqual(checkSesWidthRules(hostDiffPairSnapshot, [{ net: hostDiffPairSnapshot.nets[0].net, layer: 1, widthMil: 101 }]).status, 'violation', 'the confirmed empty DIFF_PAIR selector does not weaken existing out-of-range SES checks')
+const mutateSourceRecord = (source, type, predicate, transform) => source.split(/\r?\n/).map(line => {
+	const split = line.indexOf('||'); if (split < 0) return line
+	try {
+		const header = JSON.parse(line.slice(0, split)); const data = JSON.parse(line.slice(split + 2).replace(/\|$/, ''))
+		if (header.type !== type || !predicate(header, data)) return line
+		return `${JSON.stringify(header)}||${JSON.stringify(transform(data, header))}|`
+	} catch { return line }
+}).join('\n')
+const diffSelector = (header, data) => {
+	if (header.type !== 'RULE_SELECTOR') return false
+	try { const id = JSON.parse(header.id); return id[0] === 'RULE_SELECTOR' && id[1]?.[0] === 'DIFF_PAIR' } catch { return false }
+}
+const expectDiffPairUnknown = (label, source) => {
+	const result = buildRoutingWidthSnapshot({ source, layers: hostDiffPair.layers, netRules: hostDiffPair.netRules })
+	assert.equal(result.globalStatus, 'unknown', `${label}: ${JSON.stringify(result.unknowns)}`)
+}
+for (const [label, transform] of [
+	['nonempty TRACK override', data => ({ ...data, ruleKeyValue: { TRACK: 'customTrack' } })],
+	['nonempty copper override', data => ({ ...data, copperValue: { TRACK: 10 } })],
+	['nonempty inner-plane override', data => ({ ...data, innerPlaneValue: { TRACK: 10 } })],
+	['missing required field', data => { const { innerPlaneValue, ...rest } = data; return rest }],
+	['extra field', data => ({ ...data, note: 'unexpected' })],
+	['wrong order', data => ({ ...data, ruleOrder: 5 })],
+	['unexpected parent', data => ({ ...data, parent: 'parent' })],
+]) expectDiffPairUnknown(label, mutateSourceRecord(hostDiffPair.source, 'RULE_SELECTOR', diffSelector, transform))
+expectDiffPairUnknown('missing pair NET membership', mutateSourceRecord(hostDiffPair.source, 'NET', (_, data) => data.differentialName === 'ACE_TEST_PAIR', data => ({ ...data, differentialName: null })))
+expectDiffPairUnknown('duplicate polarity', mutateSourceRecord(hostDiffPair.source, 'NET', (_, data) => data.differentialName === 'ACE_TEST_PAIR', data => ({ ...data, isPositiveNet: true })))
+expectDiffPairUnknown('no positive polarity', mutateSourceRecord(hostDiffPair.source, 'NET', (_, data) => data.differentialName === 'ACE_TEST_PAIR', data => ({ ...data, isPositiveNet: false })))
+expectDiffPairUnknown('third pair member', `${hostDiffPair.source}\n${JSON.stringify({ type: 'NET', ticket: 999, id: '["NET","EXTRA_PAIR_NET"]' })}||${JSON.stringify({ differentialName: 'ACE_TEST_PAIR', isPositiveNet: true })}|`)
+expectDiffPairUnknown('duplicate semantic selector', `${hostDiffPair.source}\n${JSON.stringify({ type: 'RULE_SELECTOR', ticket: 999, id: '["RULE_SELECTOR", ["DIFF_PAIR", "ACE_TEST_PAIR"]]' })}||${JSON.stringify({ ruleOrder: 4, ruleKeyValue: {}, copperValue: {}, innerPlaneValue: {}, parent: null })}|`)
+const sameTicketPairSelectorLine = hostDiffPair.source.split(/\r?\n/).find(line => {
+	const split = line.indexOf('||'); if (split < 0) return false
+	try {
+		const header = JSON.parse(line.slice(0, split))
+		const id = typeof header.id === 'string' ? JSON.parse(header.id) : []
+		return header.type === 'RULE_SELECTOR' && id[0] === 'RULE_SELECTOR' && id[1]?.[0] === 'DIFF_PAIR' && id[1]?.[1] === 'ACE_TEST_PAIR'
+	} catch { return false }
+})
+assert.ok(sameTicketPairSelectorLine, 'same-ticket conflict fixture locates the real DIFF_PAIR selector line')
+expectDiffPairUnknown('unresolved same-ticket selector history', `${hostDiffPair.source}\n${sameTicketPairSelectorLine}`)
+
+const core0219 = readFixture('installed-0219-multilayer-widths.json')
+const core0219Snapshot = buildRoutingWidthSnapshot({ source: core0219.source, editorVersion: core0219.editorVersion, layers: core0219.layers, netRules: core0219.netRules })
+assert.equal(core0219Snapshot.sourceUnit, 'mm')
+assert.deepEqual(core0219Snapshot.defaultRule.layers.map(layer => [layer.layerId, layer.minMil, layer.preferredMil, layer.maxMil]), [[1, 10, 20, 60], [2, 15, 26, 35]])
+assert.equal(core0219Snapshot.defaultRule.status, 'known')
+assert.equal(core0219Snapshot.globalStatus, 'known', 'the empty DIFF_PAIR selector is ignored after strict source proof')
+assert.ok(core0219Snapshot.unknowns.some(reason => reason.includes('CFG_WIDTH_CLASS') && reason.includes('TRACK继承')))
+assert.equal(core0219Snapshot.nets.find(net => net.net === 'CFG_TMIN')?.status, 'unknown', 'unproven NET_CLASS TRACK inheritance remains unknown')
+assert.ok(core0219Snapshot.nets.filter(net => net.net !== 'CFG_TMIN').every(net => net.status === 'known'))
+assert.throws(() => applyDsnLayerWidthRules(core0219Snapshot, core0219.rawDsn), /CFG_TMIN|网络/, 'Core DSN rewriting stays blocked by the concrete unresolved NET_CLASS inheritance')
+
+const concave0219 = readFixture('installed-0219-concave-widths.json')
+const concave0219Snapshot = buildRoutingWidthSnapshot({ source: concave0219.source, editorVersion: concave0219.editorVersion, layers: concave0219.layers, netRules: concave0219.netRules })
+assert.equal(concave0219Snapshot.sourceUnit, 'mm')
+assert.equal(concave0219Snapshot.globalStatus, 'known', JSON.stringify(concave0219Snapshot.unknowns))
+assert.deepEqual(concave0219Snapshot.defaultRule.layers.map(layer => [layer.layerId, layer.minMil, layer.preferredMil, layer.maxMil]), [[1, 5, 10, 100], [2, 5, 10, 100]])
+assert.ok(concave0219Snapshot.nets.every(net => net.status === 'known'))
+const concave0219Repair = applyDsnLayerWidthRules(concave0219Snapshot, concave0219.rawDsn)
+assert.equal(concave0219Repair.changed, true)
+assert.match(concave0219Repair.text, /layer TopLayer[\s\S]{0,100}\(rule \(width 10\)\)/)
+assert.match(concave0219Repair.text, /layer BottomLayer[\s\S]{0,100}\(rule \(width 10\)\)/)
+const concave0219Restored = concave0219Repair.text
+	.replaceAll('(type signal)\n     (rule (width 10)))', '(type signal)\n    )')
+assert.equal(concave0219Restored, concave0219.rawDsn, 'removing only the two default layer insertions recovers every original DSN byte')
+assert.ok(concave0219Repair.changes.every(change => change.kind === 'default-layer-width'), 'only the mismatching DSN default layer widths are corrected')
+assert.deepEqual(concave0219Repair.changes.map(change => [change.layer, change.from, change.to]), [
+	['TopLayer', '10.05 mil', '10 mil'], ['BottomLayer', '10.05 mil', '10 mil'],
+])
+const concave0219Comparison = compareDsnWidthRules(concave0219Snapshot, concave0219Repair.text)
+assert.equal(concave0219Comparison.status, 'matched', JSON.stringify(concave0219Comparison))
+assert.equal(concave0219Comparison.defaultRule.dsnWidthMil, 10)
+assert.equal(concave0219Comparison.defaultRule.eda?.preferredMil, 10)
+assert.deepEqual(concave0219Comparison.unknowns, [], 'the unrelated captured concave-board comparison has no unknowns')
+assert.equal(applyDsnLayerWidthRules(concave0219Snapshot, concave0219Repair.text).changed, false, 'real mm-marked DSN repair is idempotent')
 console.log('dsn-layer-widths regression: PASS')

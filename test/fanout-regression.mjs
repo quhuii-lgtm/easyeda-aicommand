@@ -9,7 +9,7 @@ async function main() {
 	const root = resolve(import.meta.dirname, '..');
 	const built = await build({
 		stdin: {
-			contents: `import { fanoutCommands } from '../src/commands/fanout.ts'; import { normalizeRoute, planRouteDetailed } from '../src/pcb/fanout/fanout-routing.ts'; import { planRouteDetailed as planRouteDetailedBefore } from './fixtures/fanout-routing-before.ts'; export { fanoutCommands, normalizeRoute, planRouteDetailed, planRouteDetailedBefore }`,
+			contents: `import { fanoutCommands } from '../src/commands/fanout.ts'; import { normalizeRoute, planRouteDetailed } from '../src/pcb/fanout/fanout-routing.ts'; import { normalizeBoardOutlinePolylines } from '../src/pcb/boardOutline.ts'; import { planRouteDetailed as planRouteDetailedBefore } from './fixtures/fanout-routing-before.ts'; export { fanoutCommands, normalizeRoute, planRouteDetailed, planRouteDetailedBefore, normalizeBoardOutlinePolylines }`,
 			resolveDir: resolve(root, 'test'),
 			sourcefile: 'fanout-regression-entry.ts',
 		},
@@ -20,7 +20,7 @@ async function main() {
 		target: 'node24',
 	});
 	const moduleUrl = `data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`;
-	const { fanoutCommands, normalizeRoute, planRouteDetailed, planRouteDetailedBefore } = await import(moduleUrl);
+	const { fanoutCommands, normalizeRoute, planRouteDetailed, planRouteDetailedBefore, normalizeBoardOutlinePolylines } = await import(moduleUrl);
 	const command = name => fanoutCommands.find(item => item.name === name);
 	const docHead = uuid => `${JSON.stringify({ type: 'DOCHEAD', ticket: 0 })}||${JSON.stringify({ docType: 'PCB', uuid, client: 'fanout-test' })}|`;
 	const emptyRules = { config: { spacingMil: 8 }, name: 'test' };
@@ -78,9 +78,46 @@ async function main() {
 			getState_LineWidth: () => width,
 		};
 	}
+	function sourcePath(value) {
+		const path = value?.getSource ? value.getSource() : value;
+		return path;
+	}
+	function sourceRecord(type, id, data, ticket) {
+		return `${JSON.stringify({ type, ticket, id })}||${JSON.stringify(data)}|`;
+	}
+	function poursAndPouredFromFixture(sample) {
+		const pourRecords = sample.records.filter(record => record.header.type === 'POUR');
+		const pouredRecords = sample.records.filter(record => record.header.type === 'POURED');
+		const pours = sample.pours.map(item => ({
+			getState_PrimitiveId: () => item.id,
+			getState_Layer: () => item.layer,
+			getState_Net: () => item.net,
+			getState_PourFillMethod: () => 'solid',
+			getState_ComplexPolygon: () => ({ getSource: () => item.path }),
+		}));
+		const poured = sample.poured.map(item => ({
+			getState_PrimitiveId: () => JSON.stringify(['POURED', item.pourId]),
+			getState_PourPrimitiveId: () => item.pourId,
+			getState_PourFills: () => item.fills.map(fill => ({ id: fill.id, fill: fill.fill, lineWidth: fill.lineWidth, path: { getSource: () => fill.path } })),
+		}));
+		return { pours, poured, sourceText: `${docHead('pcb-A')}\n${[...pourRecords, ...pouredRecords].map(record => `${JSON.stringify(record.header)}||${JSON.stringify(record.data)}|`).join('\n')}` };
+	}
 
-	function install({ pads = [pad('P1')], components = [], tracks = [], vias = [], fills = [], pours = [], poured = [], arcs = [], holeLines = [], outlinePolylines = [], rules = emptyRules, focusUuid = 'pcb-A', outline = true, outlineLines, mergeCollinearLines = false, editorVersion = null } = {}) {
+	function install({ pads = [pad('P1')], components = [], tracks = [], vias = [], fills = [], pours = [], poured = [], arcs = [], holeLines = [], outlinePolylines = [], rules = emptyRules, focusUuid = 'pcb-A', outline = true, outlineLines, mergeCollinearLines = false, editorVersion = null, sourceText } = {}) {
 		const state = { writes: [], reads: [], source: docHead(focusUuid), rules, pads: [...pads], components: [...components], vias: [...vias], fills: [...fills], arcs: [...arcs], holeLines: [...holeLines], lines: [...tracks], created: new Map(), nextId: 1, failCreate: undefined, mismatchReadback: false, mergeCollinearLines };
+		let ticket = 1;
+		for (const parent of pours) {
+			const id = parent.getState_PrimitiveId();
+			const path = sourcePath(parent.getState_ComplexPolygon());
+			state.source += `\n${sourceRecord('POUR', id, { netName: parent.getState_Net?.() ?? '', layerId: parent.getState_Layer(), path: Array.isArray(path) && Array.isArray(path[0]) ? path : [path], pourType: { pourType: String(parent.getState_PourFillMethod?.() ?? 'solid').toUpperCase(), fineness: parent.fineness ?? 0 } }, ticket++)}`;
+		}
+		for (const item of poured) {
+			const parentId = item.getState_PourPrimitiveId();
+			const pourFill = item.getState_PourFills().map(fill => ({ id: fill.id, fill: fill.fill, strokeWidth: fill.lineWidth, path: [sourcePath(fill.path)] }));
+			state.source += `\n${sourceRecord('POURED', JSON.stringify(['POURED', parentId]), { pourFill }, ticket++)}`;
+		}
+		if (typeof sourceText === 'string')
+			state.source = sourceText;
 		if (outlineLines)
 			state.lines = [...tracks, ...outlineLines];
 		else if (outline)
@@ -228,6 +265,8 @@ async function main() {
 		const pour = {
 			getState_PrimitiveId: () => 'PO1',
 			getState_Layer: () => 2,
+			getState_Net: () => 'N2',
+			getState_PourFillMethod: () => 'solid',
 			getState_LineWidth: () => 0.2,
 			getState_ComplexPolygon: () => ({ getSource: () => ['R', 660, 740, 80, 80, 0, 0] }),
 		};
@@ -235,14 +274,12 @@ async function main() {
 				id: 'PF1',
 				fill: true,
 				lineWidth: 0,
-				coordinateUnit: 'mil',
-				path: { getSource: () => [670, 670, 'L', 700, 670, 700, 700, 670, 700] },
+				path: { getSource: () => [67, 67, 'L', 70, 67, 70, 70, 67, 70, 67, 67] },
 			}, {
 				id: 'PF2',
 				fill: true,
 				lineWidth: 0,
-				coordinateUnit: 'mil',
-				path: { getSource: () => [705, 705, 'L', 730, 705, 730, 730, 705, 730] },
+				path: { getSource: () => [70.5, 70.5, 'L', 73, 70.5, 73, 73, 70.5, 73, 70.5, 70.5] },
 			}];
 		const pouredObject = (fills = childFills) => ({
 			getState_PrimitiveId: () => 'PR1',
@@ -312,46 +349,165 @@ async function main() {
 		assert.notDeepEqual(arcLayer.plannedPrimitives, base.plannedPrimitives, 'same-layer arc geometry must be converted into a routing obstacle');
 	});
 
-	await test('native R bounds and zero-width poured copper keep coordinate coverage explicit', async () => {
+	await test('source-matched SOLID POURED geometry normalizes independently of EDA version', async () => {
 		const rectangle = ['R', 250, 450, 200, 100, 0, 0];
 		const equivalent = [250, 450, 'L', 450, 450, 450, 350, 250, 350, 250, 450];
-		const pour = path => ({ getState_PrimitiveId: () => 'pour-host', getState_Layer: () => 2, getState_LineWidth: () => 0.2, getState_ComplexPolygon: () => ({ getSource: () => path }) });
-		const region = (width, path, coordinateUnit = 'mil') => ({ getState_PrimitiveId: () => 'poured-host', getState_PourPrimitiveId: () => 'pour-host', getState_PourFills: () => [{ id: 'fill-host', fill: true, lineWidth: width, ...(coordinateUnit ? { coordinateUnit } : {}), path: { getSource: () => path } }] });
-		const inner = [446, 354, 'L', 254, 354, 254, 446, 446, 446, 446, 354];
-		const r = await runPlan(install({ pours: [pour(rectangle)], poured: [region(0, inner)] }));
-		const l = await runPlan(install({ pours: [pour(equivalent)], poured: [region(0, inner)] }));
+		const pour = (id, path, fineness = 0, net = 'N1') => ({ getState_PrimitiveId: () => id, getState_Layer: () => 2, getState_Net: () => net, getState_PourFillMethod: () => 'solid', getState_ComplexPolygon: () => ({ getSource: () => path }), fineness });
+		const region = (parentId, width, path) => ({ getState_PrimitiveId: () => `poured-${parentId}`, getState_PourPrimitiveId: () => parentId, getState_PourFills: () => [{ id: `fill-${parentId}`, fill: true, lineWidth: width, path: { getSource: () => path } }] });
+		const rawInner = [44.6, 35.4, 'L', 25.4, 35.4, 25.4, 44.6, 44.6, 44.6, 44.6, 35.4];
+		const r = await runPlan(install({ pours: [pour('pour-host', rectangle)], poured: [region('pour-host', 0, rawInner)] }));
+		const l = await runPlan(install({ pours: [pour('pour-host', equivalent)], poured: [region('pour-host', 0, rawInner)] }));
 		assert.equal(r.coverage.complete, true, r.warnings.join('; '));
-		assert.equal(r.coverage.obstacles, l.coverage.obstacles);
-		assert.deepEqual(r.plannedPrimitives, l.plannedPrimitives, 'native R and equivalent L must produce the same obstacle location');
-		assert.equal(r.coverage.obstacles, (await runPlan(install())).coverage.obstacles + 2, 'width zero retains the filled polygon as an obstacle');
-		assert.equal((await runPlan(install({ pours: [pour(rectangle)], poured: [region(0, equivalent)] }))).coverage.complete, true, 'points on the parent boundary remain readable');
-		const outside = [249, 450, 'L', 450, 450, 450, 350, 249, 350, 249, 450];
-		assert.equal((await runPlan(install({ pours: [pour(rectangle)], poured: [region(0, outside)] }))).coverage.complete, false, 'clearly outside points must not be accepted');
+		assert.deepEqual(r.plannedPrimitives, l.plannedPrimitives, 'native R and equivalent closed L parent paths retain equivalent filled geometry');
+		assert.equal(r.coverage.geometryReview.pouredNormalization.items[0].conversionFactor, 10);
+		assert.equal(r.coverage.geometryReview.pouredNormalization.items[0].copperMarginMil, 0);
+		assert.equal(r.coverage.obstacles, (await runPlan(install())).coverage.obstacles + 1, 'the active child polygon is an obstacle; its parent POUR outline is not treated as copper');
+		const outside = [24.9, 45, 'L', 45, 45, 45, 35, 24.9, 35, 24.9, 45];
+		const out = await runPlan(install({ pours: [pour('pour-host', rectangle)], poured: [region('pour-host', 0, outside)] }));
+		assert.equal(out.coverage.complete, false, 'source-matched child polygon outside the parent outline is rejected');
 		for (const width of [-1, undefined, '0', Number.NaN, Infinity]) {
-			const invalid = await runPlan(install({ pours: [pour(rectangle)], poured: [region(width, inner)] }));
+			const invalid = await runPlan(install({ pours: [pour('pour-host', rectangle)], poured: [region('pour-host', width, rawInner)] }));
 			assert.equal(invalid.coverage.complete, false);
 		}
-		const observedScale = [44.6, 35.4, 'L', 25.4, 35.4, 25.4, 44.6, 44.6, 44.6, 44.6, 35.4];
-		const unverified = await runPlan(install({ pours: [pour(rectangle)], poured: [region(0, observedScale)] }));
-		assert.equal(unverified.coverage.complete, false);
-		assert.equal(unverified.executable, false);
-		assert.match(unverified.warnings.join('; '), /归一化后与父边框坐标不一致/);
 		for (const path of [['R', 250, 450, 200, 100, 90, 0], ['R', 250, 450, 200, 100, 0, 5]]) {
-			assert.equal((await runPlan(install({ pours: [pour(path)] }))).coverage.complete, false, 'unverified rotation or rounding must not be approximated as a rectangle');
+			const invalid = await runPlan(install({ pours: [pour('pour-host', path)], poured: [region('pour-host', 0, rawInner)] }));
+			assert.equal(invalid.coverage.complete, false, 'unsupported parent geometry cannot pass source matching');
 		}
-		const rawFirst = [29.6, 10.4, 'L', 10.399999999999995, 10.4, 10.4, 19.6, 29.60000000000001, 19.6, 29.6, 10.4];
-		const first10Mil = await runPlan(install({ editorVersion: '4.1.78', pours: [pour(['R', 100, 200, 200, 100, 0, 0])], poured: [region(0, rawFirst, null)] }));
-		assert.equal(first10Mil.coverage.complete, true, first10Mil.warnings.join('; '));
-		const rawSecond = [89.6, 10.4, 'L', 60.4, 10.4, 60.4, 24.6, 89.6, 24.6, 89.6, 10.4];
-		const second10Mil = await runPlan(install({ editorVersion: '4.1.78', pours: [pour(['R', 600, 250, 300, 150, 0, 0])], poured: [region(0, rawSecond, null)] }));
-		assert.equal(second10Mil.coverage.complete, true, second10Mil.warnings.join('; '));
-		const oldTranslated10Mil = await runPlan(install({ editorVersion: '4.1.78', pours: [pour(rectangle)], poured: [region(0, [44.6, 35.4, 'L', 25.4, 35.4, 25.4, 44.6, 44.6, 44.6, 44.6, 35.4], null)] }));
-		assert.equal(oldTranslated10Mil.coverage.complete, true, oldTranslated10Mil.warnings.join('; '));
-		const unverifiedVersion = await runPlan(install({ editorVersion: '4.2.0', pours: [pour(['R', 100, 200, 200, 100, 0, 0])], poured: [region(0, rawFirst, null)] }));
-		assert.equal(unverifiedVersion.coverage.complete, false, 'EDA 4.2 path units are not guessed');
-		assert.match(unverifiedVersion.warnings.join('; '), /host-version-unverified-for-conversion/);
-		const unverifiedStroke = await runPlan(install({ editorVersion: '4.1.78', pours: [pour(['R', 100, 200, 200, 100, 0, 0])], poured: [region(0.1, rawFirst, null)] }));
-		assert.equal(unverifiedStroke.coverage.complete, false, 'nonzero fill stroke remains unsupported');
+		for (const editorVersion of [null, '4.1.78', '4.1.99', '4.2.0']) {
+			const versionIndependent = await runPlan(install({ editorVersion, pours: [pour('pour-host', ['R', 100, 200, 200, 100, 0, 0])], poured: [region('pour-host', 0, [19.6, 10.4, 'L', 10.4, 10.4, 10.4, 19.6, 19.6, 19.6, 19.6, 10.4])] }));
+			assert.equal(versionIndependent.coverage.complete, true, `matching geometry is accepted without an editor-version allowlist (${editorVersion})`);
+		}
+	});
+
+	await test('matched unfilled POURED child with nonzero stroke keeps coverage incomplete', async () => {
+		const parent = { getState_PrimitiveId: () => 'POUR-STROKE', getState_Layer: () => 2, getState_Net: () => 'N2', getState_PourFillMethod: () => 'solid', getState_ComplexPolygon: () => ({ getSource: () => ['R', 100, 200, 200, 100, 0, 0] }), fineness: 0 };
+		const child = { id: 'FILL-STROKE', fill: false, lineWidth: 2, path: { getSource: () => [19.6, 10.4, 'L', 10.4, 10.4, 10.4, 19.6, 19.6, 19.6, 19.6, 10.4] } };
+		const actual = { getState_PrimitiveId: () => 'POURED-STROKE', getState_PourPrimitiveId: () => 'POUR-STROKE', getState_PourFills: () => [child] };
+		const fixture = install({ pours: [parent], poured: [actual] });
+		const plan = await runPlan(fixture);
+		assert.equal(plan.coverage.complete, false, 'a source-matched stroked child is not silently treated as absent copper');
+		assert.equal(plan.executable, false);
+		assert.equal(fixture.state.writes.length, 0);
+		assert.ok(plan.coverage.geometryReview.pouredNormalization.items.some(item => item.fillId === 'FILL-STROKE' && item.status === 'unsupported'));
+	});
+
+	await test('real fineness 8 and 0 source, getter and Gerber fixtures replay with calibrated margin', async () => {
+		const fixture = JSON.parse(readFileSync(resolve(root, 'test/fixtures/poured-solid-coordinate-4199.json'), 'utf8'));
+		for (const sampleName of ['sample8', 'sample0']) {
+			const sample = fixture[sampleName];
+			const objects = poursAndPouredFromFixture(sample);
+			const plan = await runPlan(install({ ...objects, editorVersion: '4.2.0' }));
+			assert.equal(plan.coverage.complete, true, `${sampleName}: ${plan.warnings.join('; ')}`);
+			const rows = plan.coverage.geometryReview.pouredNormalization.items.filter(item => item.status === 'normalized' && item.fillId !== '(empty-cache)');
+			assert.equal(rows.length, 2);
+			assert.ok(rows.every(item => item.conversionFactor === fixture.expected.conversionFactor));
+			assert.equal(rows.find(item => item.pourId === 'be92d7bb24758417').copperMarginMil, fixture.expected.solidFineness8CopperMarginMil);
+			assert.equal(rows.find(item => item.pourId === 'ca82d66c312ff6fc').copperMarginMil, sampleName === 'sample8' ? 4 : 0);
+			for (const rawFill of sample.poured.flatMap(item => item.fills)) {
+				const point = rawFill.path[0] * fixture.expected.conversionFactor;
+				const gerberCoordinate = Math.round(point * 0.0254 * 100000);
+				assert.ok(sample.gerberBottom.includes(`X${gerberCoordinate}Y`), `${sampleName}: normalized coordinate should occur in captured Gerber`);
+			}
+		}
+	});
+
+	await test('fineness edge band blocks only the calibrated copper margin, not the parent POUR outline', async () => {
+		const parentPath = ['R', 600, 800, 200, 200, 0, 0];
+		const childPath = [70, 70, 'L', 60, 70, 60, 80, 70, 80, 70, 70];
+		const pourAt = fineness => ({ getState_PrimitiveId: () => 'POUR-A', getState_Layer: () => 2, getState_Net: () => 'N2', getState_PourFillMethod: () => 'solid', getState_ComplexPolygon: () => ({ getSource: () => parentPath }), fineness });
+		const pouredAt = { getState_PrimitiveId: () => 'POURED-A', getState_PourPrimitiveId: () => 'POUR-A', getState_PourFills: () => [{ id: 'FILL-A', fill: true, lineWidth: 0, path: { getSource: () => childPath } }] };
+		const options = { pads: [pad('P1', { x: 704.5, y: 750, layer: 2, shape: ['ELLIPSE', 1, 1], net: 'N1' })], pours: [], poured: [pouredAt] };
+		const request = params({ direction: 'E', lineLength: 100, lineWidth: 2, viaDiameter: 12, holeDiameter: 4, clearance: 0.1 });
+		const fineness8 = await runPlan(install({ ...options, pours: [pourAt(8)] }), request);
+		const fineness0 = await runPlan(install({ ...options, pours: [pourAt(0)] }), request);
+		assert.equal(fineness8.coverage.complete, true, fineness8.warnings.join('; '));
+		assert.equal(fineness0.coverage.complete, true, fineness0.warnings.join('; '));
+		assert.equal(fineness8.executable, false, 'the copper stroke margin pushes the effective boundary 4mil outward and blocks the 4.5mil start clearance');
+		assert.equal(fineness0.executable, true, 'with the same parent, copper polygon and route, zero fineness adds no artificial edge band');
+		assert.equal(fineness8.coverage.geometryReview.pouredNormalization.items[0].copperMarginMil, 4);
+		assert.equal(fineness0.coverage.geometryReview.pouredNormalization.items[0].copperMarginMil, 0);
+	});
+
+	await test('POUR and POURED source association mismatches or missing cache fail closed', async () => {
+		const parentPath = ['R', 100, 200, 200, 100, 0, 0];
+		const childPath = [19.6, 10.4, 'L', 10.4, 10.4, 10.4, 19.6, 19.6, 19.6, 19.6, 10.4];
+		const makeObjects = ({ net = 'N2', layer = 2, path = parentPath, fineness = 0, childId = 'FILL-A', childPath: fillPath = childPath, parentId = 'POUR-A' } = {}) => {
+			const parent = { getState_PrimitiveId: () => parentId, getState_Layer: () => layer, getState_Net: () => net, getState_PourFillMethod: () => 'solid', getState_ComplexPolygon: () => ({ getSource: () => path }), fineness };
+			const child = { id: childId, fill: true, lineWidth: 0, path: { getSource: () => fillPath } };
+			const actual = { getState_PrimitiveId: () => `POURED-${parentId}`, getState_PourPrimitiveId: () => parentId, getState_PourFills: () => [child] };
+			return { parent, actual };
+		};
+		const create = overrides => {
+			const objects = makeObjects(overrides);
+			return { objects, fixture: install({ pours: [objects.parent], poured: [objects.actual] }) };
+		};
+		const updateSourceRecord = (state, type, id, update) => {
+			const lines = state.source.split(/\r?\n/);
+			const index = lines.findIndex(line => {
+				const separator = line.indexOf('||');
+				if (separator < 0) return false;
+				const header = JSON.parse(line.slice(0, separator));
+				return header.type === type && header.id === id;
+			});
+			assert.notEqual(index, -1, `source fixture contains ${type}/${id}`);
+			const separator = lines[index].indexOf('||');
+			const header = JSON.parse(lines[index].slice(0, separator));
+			const data = JSON.parse(lines[index].slice(separator + 2).replace(/\|$/, ''));
+			lines[index] = `${JSON.stringify(header)}||${JSON.stringify(update(data))}|`;
+			state.source = lines.join('\n');
+		};
+		const sourcePouredId = JSON.stringify(['POURED', 'POUR-A']);
+		const cases = [
+			['parent net', f => updateSourceRecord(f.state, 'POUR', 'POUR-A', data => ({ ...data, netName: 'WRONG' }))],
+			['parent layer', f => updateSourceRecord(f.state, 'POUR', 'POUR-A', data => ({ ...data, layerId: 1 }))],
+			['parent path', f => updateSourceRecord(f.state, 'POUR', 'POUR-A', data => ({ ...data, path: [['R', 101, 200, 200, 100, 0, 0]] }))],
+			['child ID', f => updateSourceRecord(f.state, 'POURED', sourcePouredId, data => ({ ...data, pourFill: data.pourFill.map(fill => ({ ...fill, id: 'WRONG' })) }))],
+			['child path', f => updateSourceRecord(f.state, 'POURED', sourcePouredId, data => ({ ...data, pourFill: data.pourFill.map(fill => ({ ...fill, path: [[...fill.path[0].slice(0, 4), 11.4, ...fill.path[0].slice(5)]] })) }))],
+			['negative fineness', f => updateSourceRecord(f.state, 'POUR', 'POUR-A', data => ({ ...data, pourType: { ...data.pourType, fineness: -1 } }))],
+			['nonfinite fineness', f => updateSourceRecord(f.state, 'POUR', 'POUR-A', data => ({ ...data, pourType: { ...data.pourType, fineness: null } }))],
+		];
+		for (const [label, mutate] of cases) {
+			const { fixture } = create();
+			mutate(fixture);
+			const result = await runPlan(fixture);
+			assert.equal(result.coverage.complete, false, `${label} mismatch must mark geometry incomplete`);
+			assert.equal(result.executable, false, `${label} mismatch cannot produce an executable fanout`);
+			assert.equal(fixture.state.writes.length, 0);
+		}
+		const wrongGetterParent = create();
+		wrongGetterParent.objects.actual.getState_PourPrimitiveId = () => 'POUR-WRONG';
+		const wrongParentResult = await runPlan(wrongGetterParent.fixture);
+		assert.equal(wrongParentResult.coverage.complete, false, 'getter parent ID must match the tuple-keyed POURED record');
+		const missingCache = create();
+		missingCache.fixture.state.source = missingCache.fixture.state.source.split(/\r?\n/).filter(line => !line.includes('"POURED"')).join('\n');
+		assert.equal((await runPlan(missingCache.fixture)).coverage.complete, false, 'missing POURED source record is not accepted');
+		const wrongDocumentSource = create();
+		wrongDocumentSource.fixture.state.source = wrongDocumentSource.fixture.state.source.replace('"uuid":"pcb-A"', '"uuid":"pcb-other"');
+		await assert.rejects(runPlan(wrongDocumentSource.fixture), /源码 DOCHEAD 与 PCB pcb-A 不符/, 'POUR/POURED records from another document cannot be used even if primitive IDs match');
+		const getterMissing = install({ pours: [makeObjects().parent], poured: [] });
+		getterMissing.state.source += `\n${sourceRecord('POURED', sourcePouredId, { pourFill: [{ id: 'FILL-A', fill: true, strokeWidth: 0, path: [childPath] }] }, 500)}`;
+		assert.equal((await runPlan(getterMissing)).coverage.complete, false, 'non-empty raw POURED without an SDK getter is incomplete');
+		const knownEmpty = install({ pours: [makeObjects().parent], poured: [] });
+		knownEmpty.state.source += `\n${sourceRecord('POURED', sourcePouredId, { pourFill: [] }, 500)}`;
+		const emptyResult = await runPlan(knownEmpty);
+		assert.equal(emptyResult.coverage.complete, true, 'an explicitly empty, source-matched cached region is known empty');
+		assert.ok(emptyResult.coverage.geometryReview.pouredNormalization.items.some(item => item.normalization === 'source-matched-empty-poured-cache'));
+	});
+
+	await test('grid POUR methods remain incomplete with missing or existing unsupported POURED cache', async () => {
+		for (const method of ['90grid', '45grid']) {
+			const parentPath = ['R', 100, 200, 200, 100, 0, 0];
+			const childPath = [19.6, 10.4, 'L', 10.4, 10.4, 10.4, 19.6, 19.6, 19.6, 19.6, 10.4];
+			const parent = { getState_PrimitiveId: () => `POUR-${method}`, getState_Layer: () => 2, getState_Net: () => 'N2', getState_PourFillMethod: () => method, getState_ComplexPolygon: () => ({ getSource: () => parentPath }), fineness: 0 };
+			const child = { id: `FILL-${method}`, fill: true, lineWidth: 0, path: { getSource: () => childPath } };
+			const withoutCache = await runPlan(install({ pours: [parent], poured: [] }));
+			assert.equal(withoutCache.coverage.complete, false, `${method} without a POURED getter must not be reported as empty`);
+			assert.equal(withoutCache.executable, false);
+			assert.ok(withoutCache.coverage.geometryReview.pouredNormalization.items.some(item => item.normalization === 'unsupported-pour-fill-method'));
+			const withCache = await runPlan(install({ pours: [parent], poured: [{ getState_PrimitiveId: () => `POURED-${method}`, getState_PourPrimitiveId: () => `POUR-${method}`, getState_PourFills: () => [child] }] }));
+			assert.equal(withCache.coverage.complete, false, `${method} geometry remains unsupported even when POURED exists`);
+			assert.equal(withCache.executable, false);
+		}
 	});
 
 	await test('polygon-only rectangular outline is normalized into the closed board boundary', async () => {
@@ -362,13 +518,53 @@ async function main() {
 		assert.equal(f.state.writes.length, 0);
 	});
 
-	await test('multiple supported board polylines remain separate closed routing regions', async () => {
+	await test('closed straight POLY concave outline supports fanout in both arms', async () => {
+		const lShape = [0, 0, 'L', 0, 1000, 700, 1000, 700, 600, 1200, 600, 1200, 0, 0, 0];
+		const normalized = normalizeBoardOutlinePolylines([outlinePolyline('BOARD-L', lShape)]);
+		assert.deepEqual(normalized.issues, []);
+		assert.equal(normalized.summaries[0].lineCount, 6);
+		const lowerArm = await runPlan(install({ pads: [pad('P1', { x: 300, y: 800 })], outline: false, outlinePolylines: [outlinePolyline('BOARD-L', lShape)] }));
+		assert.equal(lowerArm.executable, true, lowerArm.warnings.join('; '));
+		assert.equal(lowerArm.coverage.boardPolygons, 1);
+		const upperArm = await runPlan(install({ pads: [pad('P1', { x: 1000, y: 300 })], outline: false, outlinePolylines: [outlinePolyline('BOARD-L', lShape)] }));
+		assert.equal(upperArm.executable, true, upperArm.warnings.join('; '));
+		assert.equal(upperArm.coverage.boardPolygons, 1);
+	});
+
+	await test('closed straight POLY rejects concavity crossing and via edge intrusion', async () => {
+		const lShape = [{ x: 0, y: 0 }, { x: 0, y: 1000 }, { x: 700, y: 1000 }, { x: 700, y: 600 }, { x: 1200, y: 600 }, { x: 1200, y: 0 }];
+		const crossing = { start: { x: 500, y: 950 }, midpoint: { x: 850, y: 475 }, end: { x: 1200, y: 0 }, net: 'N1', lineWidth: 2, viaDiameter: 24, clearance: 0, maxEndOffset: 0, obstacles: [], boardPolygons: [lShape] };
+		assert.ok(crossing.midpoint.x < 1200 && crossing.midpoint.y < 600, 'the segment midpoint is inside the upper arm');
+		const normalized = normalizeRoute([crossing.start, crossing.midpoint, crossing.end], crossing);
+		assert.equal(normalized.safeToExecute, false, 'the collinear segment crosses the concave notch boundary even though its midpoint is inside');
+		const forbiddenVia = planRouteDetailed({ start: { x: 500, y: 400 }, desiredEnd: { x: 760, y: 590 }, net: 'N1', lineWidth: 2, viaDiameter: 24, clearance: 0, maxEndOffset: 0, obstacles: [], boardPolygons: [lShape] });
+		assert.equal(forbiddenVia.route, null, 'via center is inside the board, but its 12mil radius overlaps the nearby notch edge');
+	});
+
+	await test('closed straight POLY rejects open, malformed, self-intersecting and curved sources', async () => {
+		const invalidSources = [
+			[0, 0, 'L', 0, 100, 100, 100, 100, 0], // open
+			[0, 0, 'L', 0, 100, 100, 'ARC', 100, 0, 0, 0], // unsupported segment token
+			[0, 0, 'L', 0, 100, Number.NaN, 100, 100, 0, 0, 0], // non-finite coordinate
+			[0, 0, 'L', 100, 100, 0, 100, 100, 0, 0, 0], // bow-tie self intersection
+		];
+		for (const source of invalidSources) {
+			const result = normalizeBoardOutlinePolylines([outlinePolyline('BOARD-BAD', source)]);
+			assert.ok(result.issues.length > 0, `invalid source must be rejected: ${String(source)}`);
+			assert.deepEqual(result.lines, []);
+			const f = install({ outline: false, outlinePolylines: [outlinePolyline('BOARD-BAD', source)] });
+			assert.equal((await runPlan(f)).executable, false);
+			assert.equal(f.state.writes.length, 0);
+		}
+	});
+
+	await test('multiple rectangular and concave board polylines remain separate routing regions', async () => {
 		const f = install({
 			pads: [pad('P1', { x: 300, y: 0 })],
 			outline: false,
 			outlinePolylines: [
 				outlinePolyline('BOARD-R1', ['R', -200, 500, 1000, 1000, 0, 0]),
-				outlinePolyline('BOARD-R2', ['R', 2000, 500, 1000, 1000, 0, 0]),
+				outlinePolyline('BOARD-L2', [2000, 0, 'L', 2000, 1000, 2700, 1000, 2700, 600, 3200, 600, 3200, 0, 2000, 0]),
 			],
 		});
 		const plan = await runPlan(f);

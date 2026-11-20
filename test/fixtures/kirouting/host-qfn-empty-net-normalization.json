@@ -1,0 +1,519 @@
+{
+  "fixtureKind": "independent-testboard-save-reopen-collector-projection",
+  "source": "module-integration/evidence/kirouting-validation/host-qfn-adapted-collector.json + host-qfn-corner-adapted-collector.json + host-qfn-saved-placeholder-collector.json",
+  "note": "Sanitized projection of the same isolated QFN testboard before and after save/reopen. Only the empty NET selector gains the exact default NET_LENGTH_TOLERANCE placeholder; the source empty NET record, SDK named net rows, choices and pad count are retained. The after width snapshot input is a minimal serialization of the actual saved source rule records, enabled layers and SDK net rules.",
+  "before": {
+    "emptyNet": {
+      "type": "NET",
+      "id": "[\"NET\",\"\"]",
+      "data": {
+        "netType": null,
+        "specialColor": null,
+        "retLine": true,
+        "differentialName": null,
+        "isPositiveNet": false,
+        "equalLengthGroupName": null
+      }
+    },
+    "emptySelector": {
+      "type": "RULE_SELECTOR",
+      "id": "[\"RULE_SELECTOR\",[\"NET\",\"\"]]",
+      "data": {
+        "ruleOrder": 4,
+        "ruleKeyValue": {},
+        "copperValue": {},
+        "innerPlaneValue": {},
+        "parent": null
+      }
+    },
+    "netRules": [
+      {
+        "type": "net",
+        "name": "CSI_CLK_N",
+        "Track": "default",
+        "Safe Spacing": "default",
+        "Via Size": "default"
+      },
+      {
+        "type": "net",
+        "name": "CSI_CLK_P",
+        "Track": "default",
+        "Safe Spacing": "default",
+        "Via Size": "default"
+      },
+      {
+        "type": "net",
+        "name": "CSI_D0_N",
+        "Track": "default",
+        "Safe Spacing": "default",
+        "Via Size": "default"
+      },
+      {
+        "type": "net",
+        "name": "CSI_D0_P",
+        "Track": "default",
+        "Safe Spacing": "default",
+        "Via Size": "default"
+      }
+    ],
+    "choices": [
+      "CSI_CLK_N",
+      "CSI_CLK_P",
+      "CSI_D0_N",
+      "CSI_D0_P"
+    ],
+    "unconnectedPadCount": 45
+  },
+  "after": {
+    "emptyNet": {
+      "type": "NET",
+      "id": "[\"NET\",\"\"]",
+      "data": {
+        "netType": null,
+        "specialColor": null,
+        "retLine": true,
+        "differentialName": null,
+        "isPositiveNet": false,
+        "equalLengthGroupName": null
+      }
+    },
+    "emptySelector": {
+      "type": "RULE_SELECTOR",
+      "id": "[\"RULE_SELECTOR\",[\"NET\",\"\"]]",
+      "data": {
+        "ruleOrder": 4,
+        "ruleKeyValue": {
+          "NET_LENGTH_TOLERANCE": [
+            "default",
+            null
+          ]
+        },
+        "copperValue": {},
+        "innerPlaneValue": {},
+        "parent": null
+      }
+    },
+    "netRules": [
+      {
+        "type": "net",
+        "name": "CSI_CLK_N",
+        "Track": "default",
+        "Safe Spacing": "default",
+        "Via Size": "default"
+      },
+      {
+        "type": "net",
+        "name": "CSI_CLK_P",
+        "Track": "default",
+        "Safe Spacing": "default",
+        "Via Size": "default"
+      },
+      {
+        "type": "net",
+        "name": "CSI_D0_N",
+        "Track": "default",
+        "Safe Spacing": "default",
+        "Via Size": "default"
+      },
+      {
+        "type": "net",
+        "name": "CSI_D0_P",
+        "Track": "default",
+        "Safe Spacing": "default",
+        "Via Size": "default"
+      }
+    ],
+    "choices": [
+      "CSI_CLK_N",
+      "CSI_CLK_P",
+      "CSI_D0_N",
+      "CSI_D0_P"
+    ],
+    "unconnectedPadCount": 45,
+    "widthSnapshotInput": {
+      "source": "{\"type\":\"DOCHEAD\"}||{\"docType\":\"PCB\",\"uuid\":\"fixture-qfn\"}|\n{\"type\":\"NET\",\"id\":\"[\\\"NET\\\",\\\"CSI_CLK_N\\\"]\",\"ticket\":1}||{\"netType\":null,\"specialColor\":null,\"retLine\":true,\"differentialName\":null,\"isPositiveNet\":false,\"equalLengthGroupName\":null}|\n{\"type\":\"NET\",\"id\":\"[\\\"NET\\\",\\\"CSI_CLK_P\\\"]\",\"ticket\":2}||{\"netType\":null,\"specialColor\":null,\"retLine\":true,\"differentialName\":null,\"isPositiveNet\":false,\"equalLengthGroupName\":null}|\n{\"type\":\"NET\",\"id\":\"[\\\"NET\\\",\\\"CSI_D0_N\\\"]\",\"ticket\":3}||{\"netType\":null,\"specialColor\":null,\"retLine\":true,\"differentialName\":null,\"isPositiveNet\":false,\"equalLengthGroupName\":null}|\n{\"type\":\"NET\",\"id\":\"[\\\"NET\\\",\\\"CSI_D0_P\\\"]\",\"ticket\":4}||{\"netType\":null,\"specialColor\":null,\"retLine\":true,\"differentialName\":null,\"isPositiveNet\":false,\"equalLengthGroupName\":null}|\n{\"type\":\"NET\",\"id\":\"[\\\"NET\\\",\\\"\\\"]\",\"ticket\":5}||{\"netType\":null,\"specialColor\":null,\"retLine\":true,\"differentialName\":null,\"isPositiveNet\":false,\"equalLengthGroupName\":null}|\n{\"type\":\"RULE_TEMPLATE\",\"id\":\"RULE_TEMPLATE\",\"ticket\":6}||{\"name\":\"\"}|\n{\"type\":\"RULE\",\"id\":\"[\\\"RULE\\\",\\\"SAFE\\\",\\\"copperThickness1oz\\\"]\",\"ticket\":7}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"isForAll\":\"ALL\",\"safeSpacing\":[{\"layerId\":1,\"isOpen\":true,\"content\":[[5.906],[5.906,5.906],[5.906,5.906,5.906],[6,6,6,6],[6,6,6,6,6],[5.906,5.906,5.906,6,6,5.906],[5.906,5.906,5.906,6,6,5.906,5.906],[5.906,5.906,5.906,10,10,5.906,5.906,5.906],[11.8,6,6,6,6,6,6,10,6],[6,6,6,6,6,6,6,10,11.8,6],[6,6,6,6,6,6,6,10,6,6,6],[9.843,11.8,11.8,11.8,11.8,11.8,11.8,10,11.8,11.8,11.8],[6.9,6.9,6.9,6.9,6.9,6.9,6.9,10,6.9,6.9,6.9,6.9]],\"columnNames\":[]}]}}|\n{\"type\":\"RULE\",\"id\":\"[\\\"RULE\\\",\\\"OTHER\\\",\\\"otherClearance\\\"]\",\"ticket\":8}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"deviceClearance\":0,\"thru2SmdClearance\":10,\"holeClearance\":11.8}}|\n{\"type\":\"RULE\",\"id\":\"[\\\"RULE\\\",\\\"CREEPAGE\\\",\\\"creepage\\\"]\",\"ticket\":9}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"creepageDistance\":0,\"ignoreLayer\":true}}|\n{\"type\":\"RULE\",\"id\":\"[\\\"RULE\\\",\\\"TRACK\\\",\\\"copperThickness1oz\\\"]\",\"ticket\":10}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"track\":{\"isOpen\":true,\"content\":[{\"layerId\":1,\"stroMin\":5,\"stroDef\":5.906,\"stroMax\":100}]}}}|\n{\"type\":\"RULE\",\"id\":\"[\\\"RULE\\\",\\\"NET_LENGTH\\\",\\\"netLength\\\"]\",\"ticket\":11}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"netLenMin\":0,\"netLenMax\":0}}|\n{\"type\":\"RULE\",\"id\":\"[\\\"RULE\\\",\\\"NET_LENGTH_TOLERANCE\\\",\\\"netLengthTolerance\\\"]\",\"ticket\":12}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"netLengthTolerance\":1000}}|\n{\"type\":\"RULE\",\"id\":\"[\\\"RULE\\\",\\\"DIFFER_ENTAIL\\\",\\\"differentialPair\\\"]\",\"ticket\":13}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"stroWidth\":{\"isOpen\":true,\"content\":[{\"layerId\":1,\"stroMin\":5,\"stroMax\":100,\"stroDef\":100}]},\"spacing\":{\"isOpen\":true,\"content\":[{\"layerId\":1,\"spacMin\":5,\"spacDef\":6}]},\"differPairLenTolerMax\":10,\"toleranceUnit\":\"mm\"}}|\n{\"type\":\"RULE\",\"id\":\"[\\\"RULE\\\",\\\"BLIND\\\",\\\"blindVia\\\"]\",\"ticket\":14}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"blinds\":{\"content\":[]}}}|\n{\"type\":\"RULE\",\"id\":\"[\\\"RULE\\\",\\\"RADIUS\\\",\\\"viaSize\\\"]\",\"ticket\":15}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"minRadius\":10,\"defRadius\":11.8115,\"maxRadius\":40,\"minInner\":5,\"defInner\":5.906,\"maxInner\":20}}|\n{\"type\":\"RULE\",\"id\":\"[\\\"RULE\\\",\\\"PLANE\\\",\\\"innerPlane\\\"]\",\"ticket\":16}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"mulPad\":{\"isOpen\":true,\"content\":[{\"layerId\":1,\"connType\":\"DIVERGENCE\",\"spoSpac\":10,\"spoWidth\":10,\"spoAng\":90}]}}}|\n{\"type\":\"RULE\",\"id\":\"[\\\"RULE\\\",\\\"COPPER\\\",\\\"copperRegion\\\"]\",\"ticket\":17}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"sglPad\":{\"isOpen\":true,\"content\":[{\"layerId\":1,\"connType\":\"DIVERGENCE\",\"spoSpac\":10,\"spoWidth\":10,\"spoAng\":90}]},\"mulPad\":{\"isOpen\":true,\"content\":[{\"layerId\":1,\"connType\":\"DIVERGENCE\",\"spoSpac\":10,\"spoWidth\":10,\"spoAng\":90}]},\"track\":{\"isOpen\":true,\"content\":[{\"layerId\":1,\"connType\":\"DIRECT\"}]}}}|\n{\"type\":\"RULE\",\"id\":\"[\\\"RULE\\\",\\\"PASTE\\\",\\\"pasteMaskExpansion\\\"]\",\"ticket\":18}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"padTopExpan\":0,\"padBotExpan\":0,\"testPointTopExpan\":-1000,\"testPointBotExpan\":-1000}}|\n{\"type\":\"RULE\",\"id\":\"[\\\"RULE\\\",\\\"SOLDER\\\",\\\"solderMaskExpansion\\\"]\",\"ticket\":19}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"unit\":\"mm\",\"padTopExpan\":2,\"padBotExpan\":2,\"viaTopExpan\":-1000,\"viaBotExpan\":-1000,\"testPointTopExpan\":2,\"testPointBotExpan\":2}}|\n{\"type\":\"RULE\",\"id\":\"[\\\"RULE\\\",\\\"AUTO_ROUTER\\\",\\\"Common\\\"]\",\"ticket\":20}||{\"ruleState\":\"DEFAULT\",\"ruleContext\":{\"routingCorner\":\"L45\",\"isKeep\":1,\"viaQuantity\":\"LESS\",\"routingEffectPriority\":\"COMPLETION_FIRST\",\"layers\":[1,2,12],\"ignoreNets\":[]}}|\n{\"type\":\"RULE_SELECTOR\",\"id\":\"[\\\"RULE_SELECTOR\\\",[\\\"NET\\\",\\\"CSI_CLK_N\\\"]]\",\"ticket\":21}||{\"ruleOrder\":4,\"ruleKeyValue\":{},\"copperValue\":{},\"innerPlaneValue\":{},\"parent\":null}|\n{\"type\":\"RULE_SELECTOR\",\"id\":\"[\\\"RULE_SELECTOR\\\",[\\\"NET\\\",\\\"CSI_CLK_P\\\"]]\",\"ticket\":22}||{\"ruleOrder\":4,\"ruleKeyValue\":{},\"copperValue\":{},\"innerPlaneValue\":{},\"parent\":null}|\n{\"type\":\"RULE_SELECTOR\",\"id\":\"[\\\"RULE_SELECTOR\\\",[\\\"NET\\\",\\\"CSI_D0_N\\\"]]\",\"ticket\":23}||{\"ruleOrder\":4,\"ruleKeyValue\":{},\"copperValue\":{},\"innerPlaneValue\":{},\"parent\":null}|\n{\"type\":\"RULE_SELECTOR\",\"id\":\"[\\\"RULE_SELECTOR\\\",[\\\"NET\\\",\\\"CSI_D0_P\\\"]]\",\"ticket\":24}||{\"ruleOrder\":4,\"ruleKeyValue\":{},\"copperValue\":{},\"innerPlaneValue\":{},\"parent\":null}|\n{\"type\":\"RULE_SELECTOR\",\"id\":\"[\\\"RULE_SELECTOR\\\",[\\\"NET\\\",\\\"\\\"]]\",\"ticket\":25}||{\"ruleOrder\":4,\"ruleKeyValue\":{\"NET_LENGTH_TOLERANCE\":[\"default\",null]},\"copperValue\":{},\"innerPlaneValue\":{},\"parent\":null}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"30\\\",\\\"ie2\\\"]\",\"ticket\":26}||{\"partitionId\":\"\",\"padNet\":\"CSI_CLK_N\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"29\\\",\\\"ie3\\\"]\",\"ticket\":27}||{\"partitionId\":\"\",\"padNet\":\"CSI_CLK_P\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"32\\\",\\\"ie4\\\"]\",\"ticket\":28}||{\"partitionId\":\"\",\"padNet\":\"CSI_D0_N\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"31\\\",\\\"ie5\\\"]\",\"ticket\":29}||{\"partitionId\":\"\",\"padNet\":\"CSI_D0_P\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"1\\\",\\\"ie6\\\"]\",\"ticket\":30}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"2\\\",\\\"ie7\\\"]\",\"ticket\":31}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"3\\\",\\\"ie8\\\"]\",\"ticket\":32}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"4\\\",\\\"ie9\\\"]\",\"ticket\":33}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"5\\\",\\\"ie10\\\"]\",\"ticket\":34}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"6\\\",\\\"ie11\\\"]\",\"ticket\":35}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"7\\\",\\\"ie12\\\"]\",\"ticket\":36}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"8\\\",\\\"ie13\\\"]\",\"ticket\":37}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"9\\\",\\\"ie14\\\"]\",\"ticket\":38}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"10\\\",\\\"ie15\\\"]\",\"ticket\":39}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"11\\\",\\\"ie16\\\"]\",\"ticket\":40}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"12\\\",\\\"ie17\\\"]\",\"ticket\":41}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"13\\\",\\\"ie18\\\"]\",\"ticket\":42}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"14\\\",\\\"ie19\\\"]\",\"ticket\":43}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"15\\\",\\\"ie20\\\"]\",\"ticket\":44}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"16\\\",\\\"ie21\\\"]\",\"ticket\":45}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"17\\\",\\\"ie22\\\"]\",\"ticket\":46}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"18\\\",\\\"ie23\\\"]\",\"ticket\":47}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"19\\\",\\\"ie24\\\"]\",\"ticket\":48}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"20\\\",\\\"ie25\\\"]\",\"ticket\":49}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"21\\\",\\\"ie26\\\"]\",\"ticket\":50}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"22\\\",\\\"ie27\\\"]\",\"ticket\":51}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"23\\\",\\\"ie28\\\"]\",\"ticket\":52}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"24\\\",\\\"ie29\\\"]\",\"ticket\":53}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"25\\\",\\\"ie30\\\"]\",\"ticket\":54}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"26\\\",\\\"ie31\\\"]\",\"ticket\":55}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"27\\\",\\\"ie32\\\"]\",\"ticket\":56}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"28\\\",\\\"ie33\\\"]\",\"ticket\":57}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"33\\\",\\\"ie34\\\"]\",\"ticket\":58}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"34\\\",\\\"ie35\\\"]\",\"ticket\":59}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"35\\\",\\\"ie36\\\"]\",\"ticket\":60}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"36\\\",\\\"ie37\\\"]\",\"ticket\":61}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"37\\\",\\\"ie38\\\"]\",\"ticket\":62}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"38\\\",\\\"ie39\\\"]\",\"ticket\":63}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"39\\\",\\\"ie40\\\"]\",\"ticket\":64}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"40\\\",\\\"ie41\\\"]\",\"ticket\":65}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"41\\\",\\\"ie42\\\"]\",\"ticket\":66}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"42\\\",\\\"ie43\\\"]\",\"ticket\":67}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"43\\\",\\\"ie44\\\"]\",\"ticket\":68}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"44\\\",\\\"ie45\\\"]\",\"ticket\":69}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"45\\\",\\\"ie46\\\"]\",\"ticket\":70}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"46\\\",\\\"ie47\\\"]\",\"ticket\":71}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"47\\\",\\\"ie48\\\"]\",\"ticket\":72}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"48\\\",\\\"ie49\\\"]\",\"ticket\":73}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie0\\\",\\\"49\\\",\\\"ie50\\\"]\",\"ticket\":74}||{\"partitionId\":\"\",\"padNet\":\"\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie5\\\",\\\"3\\\",\\\"ie2\\\"]\",\"ticket\":75}||{\"partitionId\":\"\",\"padNet\":\"CSI_CLK_N\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie5\\\",\\\"4\\\",\\\"ie3\\\"]\",\"ticket\":76}||{\"partitionId\":\"\",\"padNet\":\"CSI_CLK_P\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie5\\\",\\\"1\\\",\\\"ie4\\\"]\",\"ticket\":77}||{\"partitionId\":\"\",\"padNet\":\"CSI_D0_N\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|\n{\"type\":\"PAD_NET\",\"id\":\"[\\\"PAD_NET\\\",\\\"ie5\\\",\\\"2\\\",\\\"ie5\\\"]\",\"ticket\":78}||{\"partitionId\":\"\",\"padNet\":\"CSI_D0_P\",\"padLen\":null,\"propagationDelay\":null,\"attrsMap\":{}}|",
+      "layers": [
+        {
+          "id": 1,
+          "layerId": 1,
+          "name": "Top Layer",
+          "layerName": "Top Layer",
+          "type": "SIGNAL",
+          "status": 1,
+          "layerStatus": 1
+        },
+        {
+          "id": 2,
+          "layerId": 2,
+          "name": "Bottom Layer",
+          "layerName": "Bottom Layer",
+          "type": "SIGNAL",
+          "status": 1,
+          "layerStatus": 1
+        },
+        {
+          "id": 15,
+          "layerId": 15,
+          "name": "In1.Cu",
+          "layerName": "In1.Cu",
+          "type": "SIGNAL",
+          "status": 0,
+          "layerStatus": 0
+        },
+        {
+          "id": 16,
+          "layerId": 16,
+          "name": "In2.Cu",
+          "layerName": "In2.Cu",
+          "type": "SIGNAL",
+          "status": 0,
+          "layerStatus": 0
+        },
+        {
+          "id": 17,
+          "layerId": 17,
+          "name": "In3.Cu",
+          "layerName": "In3.Cu",
+          "type": "SIGNAL",
+          "status": 0,
+          "layerStatus": 0
+        },
+        {
+          "id": 18,
+          "layerId": 18,
+          "name": "In4.Cu",
+          "layerName": "In4.Cu",
+          "type": "SIGNAL",
+          "status": 0,
+          "layerStatus": 0
+        },
+        {
+          "id": 19,
+          "layerId": 19,
+          "name": "In5.Cu",
+          "layerName": "In5.Cu",
+          "type": "SIGNAL",
+          "status": 0,
+          "layerStatus": 0
+        },
+        {
+          "id": 20,
+          "layerId": 20,
+          "name": "In6.Cu",
+          "layerName": "In6.Cu",
+          "type": "SIGNAL",
+          "status": 0,
+          "layerStatus": 0
+        },
+        {
+          "id": 21,
+          "layerId": 21,
+          "name": "In7.Cu",
+          "layerName": "In7.Cu",
+          "type": "SIGNAL",
+          "status": 0,
+          "layerStatus": 0
+        },
+        {
+          "id": 22,
+          "layerId": 22,
+          "name": "In8.Cu",
+          "layerName": "In8.Cu",
+          "type": "SIGNAL",
+          "status": 0,
+          "layerStatus": 0
+        },
+        {
+          "id": 23,
+          "layerId": 23,
+          "name": "In9.Cu",
+          "layerName": "In9.Cu",
+          "type": "SIGNAL",
+          "status": 0,
+          "layerStatus": 0
+        },
+        {
+          "id": 24,
+          "layerId": 24,
+          "name": "In10.Cu",
+          "layerName": "In10.Cu",
+          "type": "SIGNAL",
+          "status": 0,
+          "layerStatus": 0
+        },
+        {
+          "id": 25,
+          "layerId": 25,
+          "name": "In11.Cu",
+          "layerName": "In11.Cu",
+          "type": "SIGNAL",
+          "status": 0,
+          "layerStatus": 0
+        },
+        {
+          "id": 26,
+          "layerId": 26,
+          "name": "In12.Cu",
+          "layerName": "In12.Cu",
+          "type": "SIGNAL",
+          "status": 0,
+          "layerStatus": 0
+        },
+        {
+          "id": 27,
+          "layerId": 27,
+          "name": "In13.Cu",
+          "layerName": "In13.Cu",
+          "type": "SIGNAL",
+          "status": 0,
+          "layerStatus": 0
+        },
+        {
+          "id": 28,
+          "layerId": 28,
+          "name": "In14.Cu",
+          "layerName": "In14.Cu",
+          "type": "SIGNAL",
+          "status": 0,
+          "layerStatus": 0
+        },
+        {
+          "id": 29,
+          "layerId": 29,
+          "name": "In15.Cu",
+          "layerName": "In15.Cu",
+          "type": "SIGNAL",
+          "status": 0,
+          "layerStatus": 0
+        },
+        {
+          "id": 30,
+          "layerId": 30,
+          "name": "In16.Cu",
+          "layerName": "In16.Cu",
+          "type": "SIGNAL",
+          "status": 0,
+          "layerStatus": 0
+        },
+        {
+          "id": 31,
+          "layerId": 31,
+          "name": "In17.Cu",
+          "layerName": "In17.Cu",
+          "type": "SIGNAL",
+          "status": 0,
+          "layerStatus": 0
+        },
+        {
+          "id": 32,
+          "layerId": 32,
+          "name": "In18.Cu",
+          "layerName": "In18.Cu",
+          "type": "SIGNAL",
+          "status": 0,
+          "layerStatus": 0
+        },
+        {
+          "id": 33,
+          "layerId": 33,
+          "name": "In19.Cu",
+          "layerName": "In19.Cu",
+          "type": "SIGNAL",
+          "status": 0,
+          "layerStatus": 0
+        },
+        {
+          "id": 34,
+          "layerId": 34,
+          "name": "In20.Cu",
+          "layerName": "In20.Cu",
+          "type": "SIGNAL",
+          "status": 0,
+          "layerStatus": 0
+        },
+        {
+          "id": 35,
+          "layerId": 35,
+          "name": "In21.Cu",
+          "layerName": "In21.Cu",
+          "type": "SIGNAL",
+          "status": 0,
+          "layerStatus": 0
+        },
+        {
+          "id": 36,
+          "layerId": 36,
+          "name": "In22.Cu",
+          "layerName": "In22.Cu",
+          "type": "SIGNAL",
+          "status": 0,
+          "layerStatus": 0
+        },
+        {
+          "id": 37,
+          "layerId": 37,
+          "name": "In23.Cu",
+          "layerName": "In23.Cu",
+          "type": "SIGNAL",
+          "status": 0,
+          "layerStatus": 0
+        },
+        {
+          "id": 38,
+          "layerId": 38,
+          "name": "In24.Cu",
+          "layerName": "In24.Cu",
+          "type": "SIGNAL",
+          "status": 0,
+          "layerStatus": 0
+        },
+        {
+          "id": 39,
+          "layerId": 39,
+          "name": "In25.Cu",
+          "layerName": "In25.Cu",
+          "type": "SIGNAL",
+          "status": 0,
+          "layerStatus": 0
+        },
+        {
+          "id": 40,
+          "layerId": 40,
+          "name": "In26.Cu",
+          "layerName": "In26.Cu",
+          "type": "SIGNAL",
+          "status": 0,
+          "layerStatus": 0
+        },
+        {
+          "id": 41,
+          "layerId": 41,
+          "name": "In27.Cu",
+          "layerName": "In27.Cu",
+          "type": "SIGNAL",
+          "status": 0,
+          "layerStatus": 0
+        },
+        {
+          "id": 42,
+          "layerId": 42,
+          "name": "In28.Cu",
+          "layerName": "In28.Cu",
+          "type": "SIGNAL",
+          "status": 0,
+          "layerStatus": 0
+        },
+        {
+          "id": 43,
+          "layerId": 43,
+          "name": "In29.Cu",
+          "layerName": "In29.Cu",
+          "type": "SIGNAL",
+          "status": 0,
+          "layerStatus": 0
+        },
+        {
+          "id": 44,
+          "layerId": 44,
+          "name": "In30.Cu",
+          "layerName": "In30.Cu",
+          "type": "SIGNAL",
+          "status": 0,
+          "layerStatus": 0
+        },
+        {
+          "id": 45,
+          "layerId": 45,
+          "name": "Inner31",
+          "layerName": "Inner31",
+          "type": "SIGNAL",
+          "status": 0,
+          "layerStatus": 0
+        },
+        {
+          "id": 46,
+          "layerId": 46,
+          "name": "Inner32",
+          "layerName": "Inner32",
+          "type": "SIGNAL",
+          "status": 0,
+          "layerStatus": 0
+        }
+      ],
+      "netRules": [
+        {
+          "type": "net",
+          "name": "CSI_CLK_N",
+          "Safe Spacing": "default",
+          "Copper Safe Spacing": null,
+          "Plane Safe Spacing": null,
+          "Track": "default",
+          "Net Length Range": "default",
+          "Net Length Tolerance": null,
+          "Blind/Buried Via": "default",
+          "Via Size": "default",
+          "Plane Zone": "default",
+          "Copper Zone": "default",
+          "Solder Mask Expansion": "default",
+          "Paste Mask Expansion": "default",
+          "Creepage Distance": null,
+          "targetNet": null
+        },
+        {
+          "type": "net",
+          "name": "CSI_CLK_P",
+          "Safe Spacing": "default",
+          "Copper Safe Spacing": null,
+          "Plane Safe Spacing": null,
+          "Track": "default",
+          "Net Length Range": "default",
+          "Net Length Tolerance": null,
+          "Blind/Buried Via": "default",
+          "Via Size": "default",
+          "Plane Zone": "default",
+          "Copper Zone": "default",
+          "Solder Mask Expansion": "default",
+          "Paste Mask Expansion": "default",
+          "Creepage Distance": null,
+          "targetNet": null
+        },
+        {
+          "type": "net",
+          "name": "CSI_D0_N",
+          "Safe Spacing": "default",
+          "Copper Safe Spacing": null,
+          "Plane Safe Spacing": null,
+          "Track": "default",
+          "Net Length Range": "default",
+          "Net Length Tolerance": null,
+          "Blind/Buried Via": "default",
+          "Via Size": "default",
+          "Plane Zone": "default",
+          "Copper Zone": "default",
+          "Solder Mask Expansion": "default",
+          "Paste Mask Expansion": "default",
+          "Creepage Distance": null,
+          "targetNet": null
+        },
+        {
+          "type": "net",
+          "name": "CSI_D0_P",
+          "Safe Spacing": "default",
+          "Copper Safe Spacing": null,
+          "Plane Safe Spacing": null,
+          "Track": "default",
+          "Net Length Range": "default",
+          "Net Length Tolerance": null,
+          "Blind/Buried Via": "default",
+          "Via Size": "default",
+          "Plane Zone": "default",
+          "Copper Zone": "default",
+          "Solder Mask Expansion": "default",
+          "Paste Mask Expansion": "default",
+          "Creepage Distance": null,
+          "targetNet": null
+        }
+      ]
+    }
+  }
+}

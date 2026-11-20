@@ -1,0 +1,148 @@
+{
+  "sourceEvidence": {
+    "before": "../../evidence/placement-slot-created-source.json",
+    "after": "../../evidence/placement-interim-reopened-source.json"
+  },
+  "document": {
+    "docType": "PCB",
+    "uuid": "ddb10f8eead3e93c"
+  },
+  "records": {
+    "before": [
+      {
+        "header": {
+          "type": "FILL",
+          "ticket": 160,
+          "id": "7227b213a3c2e5d3"
+        },
+        "data": {
+          "partitionId": "",
+          "groupId": 0,
+          "netName": "PLACE_GND",
+          "layerId": 1,
+          "width": 0.2,
+          "fillStyle": "SOLID",
+          "path": [
+            [
+              "R",
+              900,
+              -500,
+              180,
+              100,
+              0,
+              0
+            ]
+          ],
+          "locked": false,
+          "zIndex": -1,
+          "isBridgingCopper": false,
+          "networkList": [],
+          "preNet": "",
+          "refs": [
+            null
+          ]
+        }
+      },
+      {
+        "header": {
+          "type": "FILL",
+          "ticket": 162,
+          "id": "dadb2652b6f492e3"
+        },
+        "data": {
+          "partitionId": "",
+          "groupId": 0,
+          "netName": "PLACE_GND",
+          "layerId": 1,
+          "width": 0.2,
+          "fillStyle": "SOLID",
+          "path": [
+            [
+              "R",
+              1500,
+              -500,
+              180,
+              100,
+              0,
+              0
+            ]
+          ],
+          "locked": false,
+          "zIndex": -1,
+          "isBridgingCopper": false,
+          "networkList": [],
+          "preNet": "",
+          "refs": [
+            null
+          ]
+        }
+      }
+    ],
+    "after": [
+      {
+        "header": {
+          "type": "FILL",
+          "ticket": 160,
+          "id": "7227b213a3c2e5d3"
+        },
+        "data": {
+          "partitionId": "",
+          "groupId": 0,
+          "netName": "PLACE_GND",
+          "layerId": 1,
+          "width": 0.2,
+          "fillStyle": "SOLID",
+          "path": [
+            [
+              "R",
+              900,
+              -500,
+              180,
+              100,
+              0,
+              0
+            ]
+          ],
+          "locked": false,
+          "zIndex": -1,
+          "isBridgingCopper": false,
+          "networkList": [],
+          "preNet": "",
+          "refs": null
+        }
+      },
+      {
+        "header": {
+          "type": "FILL",
+          "ticket": 161,
+          "id": "dadb2652b6f492e3"
+        },
+        "data": {
+          "partitionId": "",
+          "groupId": 0,
+          "netName": "PLACE_GND",
+          "layerId": 1,
+          "width": 0.2,
+          "fillStyle": "SOLID",
+          "path": [
+            [
+              "R",
+              1500,
+              -500,
+              180,
+              100,
+              0,
+              0
+            ]
+          ],
+          "locked": false,
+          "zIndex": -1,
+          "isBridgingCopper": false,
+          "networkList": [],
+          "preNet": "",
+          "refs": null
+        }
+      }
+    ]
+  }
+}

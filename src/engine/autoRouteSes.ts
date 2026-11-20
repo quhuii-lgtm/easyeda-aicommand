@@ -487,14 +487,27 @@ function isInnerSesLayer(name: string): boolean {
 	return /^Inner[1-9]\d*$/.test(name)
 }
 
+function layerIdForExplicitPhysicalSesName(name: string, layers: SesLayer[]): number {
+	const matches = layers.filter(layer => layer.name === name)
+	if (matches.length !== 1)
+		throw new Error(`SES 层 ${name} 未能唯一映射到当前 PCB 层`)
+	const layer = matches[0]
+	if (String(layer.type).toUpperCase() !== 'SIGNAL')
+		throw new Error(`SES 层 ${name} 映射到的 PCB 层 ${layer.name} 不是 SIGNAL 铜层`)
+	if (!Number.isInteger(layer.id) || !(layer.id === 1 || layer.id === 2 || (layer.id >= 15 && layer.id <= 46)))
+		throw new Error(`SES 层 ${name} 映射到不支持的物理铜层 ID ${String(layer.id)}`)
+	if (layer.id !== 1 && layer.id !== 2 && layer.layerStatus !== 1)
+		throw new Error(`SES 层 ${name} 对应的 PCB 层 ${layer.id} 未确认启用（layerStatus=${String(layer.layerStatus)}）`)
+	return layer.id
+}
+
 /** Convert supported SES layer names and padstacks into explicitly mapped SDK route geometry. */
 export function mapSesRoutes(model: SesExpectedModel, layers: SesLayer[]): SesRouteExpected {
 	const lines: SesRouteLine[] = []
 	const sesLayerNamesById: Record<number, string> = {}
 	const rememberLayer = (name: string): number => {
-		if (!['TopLayer', 'Top Layer', 'BottomLayer', 'Bottom Layer'].includes(name) && !isInnerSesLayer(name))
-			throw new Error(`SES 层名 ${name} 当前不支持`)
-		const id = layerIdForSesName(name, layers)
+		const legacyName = ['TopLayer', 'Top Layer', 'BottomLayer', 'Bottom Layer'].includes(name) || isInnerSesLayer(name)
+		const id = legacyName ? layerIdForSesName(name, layers) : layerIdForExplicitPhysicalSesName(name, layers)
 		const prior = sesLayerNamesById[id]
 		if (prior !== undefined && prior !== name)
 			throw new Error(`多个 SES 层名映射到同一 PCB 层 ID ${id}（${prior} / ${name}）`)
@@ -528,8 +541,6 @@ export function mapSesRoutes(model: SesExpectedModel, layers: SesLayer[]): SesRo
 		const shapeByLayer = new Map<string, typeof padstack.shapesByLayer[number]>()
 		const shapeById = new Map<number, typeof padstack.shapesByLayer[number]>()
 		for (const shape of padstack.shapesByLayer) {
-			if (!['TopLayer', 'BottomLayer'].includes(shape.layerName) && !isInnerSesLayer(shape.layerName))
-				throw new Error(`padstack ${padstack.name} 的跨层形状 ${shape.layerName} 当前不支持`)
 			if (shapeByLayer.has(shape.layerName))
 				throw new Error(`padstack ${padstack.name} 在 ${shape.layerName} 重复定义形状`)
 			if (Math.abs(shape.offsetXMil) > ROUTE_TOLERANCE_MIL || Math.abs(shape.offsetYMil) > ROUTE_TOLERANCE_MIL)
@@ -967,7 +978,7 @@ function fromMil(value: number, resolution: SesResolution): number {
 function routeLayerName(layer: number, sesLayerNamesById?: Record<number, string>): string {
 	if (sesLayerNamesById !== undefined) {
 		const name = sesLayerNamesById[layer]
-		if (!name || (!['TopLayer', 'Top Layer', 'BottomLayer', 'Bottom Layer'].includes(name) && !isInnerSesLayer(name)))
+		if (typeof name !== 'string' || !name.trim())
 			throw new Error(`SES 子集序列化缺少已验证的 PCB 层 ID ${layer} 映射`)
 		if (name === 'TopLayer' || name === 'Top Layer')
 			return 'TopLayer'

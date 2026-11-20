@@ -173,6 +173,49 @@ async function checkConcurrentWriteQueue() {
 		throw new Error(`isolated proxy exited ${proxy.exitCode}: ${stderr.join('')}`)
 }
 
+async function checkBridgeReceipt() {
+	const port = await reservePort()
+	const proxy = spawn(process.execPath, [path.join(ROOT, '..', 'skill-repository', 'ai-command-engine', 'scripts', 'command-proxy.mjs')], {
+		env: { ...process.env, PORT: String(port), PROXY_IDLE_MS: '0', PROXY_CMD_TIMEOUT_MS: '300' },
+		stdio: 'ignore',
+	})
+	let socket
+	try {
+		await waitForHealth(port)
+		socket = new WebSocket(`ws://127.0.0.1:${port}/ws`)
+		await new Promise((resolve, reject) => socket.once('open', resolve).once('error', reject))
+		socket.send(JSON.stringify({ type: 'hello', extension: 'test-mock', version: 'test', instanceId: 'diagnostic-test' }))
+		socket.on('message', raw => {
+			const message = JSON.parse(raw.toString())
+			if (message.type !== 'command') return
+			if (message.params.mode !== 'no-receipt') socket.send(JSON.stringify({ type: 'command-received', id: message.id }))
+			if (message.params.mode === 'disconnect') socket.close()
+		})
+		const post = async mode => (await fetch(`http://127.0.0.1:${port}/command`, {
+			method: 'POST', headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ cmd: 'project.getInfo', params: { mode }, instanceId: 'diagnostic-test' }),
+		})).json()
+		for (const [mode, code, stage] of [
+			['no-receipt', 'BRIDGE_COMMAND_TIMEOUT', 'receipt-unavailable'],
+			['no-result', 'BRIDGE_COMMAND_TIMEOUT', 'awaiting-result'],
+			['disconnect', 'BRIDGE_DISCONNECTED', 'awaiting-result'],
+		]) {
+			const result = await post(mode)
+			const cause = result?.error?.cause
+			check(`bridge reports ${mode} without guessing execution`, result?.cmd === 'project.getInfo' &&
+				cause?.code === code && cause?.stage === stage && cause?.outcome === 'unknown' && cause?.retryable === false)
+		}
+	}
+	finally {
+		socket?.terminate()
+		await new Promise(resolve => {
+			if (proxy.exitCode !== null || proxy.signalCode !== null) return resolve()
+			proxy.once('exit', resolve)
+			proxy.kill()
+		})
+	}
+}
+
 async function loadRegistry() {
 	const filename = path.join(ROOT, 'src', 'engine', 'registry.ts')
 	const result = await build({ entryPoints: [filename], bundle: true, platform: 'node', format: 'cjs', write: false })
@@ -311,6 +354,7 @@ async function main() {
 	await checkBackupIdentityThrottle()
 	await checkPartialDoesNotPersist()
 	await checkConcurrentWriteQueue()
+	await checkBridgeReceipt()
 	const failed = checks.filter(item => !item.passed)
 	console.log(`\nRegression: ${checks.length - failed.length}/${checks.length} passed${failed.length ? `; failed: ${failed.map(item => item.name).join(', ')}` : ''}`)
 	process.exitCode = failed.length ? 1 : 0

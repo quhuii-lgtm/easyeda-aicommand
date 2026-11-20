@@ -28,8 +28,8 @@ export interface GerberArcApproximation {
 }
 export interface GerberShape { kind: 'stroke' | 'flash' | 'region'; polarity: Polarity; apertureId?: number; centerline?: Point[]; flashCenterMil?: Point; circleDiameterToken?: string; arcApproximation?: GerberArcApproximation; geometryLower: MultiPolygon; geometryUpper: MultiPolygon }
 export type GerberLayerName = 'GTO' | 'GBO' | 'GTS' | 'GBS' | 'GKO';
-export interface GerberLayerGeometry {
-	layer: GerberLayerName;
+export interface GerberLayerGeometry<Layer extends GerberLayerName | 'GTP' | 'GBP' = GerberLayerName> {
+	layer: Layer;
 	fileName: string;
 	contentBytes: number;
 	complete: boolean;
@@ -615,7 +615,7 @@ function isSimpleClosedRing(ring: Point[]): boolean {
 	}
 	return Math.abs(ringArea(ring)) > 1e-9;
 }
-export function parseGerberLayerGeometry(layer: GerberLayerName, fileName: string, source: string, checkBudget?: () => void): LayerParse {
+export function parseGerberLayerGeometry<Layer extends GerberLayerName | 'GTP' | 'GBP'>(layer: Layer, fileName: string, source: string, checkBudget?: () => void): GerberLayerGeometry<Layer> {
 	const unknowns: string[] = [];
 	const unsupported: string[] = [];
 	const macroNames = new Set<string>();

@@ -30,6 +30,7 @@ let viaCreateCalls = 0
 let skipCreateAt = 0
 let nextId = 0
 let routeJobCounter = 0
+const effectiveSettingsByJob = new Map()
 let outputCalls = 0
 let sourceReads = 0
 let lineEnumerations = 0
@@ -72,14 +73,19 @@ globalThis.eda = {
 	pcb_Document: { importAutoRouteSesFile: async () => { nativeCalls++; return true } },
 	pcb_ManufactureData: { getDsnFile: async () => { const file = new Blob(['dsn']); Object.defineProperty(file, 'name', { value: 'direct.dsn' }); return file } },
 	pcb_Drc: { check: async () => { drcCalls++; return [] }, getNetRules: async () => [] },
-	sys_ClientUrl: { request: async (url, method) => ({ ok: true, status: 200, json: async () => {
-		if (url.endsWith('/system/status')) return { ok: true }
-		if (url.endsWith('/sessions/create')) return { id: 'ses-session' }
-		if (url.endsWith('/jobs/enqueue')) return { id: `ses-job-${++routeJobCounter}` }
-		if (/\/jobs\/ses-job-\d+\/output$/.test(url)) { outputCalls++; return { data: encode(lineOnlySes), filename: 'line-only.ses' } }
-		if (/\/jobs\/ses-job-\d+$/.test(url)) return { state: 'COMPLETED' }
-		return {}
-	} }) },
+	sys_ClientUrl: { request: async (url, method, body) => {
+		const settingsPath = /\/jobs\/(ses-job-\d+)\/settings$/.exec(url)
+		if (method === 'POST' && settingsPath) effectiveSettingsByJob.set(settingsPath[1], JSON.parse(body))
+		return { ok: true, status: 200, json: async () => {
+			if (url.endsWith('/system/status')) return { ok: true }
+			if (url.endsWith('/sessions/create')) return { id: 'ses-session' }
+			if (url.endsWith('/jobs/enqueue')) return { id: `ses-job-${++routeJobCounter}` }
+			if (method === 'GET' && settingsPath) return effectiveSettingsByJob.get(settingsPath[1])
+			if (/\/jobs\/ses-job-\d+\/output$/.test(url)) { outputCalls++; return { data: encode(lineOnlySes), filename: 'line-only.ses' } }
+			if (/\/jobs\/ses-job-\d+$/.test(url)) return { state: 'COMPLETED' }
+			return {}
+		} }
+	} },
 }
 
 const originalStructuredClone = globalThis.structuredClone
