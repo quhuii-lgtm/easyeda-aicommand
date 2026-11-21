@@ -1,5 +1,9 @@
 # Change log
 
+## 0.21.19
+
+- Write-outcome recovery, target verification, T-junction/cleanup and BOM fixes; complete restored KiRouting proxy integration.
+
 ## 0.21.18
 
 - Native-default routing, optional copper keepouts, post-repour connectivity protection, target checks and crystal routing requirements.

@@ -14,9 +14,17 @@ async function main() {
 	assert.ok(openCommand);
 
 	function makeFixture() {
-		const state = { projectUuid: 'project-a', opened: [], activated: [], openImpl: async uuid => `${uuid}@project-a` };
+		const state = {
+			projectUuid: 'project-a',
+			focus: { documentType: 3, uuid: 'active-doc', tabId: 'active-tab', parentProjectUuid: 'project-a' },
+			opened: [], activated: [], openImpl: async uuid => `${uuid}@project-a`, activateImpl: async tabId => {
+				state.focus = { documentType: 3, uuid: 'target-doc', tabId, parentProjectUuid: 'project-a' };
+				return true;
+			},
+		};
 		globalThis.eda = {
 			dmt_Project: { getCurrentProjectInfo: async () => ({ uuid: state.projectUuid }) },
+			dmt_SelectControl: { getCurrentDocumentInfo: async () => state.focus },
 			dmt_EditorControl: {
 				openDocument: async (uuid) => {
 					state.opened.push(uuid);
@@ -24,7 +32,7 @@ async function main() {
 				},
 				activateDocument: async (tabId) => {
 					state.activated.push(tabId);
-					return true;
+					return await state.activateImpl(tabId);
 				},
 			},
 		};
@@ -40,9 +48,47 @@ async function main() {
 	{
 		const state = makeFixture();
 		const result = await openCommand.handler({ uuid: 'target-doc', __projectUuid: 'project-a' }, context());
-		assert.deepEqual(result, { tabId: 'target-doc@project-a', activated: true });
+		assert.deepEqual(result, {
+			tabId: 'target-doc@project-a', activated: true, sdkActivated: true,
+			observed: { projectUuid: 'project-a', documentUuid: 'target-doc', tabId: 'target-doc@project-a', parentProjectUuid: 'project-a' },
+		});
 		assert.deepEqual(state.opened, ['target-doc']);
 		assert.deepEqual(state.activated, ['target-doc@project-a']);
+	}
+
+	{
+		const state = makeFixture();
+		state.focus = { documentType: 3, uuid: 'page-a', tabId: 'page-a-tab', parentProjectUuid: 'project-a' };
+		state.openImpl = async () => 'page-a@project-a';
+		state.activateImpl = async () => {
+			// Two projects can contain pages with the same display title. The connected focus
+			// has the other project's UUID, so an SDK success value alone must not pass.
+			state.focus = { documentType: 3, uuid: 'page-b', title: 'Main', tabId: 'page-b@project-b', parentProjectUuid: 'project-b' };
+			return true;
+		};
+		await assert.rejects(
+			openCommand.handler({ uuid: 'page-a', __projectUuid: 'project-a' }, context()),
+			error => error.cause?.partial === true
+				&& error.cause?.retryable === false
+				&& error.cause?.phase === 'openDocument.activationUnconfirmed'
+				&& error.cause?.observed?.documentUuid === 'page-b'
+				&& /焦点归属与绑定目标不同/.test(error.message),
+		);
+		assert.deepEqual(state.activated, ['page-a@project-a']);
+	}
+
+	{
+		const state = makeFixture();
+		state.activateImpl = async () => {
+			// openDocument/activateDocument claim success, but the focused page remains stale.
+			return true;
+		};
+		await assert.rejects(
+			openCommand.handler({ uuid: 'target-doc', __projectUuid: 'project-a' }, context()),
+			error => error.cause?.phase === 'openDocument.activationUnconfirmed'
+				&& error.cause?.observed?.documentUuid === 'active-doc'
+				&& /焦点未确认/.test(error.message),
+		);
 	}
 
 	{
@@ -85,7 +131,7 @@ async function main() {
 		state.openImpl = async () => {
 			throw new Error('host timeout');
 		};
-		await assert.rejects(openCommand.handler({ uuid: 'target-doc', __projectUuid: 'project-a' }, context()), error => error.cause?.partial === true && error.cause?.retryable === false && error.cause?.phase === 'openDocument.outcomeUnknown' && error.cause?.tabId === undefined);
+		await assert.rejects(openCommand.handler({ uuid: 'target-doc', __projectUuid: 'project-a' }, context()), error => error.cause?.partial === true && error.cause?.outcome === 'unknown' && error.cause?.retryable === false && error.cause?.phase === 'openDocument.outcomeUnknown' && error.cause?.tabId === undefined);
 		assert.deepEqual(state.activated, []);
 	}
 

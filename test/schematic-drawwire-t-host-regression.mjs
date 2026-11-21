@@ -245,14 +245,19 @@ for (const [label, changeOldNet] of [
   const error = await captureError(() => runVirtual(() => h.run(fixture.params)), 'changed distant wire must not be accepted')
   assert.equal(error.cause?.partial, true)
 }
-{
-  const branchCrossing = `{"type":"WIRE","ticket":100,"id":"wire-cross"}||{"zIndex":100}|\n{"type":"LINE","ticket":101,"id":"line-cross"}||{"fillColor":null,"fillStyle":null,"strokeColor":null,"strokeStyle":null,"strokeWidth":null,"startX":130,"startY":-180,"endX":180,"endY":-180,"lineGroup":"wire-cross"}|`
+for (const startX of [130, 160]) {
+  const branchCrossing = `{"type":"WIRE","ticket":100,"id":"wire-cross"}||{"zIndex":100}|\n{"type":"LINE","ticket":101,"id":"line-cross"}||{"fillColor":null,"fillStyle":null,"strokeColor":null,"strokeStyle":null,"strokeWidth":null,"startX":${startX},"startY":-180,"endX":180,"endY":-180,"lineGroup":"wire-cross"}|`
   const beforeSource = `${fixture.beforeSource}\n${branchCrossing}`
   const afterSource = `${fixture.afterSource}\n${branchCrossing}`
-  const crossing = { primitiveId: 'wire-cross', net: '', line: [130, 180, 180, 180], color: null, lineWidth: null, lineType: 0 }
+  const crossing = { primitiveId: 'wire-cross', net: '', line: [startX, 180, 180, 180], color: null, lineWidth: null, lineType: 0 }
   const h = makeHarness({ beforeSource, afterSource, beforeModel: [...structuredClone(fixture.beforeModel), crossing], afterModel: [...structuredClone(fixture.afterModel), crossing] })
-  const error = await captureError(() => runVirtual(() => h.run(fixture.params)), 'branch contacting another wire must not enter exception')
-  assert.equal(error.cause?.partial, true)
+  if (startX === 130) {
+    await runVirtual(() => h.run(fixture.params))
+    assert.equal(h.createCalls, 1, 'interior crossing does not electrically join the two wires')
+  } else {
+    const error = await captureError(() => runVirtual(() => h.run(fixture.params)), 'branch contacting another wire endpoint must not enter exception')
+    assert.equal(error.cause?.partial, true)
+  }
 }
 {
   const h = makeHarness({ mode: 'reject' })

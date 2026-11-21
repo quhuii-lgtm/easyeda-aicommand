@@ -268,6 +268,7 @@ function makeSchematic(options = {}) {
 				: options.netAttrsByWire?.[wire.id] ?? options.netAttrs ?? [{ key: 'NET', value: 'N1' }, { key: 'NET', value: 'N1' }]
 			for (const [index, attr] of attrs.entries())
 				rows.push(`${JSON.stringify({ type: 'ATTR', id: `attr-${wire.id}-${index}`, ticket: ticket++ })}||${JSON.stringify({ parentId: wire.id, key: attr.key, value: attr.value })}|`)
+			rows.push(`${JSON.stringify({ type: 'ATTR', id: `relevance-${wire.id}`, ticket: ticket++ })}||${JSON.stringify({ parentId: wire.id, key: 'Relevance', value: '[]' })}|`)
 		}
 		return sourceFor(uuid, rows.join('\n'))
 	}
@@ -366,6 +367,7 @@ function makeSchematic(options = {}) {
 				return wires.find(w => w.getState_PrimitiveId() === id)
 			},
 		},
+		sch_ManufactureData: { getNetlistFile: async () => ({ text: async () => JSON.stringify({ components: options.netlistComponents ?? {} }) }) },
 		sch_PrimitiveAttribute: { getAll: async id => {
 			events.push(`attributes:${id}`)
 			if (options.attributeReadThrows)
@@ -458,6 +460,28 @@ for (const [label, netAttrs] of [
 	check(sch.events.filter(e => e.startsWith('create:')).length === 2
 		&& sch.events.includes('create-line:[0,0,10,0]:net=N1')
 		&& sch.events.includes('create-line:[100,0,110,0]:net=N1'), 'R3 同网断线不合并为一根导线')
+}
+{
+	const sch = makeSchematic({ wireLines: [[0, 0, 10, 0, 10, 0, 10, 10, 10, 0, 20, 0]] }); globalThis.eda = sch.eda
+	const error = await expectReject(() => dedupe(), 'R3 同父导线含分支时写前拒绝')
+	check(/T 接|分支|闭环|零长度/.test(error.message), 'R3 分支父线错误明确说明不能自动重建')
+	check(!sch.events.some(e => e.startsWith('delete:') || e.startsWith('create:')), 'R3 分支父线保留全部原线与标签')
+}
+{
+	const sch = makeSchematic({ wireLines: [[0, 0, 10, 0], [10, 0, 20, 0]] }); globalThis.eda = sch.eda
+	const error = await expectReject(() => dedupe(), 'R3 候选父线与其他导线接触时写前拒绝')
+	check(/其他导线/.test(error.message), 'R3 外部接触错误明确指出关联导线')
+	check(!sch.events.some(e => e.startsWith('delete:') || e.startsWith('create:')), 'R3 外部接触保护零删除/创建')
+}
+{
+	const sch = await runDedupe({
+		wireLines: [[0, 0, 20, 0], [10, -10, 10, 10]],
+		netAttrsByWire: {
+			'old-wire': [{ key: 'NET', value: 'N1' }, { key: 'NET', value: 'N1' }],
+			'old-wire-2': [{ key: 'NET', value: 'N2' }, { key: 'NET', value: 'N2' }],
+		},
+	})
+	check(sch.result.rebuilt === 2, 'R3 两条简单母线的内部十字按非电气接触处理并保留去重')
 }
 for (const [label, options, expectedValues] of [
 	['conflict', { netAttrs: [{ key: 'Name', value: 'RECOVERY_A' }, { key: 'Name', value: 'RECOVERY_B' }] }, 'values=["RECOVERY_A","RECOVERY_B"]'],
@@ -595,7 +619,7 @@ for (const mode of ['false', 'throw', 'undefined', 'wrong', 'empty', 'focus']) {
 	globalThis.eda = sch.eda
 	const isolatedDedupe = await freshDedupe(`restore-${mode}`)
 	const error = await expectReject(() => isolatedDedupe(), `R3 恢复${mode}返回 partial`)
-	check(error.cause?.partial === true && error.cause?.restored === false && error.cause?.retryable === false, `R3 恢复${mode}标记 partial`)
+	check(error.cause?.partial === true && error.cause?.outcome === 'unknown' && error.cause?.restored === false && error.cause?.retryable === false, `R3 恢复${mode}标记 partial/unknown`)
 	check(error.cause?.recovery?.documentUuid && error.cause?.recovery?.storageKey && error.cause?.recovery?.source === sch.initialSource, `R3 恢复${mode}附完整凭据`)
 }
 

@@ -29,12 +29,20 @@ function mutateRows(source, mutate) {
   const rows = parseRows(source).map(row => mutate(structuredClone(row)) ?? row)
   return renderRows(rows)
 }
-function makeHarness({ mutateBeforeSource, mutateSource, mutateModel, includeCrossingLine = false } = {}) {
+function makeHarness({ mutateBeforeSource, mutateSource, mutateModel, includeCrossingLine = false, additionalWires = [] } = {}) {
   const crossingWire = { primitiveId: 'wire-crossing', net: '', line: [300, 150, 300, 250], lineWidth: null, color: '#FF0000', lineType: 0 }
   const addCrossingSource = source => `${source}\n{"type":"WIRE","ticket":100,"id":"wire-crossing"}||{"zIndex":100}|\n{"type":"LINE","ticket":101,"id":"line-crossing"}||{"fillColor":null,"fillStyle":null,"strokeColor":"#FF0000","strokeStyle":"SOLID","strokeWidth":null,"startX":300,"startY":-150,"endX":300,"endY":-250,"lineGroup":"wire-crossing"}|`
   const originalSource = mutateBeforeSource ? mutateBeforeSource(beforeSource) : beforeSource
-  const initialSource = includeCrossingLine ? addCrossingSource(originalSource) : originalSource
-  const initialModel = includeCrossingLine ? [...structuredClone(beforeModel), structuredClone(crossingWire)] : structuredClone(beforeModel)
+  const addAdditionalSources = source => additionalWires.reduce((text, wire, index) => {
+    const y1 = -wire.line[1], y2 = -wire.line[3], base = 200 + index * 4
+    return `${text}\n{"type":"WIRE","ticket":${base},"id":"${wire.primitiveId}"}||${JSON.stringify({ zIndex: base })}|\n{"type":"LINE","ticket":${base + 1},"id":"line-${wire.primitiveId}"}||${JSON.stringify({ fillColor: null, fillStyle: null, strokeColor: wire.color ?? '#FF0000', strokeStyle: 'SOLID', strokeWidth: null, startX: wire.line[0], startY: y1, endX: wire.line[2], endY: y2, lineGroup: wire.primitiveId })}|\n{"type":"ATTR","ticket":${base + 2},"id":"attr-${wire.primitiveId}"}||${JSON.stringify({ parentId: wire.primitiveId, key: 'NET', value: wire.net })}|\n{"type":"ATTR","ticket":${base + 3},"id":"relevance-${wire.primitiveId}"}||${JSON.stringify({ parentId: wire.primitiveId, key: 'Relevance', value: '[]' })}|`
+  }, source)
+  const initialSourceBase = includeCrossingLine ? addCrossingSource(originalSource) : originalSource
+  const initialSource = addAdditionalSources(initialSourceBase)
+  const initialModel = [
+    ...(includeCrossingLine ? [...structuredClone(beforeModel), structuredClone(crossingWire)] : structuredClone(beforeModel)),
+    ...structuredClone(additionalWires),
+  ]
   let currentSource = initialSource
   let currentModel = initialModel
   let createCalls = 0
@@ -60,8 +68,12 @@ function makeHarness({ mutateBeforeSource, mutateSource, mutateModel, includeCro
       getAll: async () => currentModel.map(wrapWire),
       create: async () => {
         createCalls++
-        const resultingSource = includeCrossingLine ? addCrossingSource(afterSource) : afterSource
-        const resultingModel = includeCrossingLine ? [...structuredClone(afterModel), structuredClone(crossingWire)] : structuredClone(afterModel)
+        const resultingSourceBase = includeCrossingLine ? addCrossingSource(afterSource) : afterSource
+        const resultingSource = addAdditionalSources(resultingSourceBase)
+        const resultingModel = [
+          ...(includeCrossingLine ? [...structuredClone(afterModel), structuredClone(crossingWire)] : structuredClone(afterModel)),
+          ...structuredClone(additionalWires),
+        ]
         currentSource = mutateSource ? mutateSource(resultingSource) : resultingSource
         currentModel = mutateModel ? mutateModel(resultingModel) : resultingModel
         return wrapWire(currentModel[0])
@@ -126,6 +138,22 @@ for (const [label, mutateBeforeSource] of [
   const error = await captureError(() => runVirtual(() => h.run(request)), 'requested branch intersects a non-target LINE')
   assert.equal(h.createCalls, 1)
   assert.equal(error.cause?.partial, true)
+}
+
+// Explicit names and unnamed geometry must not join distinct networks at endpoint/T contacts.
+// A true interior cross remains the host's non-contact case and must not be broadly blocked.
+for (const net of ['ACE_BUS', undefined]) {
+  const foreignEndpoint = { primitiveId: 'wire-foreign-endpoint', net: 'OTHER_BUS', line: [250, 300, 350, 300], color: '#FF0000' }
+  const h = makeHarness({ additionalWires: [foreignEndpoint] })
+  const error = await captureError(() => runVirtual(() => h.run({ ...request, net })), `foreign network endpoint rejected (request net=${net ?? 'unnamed'})`)
+  assert.equal(h.createCalls, 0, 'foreign network endpoint must be rejected before any create')
+  assert.match(error.message, /different networks|different net|不同网络|不同网络/, 'error identifies network collision')
+}
+{
+  const foreignInteriorCross = { primitiveId: 'wire-foreign-cross', net: 'OTHER_BUS', line: [250, 250, 350, 250], color: '#FF0000' }
+  const h = makeHarness({ additionalWires: [foreignInteriorCross] })
+  await runVirtual(() => h.run(request))
+  assert.equal(h.createCalls, 1, 'pure interior cross is not classified as electrical contact')
 }
 
 // The exception is limited to the exact one-branch orientation: the same path reversed is rejected.

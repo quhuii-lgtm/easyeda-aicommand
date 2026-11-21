@@ -37,11 +37,11 @@ export const editorCommands: Array<ICommandDef> = [
 	},
 	{
 		name: 'editor.openDocument',
-		summary: '激活打开指定文档（原理图图页/PCB 的 uuid，可从 project.getInfo 获取）；原理图/PCB 类指令执行前需确保对应文档已激活',
+		summary: '打开并激活指定原理图图页/PCB；完成后回读当前工程、焦点文档和页签身份，未确认目标时返回可读现状并阻止后续依赖操作',
 		params: [
 			{ name: 'uuid', type: 'string', required: true, description: '文档 UUID（图页或 PCB）' },
 		],
-		returns: '{ tabId, activated }',
+		returns: '{ tabId, activated:true, observed:{ projectUuid, documentUuid, tabId } }；仅当工程、文档与页签均与目标一致时报告已激活',
 		example: { cmd: 'editor.openDocument', params: { uuid: '5c96eb02cb6183a2' } },
 		handler: async (params, ctx) => {
 			if (!params.uuid)
@@ -65,35 +65,77 @@ export const editorCommands: Array<ICommandDef> = [
 			}
 			catch (error) {
 				throw new Error(`打开文档结果未确认：${error instanceof Error ? error.message : String(error)}`, {
-					cause: { partial: true, retryable: false, phase: 'openDocument.outcomeUnknown', openAttempted: true, projectUuid: expectedProjectUuid, uuid: String(params.uuid) },
+					cause: { partial: true, outcome: 'unknown', retryable: false, phase: 'openDocument.outcomeUnknown', openAttempted: true, projectUuid: expectedProjectUuid, uuid: String(params.uuid) },
 				});
 			}
 			if (!tabId) {
 				throw new Error('打开文档已调用，但宿主未返回页签 ID；结果未知，不能安全重试', {
-					cause: { partial: true, retryable: false, phase: 'openDocument.outcomeUnknown', openAttempted: true, projectUuid: expectedProjectUuid, uuid: String(params.uuid) },
+					cause: { partial: true, outcome: 'unknown', retryable: false, phase: 'openDocument.outcomeUnknown', openAttempted: true, projectUuid: expectedProjectUuid, uuid: String(params.uuid) },
 				});
 			}
 			try {
 				ctx?.stopSignal?.assertActive();
-				const afterProjectUuid = await readProjectUuid();
-				if (afterProjectUuid !== expectedProjectUuid)
-					throw new Error(`当前工程已切换（原=${expectedProjectUuid}，当前=${afterProjectUuid}）`);
+				const beforeActivateProjectUuid = await readProjectUuid();
+				if (beforeActivateProjectUuid !== expectedProjectUuid)
+					throw new Error(`当前连接的工程已切换（目标=${expectedProjectUuid}，当前=${beforeActivateProjectUuid}）`);
 				ctx?.stopSignal?.assertActive();
 			}
 			catch (error) {
-				throw new Error(`文档已打开但未激活：${error instanceof Error ? error.message : String(error)}`, {
+				throw new Error(`文档已打开，但切页前目标身份未确认：${error instanceof Error ? error.message : String(error)}`, {
 					cause: { partial: true, retryable: false, phase: 'openDocument.beforeActivate', openAttempted: true, opened: true, projectUuid: expectedProjectUuid, uuid: String(params.uuid), tabId },
 				});
 			}
 			// 打开后显式激活一次，规避新文档未渲染导致后续 API 拒写的问题
-			let activated = false;
+			let activationResult: boolean | undefined;
+			let activationError: string | undefined;
 			try {
-				activated = Boolean(await eda.dmt_EditorControl.activateDocument(tabId));
+				activationResult = await eda.dmt_EditorControl.activateDocument(tabId);
 			}
-			catch {
-				// 激活失败不阻断，openDocument 本身通常已激活
+			catch (error) {
+				activationError = error instanceof Error ? error.message : String(error);
 			}
-			return { tabId, activated };
+			const targetUuid = String(params.uuid);
+			const deadline = performance.now() + 2_000;
+			let observed: Record<string, unknown> | undefined;
+			let lastReadError: string | undefined;
+			while (performance.now() <= deadline) {
+				try {
+					ctx?.stopSignal?.assertActive();
+					const [projectUuid, focus] = await Promise.all([
+						readProjectUuid(),
+						eda.dmt_SelectControl.getCurrentDocumentInfo(),
+					]);
+					ctx?.stopSignal?.assertActive();
+					observed = {
+						projectUuid,
+						documentUuid: typeof focus?.uuid === 'string' ? focus.uuid : undefined,
+						tabId: typeof focus?.tabId === 'string' ? focus.tabId : undefined,
+						parentProjectUuid: typeof focus?.parentProjectUuid === 'string' ? focus.parentProjectUuid : undefined,
+					};
+					const exactTarget = projectUuid === expectedProjectUuid
+						&& focus?.parentProjectUuid === expectedProjectUuid
+						&& focus?.uuid === targetUuid
+						&& focus?.tabId === tabId;
+					if (exactTarget)
+						return { tabId, activated: true, sdkActivated: activationResult === true, observed };
+				}
+				catch (error) {
+					lastReadError = error instanceof Error ? error.message : String(error);
+					if (/timed out|timeout|cancel|stop/i.test(lastReadError))
+						break;
+				}
+				await new Promise(resolve => setTimeout(resolve, 100));
+			}
+			const observedProjectUuid = observed?.projectUuid;
+			const observedParentProjectUuid = observed?.parentProjectUuid;
+			const differentProject = (observedProjectUuid && observedProjectUuid !== expectedProjectUuid)
+				|| (observedParentProjectUuid && observedParentProjectUuid !== expectedProjectUuid);
+			const message = differentProject
+				? `目标页已打开，但当前连接的工程或焦点归属与绑定目标不同（目标工程=${expectedProjectUuid}，当前工程=${String(observedProjectUuid)}，焦点所属工程=${String(observedParentProjectUuid ?? '未知')}）；请切回正确工程/EDA 窗口后重新选择目标，不能继续对当前页写入`
+				: `目标页已打开，但当前焦点未确认到目标工程、文档和页签（目标工程=${expectedProjectUuid}，目标文档=${targetUuid}，目标页签=${tabId}；当前读回=${JSON.stringify(observed ?? { error: lastReadError ?? activationError ?? '读取不到焦点文档' })}）；不能继续依赖此切页结果`;
+			throw new Error(message, {
+				cause: { partial: true, retryable: false, phase: 'openDocument.activationUnconfirmed', openAttempted: true, opened: true, projectUuid: expectedProjectUuid, uuid: targetUuid, tabId, activationResult, activationError, observed: observed ?? null, readError: lastReadError },
+			});
 		},
 	},
 	{

@@ -18,9 +18,8 @@
  *   GET  /health             服务与扩展连接状态（含全部在线实例）
  *   GET  /commands           列出全部指令（扩展指令 + 代理本地指令）
  *   GET  /help?cmd=xxx       查询指令文档
- *   POST /command            执行指令，body: { "cmd": "...", "params": {...}, "instanceId": "可选" }
- *                            带 instanceId 时按请求级路由直发该窗口（多 AI 客户端并行各带各的，
- *                            互不抢全局 /select）；不带则走全局选中实例（向后兼容）
+ *   POST /command            执行指令，EDA 指令需 body: { "cmd": "...", "params": {...}, "instanceId": "..." }
+ *                            按请求级 instanceId 路由，互不抢全局 /select；代理本地 smt.* 与 write.acknowledge 不需要 EDA 实例
  *
  * 超时语义（0.10.49）：长指令（schematic.delete / pcb.delete / schematic.batchWire / macro）
  * 执行中扩展会持续推送 { type:'progress', id } 进度心跳，代理每收到一次就重置该指令的
@@ -29,7 +28,8 @@
  * 客户端 HTTP 超时后：宿主可能仍在执行，先只读核对原目标或凭 taskId 查询任务，
  * 确认状态后再决定是否重发。
  *
- * 写指令单行道（0.10.50）：除只读指令（schematic./pcb. 的 list/get/export/runDrc、
+ * 写指令单行道（0.10.50）：除明确只读指令（schematic./pcb. 的 list/get/export/runDrc；
+ * schematic.exportNetlist 与 JLCEDA 生成式 getNetlist 是写路径、
  * project. 的 get/list/export、editor.、library.、task.、knowledge.）外，全部写指令
  * 按目标窗口 FIFO 排队、一次放行一个——官方导线 create 并发容量≈2，并发创建批量失败。
  * 并发调用由此自动串行化，不会失败，代价是吞吐 ~3s/条；读指令不受影响。
@@ -209,12 +209,12 @@ function connectionFor(instanceId) {
 /** 向扩展转发一条指令并等待结果。
  *  instanceId 为空时严格发往 selectedInstanceId（绝不改投其他窗口）；
  *  指定 instanceId 时按请求级路由发往该实例（多 AI 客户端并行各带各的窗口，互不抢全局选择） */
-function forwardToExtension(message, instanceId) {
+function forwardToExtension(message, instanceId, { writeQueue = null, requestControl = null, expectedSocket = null } = {}) {
 	return new Promise((resolve, reject) => {
 		const target = instanceId ? connectionFor(instanceId) : selectedConnection()
-		if (!target) {
+		if (!target || (expectedSocket && target.ws !== expectedSocket)) {
 			reject(new Error(instanceId
-				? (connectionFor(instanceId) === null && [...connections.values()].some(c => c.instanceId === instanceId) ? 'TARGET_OFFLINE' : 'UNKNOWN_INSTANCE')
+				? (connectionFor(instanceId) === null && [...connections.values()].some(c => c.instanceId === instanceId) ? 'TARGET_OFFLINE' : expectedSocket ? 'BRIDGE_DISCONNECTED' : 'UNKNOWN_INSTANCE')
 				: (selectedInstanceId ? 'TARGET_OFFLINE' : 'NO_EXTENSION')))
 			return
 		}
@@ -228,15 +228,23 @@ function forwardToExtension(message, instanceId) {
 		const id = randomUUID()
 		const timeoutMs = COMMAND_TIMEOUT_OVERRIDES[message.cmd] ?? COMMAND_TIMEOUT_MS
 		const targetId = target.instanceId ?? target.info?.instanceId
-		const entry = { resolve, cmd: message.cmd, timer: null, lastProgress: undefined, timeoutMs, id, instanceId: targetId, owner: target.ws, received: false }
+		const entry = { resolve, cmd: message.cmd, timer: null, lastProgress: undefined, timeoutMs, id, instanceId: targetId, owner: target.ws, received: false, writeQueue, responded: false }
 		entry.onTimeout = () => {
-			pending.delete(id)
+			if (writeQueue) {
+				markWriteOutcomeUnknown(writeQueue, id, 'BRIDGE_COMMAND_TIMEOUT')
+				entry.timedOut = true // retain an owner-bound tombstone to accept only this socket's late result
+				entry.responded = true
+			}
+			else
+				pending.delete(id)
 			tryCompleteStop(targetId)
 			const prog = entry.lastProgress !== undefined ? `；最后进度：${JSON.stringify(entry.lastProgress).slice(0, 500)}` : ''
 			resolve({
 				ok: false, cmd: message.cmd,
 				error: {
-					message: `指令等待超时（${Math.round(timeoutMs / 1000)}s）${prog}。宿主可能仍在执行；先查任务或原目标状态，再决定是否重发。`,
+					message: writeQueue
+						? `写指令等待超时（${Math.round(timeoutMs / 1000)}s）${prog}。宿主可能仍在执行；目标窗口的后续写入已暂停。先只读核对任务或原目标状态，确认终态后用 write.acknowledge 指定原 requestId 恢复。`
+						: `只读指令等待超时（${Math.round(timeoutMs / 1000)}s）${prog}。只读结果未知；请检查原目标状态。`,
 					cause: { code: 'BRIDGE_COMMAND_TIMEOUT', requestId: id, instanceId: targetId,
 						stage: entry.received ? 'awaiting-result' : 'receipt-unavailable', retryable: false,
 						outcome: 'unknown', lastProgress: entry.lastProgress },
@@ -246,7 +254,20 @@ function forwardToExtension(message, instanceId) {
 		entry.timer = setTimeout(entry.onTimeout, timeoutMs)
 		pending.set(id, entry)
 		// 注意：id 必须放在展开之后——调用方若自带 id 字段会覆盖代理的关联 id，导致响应永远无法匹配（表现为 30s 超时）
-		target.ws.send(JSON.stringify({ type: 'command', ...message, id }))
+		try {
+			if (target.ws.readyState !== 1)
+				throw new Error('目标连接已关闭，指令未发送')
+			target.ws.send(JSON.stringify({ type: 'command', ...message, id }))
+			if (requestControl)
+				requestControl.state = 'sent'
+		}
+		catch (error) {
+			pending.delete(id)
+			clearTimeout(entry.timer)
+			if (writeQueue)
+				clearWriteOutcomeUnknown(writeQueue, id, 'send-not-started')
+			reject(error)
+		}
 	})
 }
 
@@ -254,7 +275,7 @@ function forwardToExtension(message, instanceId) {
 // 官方导线 create 并发容量≈2：并发创建批量 "create failed!"，幸存者还可能半注册
 // （文档源码可见但 listWires/命中测试查不到、常规删不掉）。代理侧把写指令按目标窗口
 // 排成 FIFO，一次只放行一个——方式 3（并发单条）由此退化为逐条执行：不再失败，代价是
-// 吞吐 ~3s/条。读指令（list/get/export/runDrc/editor 等）不受影响，照常并发。
+// 吞吐 ~3s/条。普通 list/get/export/runDrc/editor 诊断照常并发；原理图网表文件生成另按副作用入队。
 // 0.10.72（KIMI-EDA-20261006-03 P1-2）：editor.* 不再整体判只读——openDocument/closeDocument
 // 会改变目标文档上下文，曾绕过写单行道与在跑的批量写交错（GPT 源码审查定案）。只读白名单
 // 收紧为真正的无副作用四条；其余 editor.*（openDocument/closeDocument 等）按写指令排队。
@@ -274,7 +295,11 @@ const READONLY_COMMAND_PATTERNS = [
 	/^module\.library(Info|List|Search|Get)$/,
 	/^knowledge\./,
 ]
-function isReadOnlyCommand(cmd) {
+function isReadOnlyCommand(cmd, params = {}) {
+	if (cmd === 'schematic.exportNetlist')
+		return false // host export may normalize reference designators and save the schematic
+	if (cmd === 'schematic.getNetlist')
+		return params?.netlistType !== 'JLCEDA' // default is Protel2; only JLCEDA uses the file-generation path
 	return typeof cmd === 'string' && READONLY_COMMAND_PATTERNS.some(re => re.test(cmd))
 }
 
@@ -294,15 +319,40 @@ function containsModuleCommand(command) {
 /** 每个 EDA 窗口（ws）一条写队列；tail 永远 resolved，深度单独计数 */
 const writeQueues = new Map()
 
-// Request writes serialize until their response or timeout. A timeout reports that
-// the proxy stopped waiting; it does not cancel work inside the EDA SDK.
+function isExecutionOutcomeUnknown(result) {
+	const cause = result?.error?.cause ?? result?.cause
+	return cause?.source === 'client-watchdog' || cause?.source === 'heartbeat-fuse' || cause?.outcome === 'unknown' || cause?.status === 'unknown'
+}
+
+function markWriteOutcomeUnknown(queue, requestId, reason) {
+	if (!queue || !requestId)
+		return
+	queue.uncertainRequestId = requestId
+	queue.uncertainReason = reason
+	laneLog({ event: 'write-uncertain-set', instanceId: queue.instanceId, id: requestId, reason })
+}
+
+function clearWriteOutcomeUnknown(queue, requestId, why) {
+	if (!queue || queue.uncertainRequestId !== requestId)
+		return false
+	queue.uncertainRequestId = null
+	queue.uncertainReason = null
+	laneLog({ event: 'write-uncertain-cleared', instanceId: queue.instanceId, id: requestId, why })
+	return true
+}
+
+function queueTimeoutResult(cmd, instanceId, timeoutMs) {
+	return { ok: false, cmd, error: { message: `写指令在队列中等待超过 ${Math.round(timeoutMs / 1000)}s，已取消且未发送；可检查目标状态后重新提交。`, cause: { code: 'BRIDGE_QUEUE_TIMEOUT', instanceId, stage: 'queued-not-sent', outcome: 'not_started', retryable: false } } }
+}
+
+function queueCancelledResult(cmd, instanceId) {
+	return { ok: false, cmd, error: { message: '写指令发送前客户端已断开；该指令已取消且不会延迟发送。', cause: { code: 'BRIDGE_QUEUE_CANCELLED', instanceId, stage: 'before-send', outcome: 'not_started', retryable: false } } }
+}
+
+// One FIFO lane per stable extension instance. It survives websocket replacement so an
+// uncertain old write cannot be bypassed by reconnecting the same EDA instance.
 function queueDepthFor(instanceId) {
-	let depth = 0
-	for (const [ws, q] of writeQueues) {
-		if (connections.get(ws)?.instanceId === instanceId)
-			depth += q.depth
-	}
-	return depth
+	return writeQueues.get(instanceId)?.depth ?? 0
 }
 function pendingFor(instanceId) {
 	for (const entry of pending.values()) {
@@ -313,7 +363,7 @@ function pendingFor(instanceId) {
 }
 function tryCompleteStop(instanceId) {
 	const stop = stoppingInstances.get(instanceId)
-	if (!stop || stop.readySent || pendingFor(instanceId) || queueDepthFor(instanceId) > 0)
+	if (!stop || stop.readySent || pendingFor(instanceId) || queueDepthFor(instanceId) > 0 || writeQueues.get(instanceId)?.uncertainRequestId)
 		return
 	stop.readySent = true
 	try { stop.ws.send(JSON.stringify({ type: 'stop-ready', requestId: stop.requestId })) }
@@ -323,7 +373,7 @@ function tryCompleteStop(instanceId) {
 function lifecycleBusy() {
 	return [...connections.values()].some(c => !pausedIds.has(c.instanceId))
 		|| pending.size > 0
-		|| [...writeQueues.values()].some(q => q.depth > 0)
+		|| [...writeQueues.values()].some(q => q.depth > 0 || q.uncertainRequestId)
 }
 function refreshDisconnectedAt() {
 	if (!everConnected || lifecycleBusy()) {
@@ -360,25 +410,56 @@ function acquireWriteLane(routeId) {
 	const target = routeId ? connectionFor(routeId) : selectedConnection()
 	if (!target)
 		return null
-	let q = writeQueues.get(target.ws)
+	const instanceId = target.instanceId ?? target.info?.instanceId
+	let q = writeQueues.get(instanceId)
 	if (!q) {
-		q = { tail: Promise.resolve(), depth: 0 }
-		writeQueues.set(target.ws, q)
+		q = { instanceId, tail: Promise.resolve(), depth: 0, uncertainRequestId: null, uncertainReason: null, queued: new Set() }
+		writeQueues.set(instanceId, q)
 	}
-	q.depth++
-	const enqueue = (fn) => {
+	const enqueue = (fn, { timeoutMs, cancelToken } = {}) => {
+		if (q.uncertainRequestId) {
+			return Promise.resolve({ ok: false, cmd: fn.cmd, error: { message: `目标窗口有一条结果未知的写指令（requestId ${q.uncertainRequestId}）。后续写入已暂停；先只读核对并确认终态，再用 write.acknowledge 指定该 requestId。`, cause: { code: 'WRITE_OUTCOME_UNKNOWN', requestId: q.uncertainRequestId, instanceId, outcome: 'unknown', retryable: false } } })
+		}
+		q.depth++
+		const queued = { state: 'queued', cancelled: false }
+		q.queued.add(queued)
+		let resolveCancellation
+		const cancelled = new Promise(resolve => { resolveCancellation = resolve })
+		const cancelBeforeSend = (result) => {
+			if (queued.state !== 'queued' && queued.state !== 'preparing') return
+			queued.cancelled = true
+			queued.state = 'cancelled'
+			clearTimeout(queued.timer)
+			resolveCancellation(result)
+		}
+		queued.cancelBeforeSend = () => cancelBeforeSend(queueCancelledResult(fn.cmd, instanceId))
+		if (cancelToken) cancelToken.cancelBeforeSend = queued.cancelBeforeSend
+		queued.timer = setTimeout(() => cancelBeforeSend(queueTimeoutResult(fn.cmd, instanceId, timeoutMs)), timeoutMs)
 		laneLog({ event: 'enqueue', cmd: fn.cmd, depth: q.depth })
-		const run = q.tail.then(fn)
+		const run = q.tail.then(async () => {
+			q.queued.delete(queued)
+			if (queued.cancelled)
+				return queueTimeoutResult(fn.cmd, instanceId, timeoutMs)
+			clearTimeout(queued.timer)
+			queued.state = 'preparing'
+			if (q.uncertainRequestId)
+				return { ok: false, cmd: fn.cmd, error: { message: `目标窗口有一条结果未知的写指令（requestId ${q.uncertainRequestId}）；该写入未发送。`, cause: { code: 'WRITE_OUTCOME_UNKNOWN', requestId: q.uncertainRequestId, instanceId, outcome: 'unknown', retryable: false } } }
+			if (connectionFor(routeId)?.ws !== target.ws)
+				return { ok: false, cmd: fn.cmd, error: { message: '原目标连接已断开或被替换；排队写入未转发到重连或其他实例。', cause: { code: 'BRIDGE_DISCONNECTED', instanceId, outcome: 'not_started', retryable: false } } }
+			return fn(q, queued)
+		})
 		q.tail = run.then(() => {
 			q.depth--
+			q.queued.delete(queued)
 			laneLog({ event: 'done', cmd: fn.cmd, depth: q.depth })
 			tryCompleteStop(target.instanceId)
 		}, () => {
 			q.depth--
+			q.queued.delete(queued)
 			laneLog({ event: 'done-failed', cmd: fn.cmd, depth: q.depth })
 			tryCompleteStop(target.instanceId)
 		})
-		return run
+		return Promise.race([run, cancelled])
 	}
 	return enqueue
 }
@@ -560,12 +641,15 @@ const LOCAL_COMMAND_DOCS = [
 	},
 	{
 		name: 'write.acknowledge',
-		summary: '兼容旧客户端的空操作，不再需要手动解除写保护',
+		summary: '确认一条结果未知的写指令已终止后，恢复指定窗口的写入队列；不传确认字段时保持旧版兼容空操作',
 		params: {
-			instanceId: '可选目标窗口实例 ID（为兼容旧客户端保留；本地空操作，不查询目标）',
+			instanceId: '目标窗口实例 ID（必填；也可放在顶层）',
+			requestId: '超时或断连错误返回的原 requestId（必填）',
+			confirmedTerminal: '必须为 true；表示已从任务终态确认，或原窗口退出后已对独立只读读回完成核对',
+			confirmation: 'task-terminal 或 window-exited-and-readback',
 		},
-		returns: '{ ok: true, acknowledged: true, noOp: true, instanceId: string | null, hadProtection: false }',
-		note: '不会检查、清除或绕过当前写队列，也不要求目标窗口在线；超时仍只表示代理停止等待，不能据此判断 EDA 中的操作已取消',
+		returns: '{ ok: true, acknowledged: true, noOp: boolean, instanceId, requestId?, hadProtection }',
+		note: '仅匹配当前目标实例的冻结 requestId；普通 partial 业务结果不冻结。超时本身不是终态，确认依据由调用方提供',
 	},
 ]
 
@@ -582,12 +666,29 @@ async function executeLocalCommand(command) {
 	if (command.cmd === 'smt.queryComponentDetail')
 		return { ok: true, cmd: command.cmd, data: await smtQueryComponentDetails(command.params) }
 	if (command.cmd === 'write.acknowledge') {
+		const params = command.params ?? {}
+		const instanceId = typeof command.instanceId === 'string' ? command.instanceId : typeof params.instanceId === 'string' ? params.instanceId : null
+		const requestId = typeof params.requestId === 'string' ? params.requestId : ''
+		if (params.confirmedTerminal === true) {
+			const queue = instanceId ? writeQueues.get(instanceId) : null
+			if (!queue || queue.uncertainRequestId !== requestId || !requestId || !['task-terminal', 'window-exited-and-readback'].includes(params.confirmation))
+				return { ok: false, cmd: command.cmd, acknowledged: false, error: { message: '无法恢复写队列：必须提供当前冻结实例、完全匹配的 requestId，以及终态核验类型 task-terminal 或 window-exited-and-readback。' }, instanceId, requestId: requestId || null }
+			clearWriteOutcomeUnknown(queue, requestId, params.confirmation)
+			for (const [id, entry] of pending) {
+				if (entry.instanceId === instanceId && entry.id === requestId && entry.timedOut) {
+					pending.delete(id)
+					clearTimeout(entry.timer)
+				}
+			}
+			tryCompleteStop(instanceId)
+			return { ok: true, cmd: command.cmd, acknowledged: true, noOp: false, instanceId, requestId, confirmation: params.confirmation, hadProtection: true }
+		}
 		return {
 			ok: true,
 			cmd: command.cmd,
 			acknowledged: true,
 			noOp: true,
-			instanceId: typeof command.instanceId === 'string' ? command.instanceId : null,
+			instanceId,
 			hadProtection: false,
 		}
 	}
@@ -612,10 +713,11 @@ const DESTRUCTIVE_COMMANDS = new Set([
 const lastBackupAt = new Map()
 const BACKUP_INTERVAL_MS = 60000 // 批量删除场景 60 秒内只备一次
 
-async function autoBackupBeforeDestructive(cmdName, instanceId) {
+async function autoBackupBeforeDestructive(cmdName, instanceId, expectedSocket) {
 	try {
 		// .epro 是整份工程备份；用工程 UUID 隔离同实例切换工程及不同实例，不能用可重复的显示名。
-		const identityBefore = await forwardToExtension({ cmd: 'project.getInfo' }, instanceId)
+		const routeOptions = { expectedSocket }
+		const identityBefore = await forwardToExtension({ cmd: 'project.getInfo' }, instanceId, routeOptions)
 		const projectUuidBefore = identityBefore?.ok === true && typeof identityBefore?.data?.uuid === 'string' && identityBefore.data.uuid
 			? identityBefore.data.uuid
 			: null
@@ -623,7 +725,7 @@ async function autoBackupBeforeDestructive(cmdName, instanceId) {
 		if (backupKey && Date.now() - (lastBackupAt.get(backupKey) ?? 0) < BACKUP_INTERVAL_MS)
 			return null
 
-		const result = await forwardToExtension({ cmd: 'project.exportFile' }, instanceId)
+		const result = await forwardToExtension({ cmd: 'project.exportFile' }, instanceId, routeOptions)
 		const b64 = result?.data?.base64
 		if (!b64)
 			return null
@@ -634,7 +736,7 @@ async function autoBackupBeforeDestructive(cmdName, instanceId) {
 		// 工程可能在导出过程中切换；只有前后 UUID 相同，才把成功时间记给该身份。
 		if (backupKey) {
 			try {
-				const identityAfter = await forwardToExtension({ cmd: 'project.getInfo' }, instanceId)
+				const identityAfter = await forwardToExtension({ cmd: 'project.getInfo' }, instanceId, routeOptions)
 				if (identityAfter?.ok === true && identityAfter.data?.uuid === projectUuidBefore)
 					lastBackupAt.set(backupKey, Date.now())
 			}
@@ -906,7 +1008,8 @@ const server = http.createServer(async (req, res) => {
 				port: activePort,
 				lifecycleProtocol: 1,
 				moduleLibraryProtocol: 1,
-				writeProtection: false,
+				writeProtection: [...writeQueues.values()].some(q => Boolean(q.uncertainRequestId)),
+				writeProtectionByInstance: [...writeQueues.values()].filter(q => q.uncertainRequestId).map(q => ({ instanceId: q.instanceId, requestId: q.uncertainRequestId, reason: q.uncertainReason, queueDepth: q.depth })),
 				extensionConnected: Boolean(selectedConnection()),
 				extension: extensionInfo,
 				connections: [...connections.entries()].map(([ws, c]) => ({
@@ -916,6 +1019,8 @@ const server = http.createServer(async (req, res) => {
 					connectedAt: c.connectedAt,
 					selected: c.instanceId === selectedInstanceId,
 					paused: pausedIds.has(c.instanceId),
+					writePaused: Boolean(writeQueues.get(c.instanceId)?.uncertainRequestId),
+					uncertainRequestId: writeQueues.get(c.instanceId)?.uncertainRequestId ?? null,
 					info: c.info,
 				})),
 				smtConfigured: Boolean(loadCredentials()),
@@ -931,6 +1036,8 @@ const server = http.createServer(async (req, res) => {
 					connectedAt: c.connectedAt,
 					selected: c.instanceId === selectedInstanceId,
 					paused: pausedIds.has(c.instanceId),
+					writePaused: Boolean(writeQueues.get(c.instanceId)?.uncertainRequestId),
+					uncertainRequestId: writeQueues.get(c.instanceId)?.uncertainRequestId ?? null,
 					info: c.info,
 				})),
 			})
@@ -970,7 +1077,7 @@ const server = http.createServer(async (req, res) => {
 			const command = JSON.parse(body)
 			if (containsModuleCommand(command) && !isTrustedModuleLibraryOrigin(req.headers.origin, activePort))
 				return rejectModuleOrigin(res, req.headers.origin, 'module commands from this Origin are not allowed', { cmd: command.cmd })
-			// smt.* / write.acknowledge 指令由代理本地执行，无需 EDA 在线；acknowledge 为兼容旧客户端保留的 no-op
+			// smt.* / write.acknowledge 由代理本地执行，无需 EDA 在线；未带确认字段时 acknowledge 保持旧版 no-op
 			if (typeof command.cmd === 'string' && (command.cmd.startsWith('smt.') || command.cmd === 'write.acknowledge')) {
 				try {
 					const result = await executeLocalCommand(command)
@@ -1002,26 +1109,43 @@ const server = http.createServer(async (req, res) => {
 			// 0.10.50：写指令单行道——并发的写指令按目标窗口 FIFO 逐个放行（官方导线 create
 			// 并发容量≈2，并发批量 create failed）。读指令不进队列。对调用方透明：并发方式 3
 			// 自动退化为逐条执行，不再失败，代价是吞吐 ~3s/条。
-			const writeLane = isReadOnlyCommand(command.cmd) ? null : acquireWriteLane(routeId)
+			const readOnly = isReadOnlyCommand(command.cmd, command.params)
+			const writeLane = readOnly ? null : acquireWriteLane(routeId)
+			if (!readOnly && !writeLane)
+				return json(res, 503, { ok: false, cmd: command.cmd, error: { message: `目标实例 ${routeId} 当前不在线；写指令未排队、未备份、未发送。请刷新连接列表后重新确认目标。`, code: 'TARGET_OFFLINE', instanceId: routeId, outcome: 'not_started' } })
 			const admittedSocket = writeLane ? connectionFor(routeId)?.ws : null
-			const executeWrite = async () => {
+			const cancelToken = writeLane ? {} : null
+			const onResponseClose = cancelToken ? () => { if (!res.writableEnded) cancelToken.cancelBeforeSend?.() } : null
+			if (onResponseClose)
+				res.once('close', onResponseClose)
+			const executeWrite = async (writeQueue = null, requestControl = null) => {
 				const assertOriginalConnection = () => {
 					if (writeLane && (!admittedSocket || connectionFor(routeId)?.ws !== admittedSocket))
-						throw new Error('UNKNOWN_INSTANCE')
+						throw new Error('BRIDGE_DISCONNECTED')
+				}
+				const assertNotCancelled = () => {
+					if (requestControl?.cancelled)
+						throw new Error('WRITE_CANCELLED_BEFORE_SEND')
 				}
 				assertOriginalConnection()
+				assertNotCancelled()
 				// 破坏性指令执行前自动导出 .epro 备份（官方没有撤销 API，删错不可挽回）
 				let backupFile = null
 				if (DESTRUCTIVE_COMMANDS.has(command.cmd))
-					backupFile = await autoBackupBeforeDestructive(command.cmd, routeId)
+					backupFile = await autoBackupBeforeDestructive(command.cmd, routeId, admittedSocket)
 				assertOriginalConnection()
-				const result = await forwardToExtension(command, routeId)
+				assertNotCancelled()
+				const result = await forwardToExtension(command, routeId, { writeQueue, requestControl, expectedSocket: admittedSocket })
+				if (writeQueue && isExecutionOutcomeUnknown(result))
+					markWriteOutcomeUnknown(writeQueue, result?.error?.cause?.requestId ?? result?.cause?.requestId, result?.error?.cause?.source ?? result?.error?.cause?.code ?? 'HOST_OUTCOME_UNKNOWN')
 				if (backupFile && result && typeof result === 'object' && !Array.isArray(result))
 					result.backup = backupFile
 				return result
 			}
 			executeWrite.cmd = command.cmd // 0.10.51：单行道日志用
-			const result = writeLane ? await writeLane(executeWrite) : await executeWrite()
+			const timeoutMs = COMMAND_TIMEOUT_OVERRIDES[command.cmd] ?? COMMAND_TIMEOUT_MS
+			const result = writeLane ? await writeLane(executeWrite, { timeoutMs, cancelToken }) : await executeWrite()
+			if (onResponseClose) res.removeListener('close', onResponseClose)
 			json(res, 200, result)
 		}
 		else if (req.method === 'GET' && url.pathname === '/smt') {
@@ -1087,6 +1211,8 @@ const server = http.createServer(async (req, res) => {
 		}
 		if (err?.message === 'UNKNOWN_INSTANCE')
 			return json(res, 404, { ok: false, error: '请求携带的 instanceId 不在线（用 GET /connections 查看在线实例；该错误说明指令未发往任何窗口，工程安全）' })
+		if (err?.message === 'BRIDGE_DISCONNECTED')
+			return json(res, 503, { ok: false, error: { message: '原目标连接已断开或被替换；该排队写入未发送到新连接。请刷新 /connections 并只读核对目标状态。', code: 'BRIDGE_DISCONNECTED', outcome: 'not_started' } })
 		json(res, 500, { ok: false, error: String(err?.message ?? err) })
 	}
 })
@@ -1309,7 +1435,16 @@ wss.on('connection', (ws) => {
 			}
 			pending.delete(msg.id)
 			clearTimeout(entry.timer)
-			entry.resolve(msg.result)
+			if (entry.writeQueue) {
+				if (isExecutionOutcomeUnknown(msg.result))
+					markWriteOutcomeUnknown(entry.writeQueue, msg.id, msg.result?.error?.cause?.source ?? 'HOST_OUTCOME_UNKNOWN')
+				else if (entry.timedOut)
+					clearWriteOutcomeUnknown(entry.writeQueue, msg.id, 'late-terminal-result')
+			}
+			if (!entry.responded) {
+				entry.responded = true
+				entry.resolve(msg.result)
+			}
 			tryCompleteStop(entry.instanceId)
 			return
 		}
@@ -1324,7 +1459,7 @@ wss.on('connection', (ws) => {
 		// 批量指令不会因总时长被误杀（单条指令不上报心跳，语义不变）
 		if (msg?.type === 'progress' && msg.id && pending.has(msg.id)) {
 			const entry = pending.get(msg.id)
-			if (entry.owner !== ws)
+			if (entry.owner !== ws || entry.responded)
 				return
 			clearTimeout(entry.timer)
 			entry.received = true
@@ -1343,18 +1478,29 @@ wss.on('connection', (ws) => {
 		const closed = connections.get(ws)
 		laneLog({ event: 'close', instanceId: closed?.instanceId ?? null })
 		connections.delete(ws)
-		writeQueues.delete(ws) // 0.10.50：窗口断开即废弃其写队列（重连后新建）
+		const queue = closed ? writeQueues.get(closed.instanceId) : null
+		if (queue) {
+			// Cancel queued writes. A preparing destructive request has its HTTP cancellation hook;
+			// sent writes are marked unknown below. The lane survives reconnect for this stable instanceId.
+			for (const queued of queue.queued)
+				queued.cancelBeforeSend?.()
+		}
 		for (const [id, entry] of pending) {
 			if (entry.owner !== ws) continue
+			if (entry.writeQueue)
+				markWriteOutcomeUnknown(entry.writeQueue, id, 'BRIDGE_DISCONNECTED')
 			pending.delete(id)
 			clearTimeout(entry.timer)
-			entry.resolve({ ok: false, cmd: entry.cmd, error: {
-				message: '指令等待期间目标连接断开。请在同一工程重连后只读核对原操作。',
+			if (!entry.responded) {
+				entry.responded = true
+				entry.resolve({ ok: false, cmd: entry.cmd, error: {
+				message: '指令等待期间目标连接断开。目标实例的后续写入已暂停；重连后只读核对原操作，确认终态后用原 requestId 恢复。',
 				cause: { code: 'BRIDGE_DISCONNECTED', requestId: id, instanceId: entry.instanceId,
 					stage: entry.received ? 'awaiting-result' : 'receipt-unavailable', outcome: 'unknown', retryable: false },
-			} })
+				} })
+			}
 		}
-		// 新连接会创建新的写队列，不继承旧连接的历史写保护状态。
+		// Reconnected sockets with this instanceId reuse the same lane and its uncertainty marker.
 		if (extensionSocket === ws) {
 			extensionSocket = null
 			extensionInfo = null

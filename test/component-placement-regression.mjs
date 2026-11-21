@@ -53,6 +53,7 @@ function fixture(options = {}) {
 			return options.projectLibraryUuid ?? 'project-library-1';
 		} },
 		lib_Device: {
+			...(options.catalogResults ? { search: async () => options.catalogResults } : {}),
 			getByLcscIds: async (...args) => {
 				lookupCalls.push(args);
 				const item = options.lookupSequence?.[lookupCalls.length - 1] ?? options.lookupResult ?? { uuid: 'device-1', libraryUuid };
@@ -403,7 +404,7 @@ async function main() {
 				],
 				deviceSequence: [deviceWithoutFootprint, deviceWithFootprint],
 			});
-			const without = await mod.placeDeviceSafely(f.api, { lcscId: 'C123', x: 1, y: 2 });
+			const without = await mod.placeDeviceSafely(f.api, { lcscId: 'C123', x: 1, y: 2, addIntoPcb: false });
 			const withFootprint = await mod.placeDeviceSafely(f.api, { lcscId: 'C123', x: 3, y: 4 });
 			assert.equal(without.device.selectedDeviceUuid, deviceWithoutFootprint.uuid, 'first same-C result identity is explicit');
 			assert.equal(without.footprintStatus, 'missing', 'first same-C result remains a placeable symbol with no footprint');
@@ -413,6 +414,31 @@ async function main() {
 			assert.equal(withFootprint.footprintStatus, 'verified', 'second same-C result independently verifies its footprint');
 			assert.equal(withFootprint.footprintVerified, true);
 			assert.equal(withFootprint.pcbReady, true, 'later footprint-bearing selection is not tainted by the earlier result');
+			const mixed = fixture({
+				lookupSequence: [
+					{ uuid: deviceWithoutFootprint.uuid, libraryUuid: deviceWithoutFootprint.libraryUuid },
+					{ uuid: deviceWithFootprint.uuid, libraryUuid: deviceWithFootprint.libraryUuid },
+				],
+				deviceSequence: [deviceWithoutFootprint, deviceWithFootprint],
+			});
+			const selected = await mod.placeDeviceSafely(mixed.api, { lcscId: 'C123', x: 1, y: 2 });
+			assert.equal(selected.device.selectedDeviceUuid, deviceWithFootprint.uuid);
+			assert.equal(selected.pcbReady, true);
+			assert.deepEqual(mixed.lookupCalls[1], [['C123'], undefined, true]);
+			assert.equal(mixed.createCalls, 1);
+
+			const catalog = fixture({
+				lookupResult: { uuid: deviceWithoutFootprint.uuid, libraryUuid: deviceWithoutFootprint.libraryUuid },
+				catalogResults: [
+					{ uuid: 'unrelated', libraryUuid: deviceWithFootprint.libraryUuid, supplierId: 'C1234' },
+					{ uuid: deviceWithFootprint.uuid, libraryUuid: deviceWithFootprint.libraryUuid, supplierId: 'C123' },
+				],
+				deviceSequence: [deviceWithoutFootprint, deviceWithFootprint],
+			});
+			const catalogSelected = await mod.placeDeviceSafely(catalog.api, { lcscId: 'C123', x: 1, y: 2 });
+			assert.equal(catalogSelected.device.selectedDeviceUuid, deviceWithFootprint.uuid);
+			assert.equal(catalogSelected.pcbReady, true);
+			assert.equal(catalog.createCalls, 1);
 		}
 
 		{
@@ -439,6 +465,20 @@ async function main() {
 				return true;
 			});
 			assert.equal(f.createCalls, 0, 'wrong library causes zero create calls');
+		}
+		{
+			const inScope = {
+				uuid: 'device-in-requested-library', libraryUuid, supplierId: 'C123',
+				association: { footprintUuid: libraryFootprintUuid, footprint: { uuid: libraryFootprintUuid, libraryUuid } },
+			};
+			const f = fixture({
+				lookupResult: { uuid: 'device-wrong-library', libraryUuid: 'library-other' },
+				catalogResults: [inScope], device: inScope,
+			});
+			const result = await mod.placeDeviceSafely(f.api, { lcscId: 'C123', libraryUuid, x: 1, y: 2 });
+			assert.equal(result.device.selectedDeviceUuid, inScope.uuid);
+			assert.equal(result.device.selectedLibraryUuid, libraryUuid);
+			assert.equal(result.pcbReady, true);
 		}
 
 		{
