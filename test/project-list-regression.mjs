@@ -90,6 +90,25 @@ async function main() {
 	await assert.rejects(() => open({ projectUuid: 'missing' }), /未调用 openProject/);
 	assert.equal(openCalls, 0, 'missing project is rejected before switching current project');
 	globalThis.eda.dmt_Project.getProjectInfo = originalGetProjectInfo;
+	globalThis.eda.dmt_Project.openProject = async () => { openCalls++; return true; };
+	globalThis.eda.dmt_Project.getCurrentProjectInfo = async () => ({ uuid: 'p-2' });
+	let activeParent = 'p-1';
+	globalThis.eda.dmt_SelectControl = { getCurrentDocumentInfo: async () => ({ uuid: 'shared-page', parentProjectUuid: activeParent }) };
+	await assert.rejects(() => open({ projectUuid: 'p-2' }), error => {
+		assert.equal(error.cause.opened, true);
+		assert.equal(error.cause.activationConfirmed, false);
+		assert.equal(error.cause.activeDocumentProjectUuid, 'p-1');
+		assert.equal(error.cause.partial, true, 'dependent macro steps must stop');
+		return true;
+	});
+	activeParent = 'p-2';
+	assert.equal((await open({ projectUuid: 'p-2' })).activationConfirmed, true);
+	assert.equal(openCalls, 2, 'readback mismatch does not call openProject again');
+	globalThis.eda.dmt_SelectControl.getCurrentDocumentInfo = async () => undefined;
+	assert.equal((await open({ projectUuid: 'p-2' })).activationConfirmed, true, 'a newly opened blank project can have no active document');
+	globalThis.eda.dmt_Project.openProject = async () => { throw new Error('host disconnected after dispatch'); };
+	await assert.rejects(() => open({ projectUuid: 'p-2' }), error =>
+		error.cause?.outcome === 'unknown' && error.cause?.partial === true && error.cause?.phase === 'project.open.outcomeUnknown');
 
 	const importFile = projectCommands.find(command => command.name === 'project.importFile').handler;
 	await assert.rejects(() => importFile({ fileName: 'bad.epro2', base64: '@' }), /base64 不是有效的文件内容编码/);

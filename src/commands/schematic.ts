@@ -67,6 +67,17 @@ function describeBomFile(result: { base64: string }, fileType: 'xlsx' | 'csv') {
 	}
 }
 
+async function readAssemblyVariants() {
+	if (typeof eda.sch_ManufactureData.getAssemblyVariantsConfigs !== 'function')
+		throw new Error('当前宿主没有提供装配变体列表，请通过 EDA 原生装配变体入口导出')
+	const variants = await eda.sch_ManufactureData.getAssemblyVariantsConfigs()
+	if (!Array.isArray(variants) || variants.some(variant =>
+		typeof variant?.text !== 'string' || !variant.text.trim()
+		|| typeof variant.value !== 'string' || !variant.value.trim()))
+		throw new Error('宿主未返回可核对的装配变体列表')
+	return variants.map(({ text, value }) => ({ text, value }))
+}
+
 /** 防御性读取图元状态方法（不同图元类型支持的方法不同） */
 function safeState<T>(obj: any, method: string): T | undefined {
 	try {
@@ -599,6 +610,15 @@ function segmentsIntersectOrTouch(a: [number, number, number, number], b: [numbe
 		|| Math.abs(o2) < 1e-8 && on(b[2], b[3], a)
 		|| Math.abs(o3) < 1e-8 && on(a[0], a[1], b)
 		|| Math.abs(o4) < 1e-8 && on(a[2], a[3], b)
+}
+
+function segmentsShareEndpointOrOverlap(a: [number, number, number, number], b: [number, number, number, number]): boolean {
+	const on = (x: number, y: number, line: [number, number, number, number]) =>
+		Math.abs((line[2] - line[0]) * (y - line[1]) - (line[3] - line[1]) * (x - line[0])) < 1e-8
+		&& x >= Math.min(line[0], line[2]) - 1e-8 && x <= Math.max(line[0], line[2]) + 1e-8
+		&& y >= Math.min(line[1], line[3]) - 1e-8 && y <= Math.max(line[1], line[3]) + 1e-8
+	const endpoints = [[a[0], a[1]], [a[2], a[3]], [b[0], b[1]], [b[2], b[3]]]
+	return endpoints.some(([x, y]) => on(x, y, a) && on(x, y, b))
 }
 
 /** 查询某个坐标点已被哪些网络的导线占用（点在导线任意段上即算占用；无名导线记为 "(无名)"） */
@@ -2313,7 +2333,7 @@ export const schematicCommands: Array<ICommandDef> = [
 	},
 	{
 		name: 'schematic.placeDevice',
-		summary: '按立创编号或库内器件 UUID 在原理图放置器件；返回放置本身、封装核验和器件库身份的独立状态，不自动替换缺封装器件',
+		summary: '按立创编号或库内器件 UUID 在原理图放置器件；转 PCB 时优先选同料号已核到封装的库件，显式指定器件 UUID 时按原引用放置',
 		params: [
 			{ name: 'lcscId', type: 'string', description: '立创编号，如 C25804（与 deviceUuid 二选一）；可选 libraryUuid 限定查询库，未传时沿用 SDK 默认查询范围' },
 			{ name: 'deviceUuid', type: 'string', description: '器件 UUID（需同时给 libraryUuid）' },
@@ -2671,7 +2691,12 @@ export const schematicCommands: Array<ICommandDef> = [
 				}
 				return combined
 			}
-			const sourceLineToSdk = (line: Array<number>) => line.map((value, index) => index % 2 === 1 ? -value : value)
+			// The host serializes some orthogonal junction endpoints as binary floats
+			// (for example 429.99999999999994 beside 430). Canonicalize only at
+			// sub-nanounit precision for readback comparisons; source records remain
+			// untouched and all electrical/path checks still compare full geometry.
+			const normalizeGeometryCoordinate = (value: number) => Math.round(value * 1e9) / 1e9
+			const sourceLineToSdk = (line: Array<number>) => line.map((value, index) => normalizeGeometryCoordinate(index % 2 === 1 ? -value : value))
 			const wireCovers = (wire: any, segment: Array<number>) =>
 				pathCovered(segment, wire?.sourcePaths ?? [])
 			const wireContributes = (wire: any, segment: Array<number>) => {
@@ -2846,16 +2871,20 @@ export const schematicCommands: Array<ICommandDef> = [
 					if (sourceLineGeometry.some((line: any) => !line))
 						throw new Error(`WIRE ${id} 的 LINE 源几何缺少有限坐标`)
 					const sourcePaths = sourceLineGeometry as Array<Array<number>>
-					const optionalWireLines = data.line == null ? [] : lineGeometryCandidates(data.line).map(paths => paths.map(sourceLineToSdk))
+					const canonicalPaths = (paths: Array<Array<number>>) => paths.map(path => path.map(normalizeGeometryCoordinate))
+					const optionalWireLines = data.line == null ? [] : lineGeometryCandidates(data.line).map(paths => canonicalPaths(paths.map(sourceLineToSdk)))
 					if (data.line != null && !optionalWireLines.length)
 						throw new Error(`WIRE ${id} 的可选 line 字段格式非法`)
-					const getterCandidates = lineGeometryCandidates(model.rawLine, sourcePaths)
+					const rawGetterLine = Array.isArray(model.rawLine?.[0])
+						? model.rawLine.map((line: number[]) => line.map(normalizeGeometryCoordinate))
+						: Array.isArray(model.rawLine) ? model.rawLine.map(normalizeGeometryCoordinate) : model.rawLine
+					const getterCandidates = lineGeometryCandidates(rawGetterLine, sourcePaths).map(canonicalPaths)
 					const matchingGetter = getterCandidates.filter(candidate => geometryPathsPreserved(sourcePaths, candidate) && geometryPathsPreserved(candidate, sourcePaths))
 					const geometryKey = (paths: Array<Array<number>>) => paths.flatMap(path => lineSegments(path).map(segmentKey)).sort().join('|')
 					const uniqueGetterMatches = [...new Map(matchingGetter.map(candidate => [geometryKey(candidate), candidate])).values()]
 					const matchingWireLine = optionalWireLines.filter(candidate => geometryPathsPreserved(sourcePaths, candidate) && geometryPathsPreserved(candidate, sourcePaths))
 					if (!uniqueGetterMatches.length || (data.line != null && !matchingWireLine.length))
-						throw new Error(`WIRE ${id} 的 LINE 源几何与 SDK getter 几何不一致`)
+						throw new Error(`WIRE ${id} 的 LINE 源几何与 SDK getter 几何不一致（源段=${sourcePaths.length}, getter候选=${getterCandidates.length}, 匹配=${uniqueGetterMatches.length}）`)
 					// LINE records define canonical persisted geometry. SDK getter interpretations
 					// are accepted when any complete candidate covers the same geometry both ways;
 					// candidate segmentation may differ while representing the same covered path.
@@ -2918,7 +2947,8 @@ export const schematicCommands: Array<ICommandDef> = [
 					named: didName,
 					...(net ? { net } : {}),
 				}
-				throw new Error('schematic.drawWire 部分写入或结果未知', { cause: { partial: true, retryable: false, result } })
+				const uncertainWrite = stateName === 'unknown' && writeAttempted
+				throw new Error('schematic.drawWire 部分写入或结果未知', { cause: { partial: true, ...(uncertainWrite ? { outcome: 'unknown' } : { outcome: 'partial' }), retryable: false, result } })
 			}
 			const capturePostWrite = async (segmentIndex: number, before: any, segment: Array<number>, segmentWasNamed: boolean, segmentIndexZero: number) => {
 				const samplingDeadline = operationDeadline
@@ -3053,7 +3083,7 @@ export const schematicCommands: Array<ICommandDef> = [
 				for (const record of before.records ?? []) {
 					if (record.header.type !== 'LINE' || String(record.data?.lineGroup ?? '') === wireId) continue
 					const otherLine = sourceLineToSdk([record.data.startX, record.data.startY, record.data.endX, record.data.endY]) as [number, number, number, number]
-					if (segmentsIntersectOrTouch([x1, y1, x2, y2] as [number, number, number, number], otherLine)) return false
+					if (segmentsTouch([x1, y1, x2, y2], otherLine)) return false
 				}
 				const expectedGeometry = [[ox1, oy1, x1, y1], [x1, y1, ox2, oy2], [x1, y1, x2, y2]].map(segmentKey).sort()
 				const actualGeometry = nextLines.map((record: any) => {
@@ -3187,7 +3217,7 @@ export const schematicCommands: Array<ICommandDef> = [
 						for (const line of oldLines) {
 							if (String(line.data?.lineGroup ?? '') === wireId && line === horizontal) continue
 							const geometry = sourceLineToSdk([line.data.startX, line.data.startY, line.data.endX, line.data.endY]) as [number, number, number, number]
-							if (segmentsIntersectOrTouch([x1, y1, x2, y2], geometry)) return false
+							if (segmentsTouch([x1, y1, x2, y2], geometry)) return false
 						}
 						const unchangedTargetLine = beforeTargetLines.find((record: any) => record !== horizontal)
 						if (!unchangedTargetLine) return false
@@ -3233,11 +3263,96 @@ export const schematicCommands: Array<ICommandDef> = [
 						return true
 					}
 					if (knownNamedTBranch()) return
+					let namedBusTRejectReason = 'not-evaluated'
+					const knownUnnamedBranchIntoNamedBus = (): boolean => {
+						const reject = (reason: string) => { namedBusTRejectReason = reason; return false }
+						if (segmentWasNamed || requested.length !== 1 || requested[0].length !== 4
+							|| plain([...before.wires.keys()].sort()) !== plain([...after.wires.keys()].sort())) return reject('segment/identity')
+						const [bx1, by1, bx2, by2] = requested[0]
+						if (!((bx1 === bx2) !== (by1 === by2))) return reject('request not axis-aligned')
+						const oldLines = (before.records ?? []).filter((record: any) => record.header.type === 'LINE')
+						const candidates = [...before.wires.entries()].filter(([wireId, wire]: [string, any]) => {
+							if (!wire.net || wire.color === undefined || wire.lineWidth === undefined || wire.lineType === undefined
+								|| !wire.styleRead?.color?.ok || !wire.styleRead?.lineWidth?.ok || !wire.styleRead?.lineType?.ok) return false
+							const lines = oldLines.filter((record: any) => String(record.data?.lineGroup ?? '') === wireId)
+							if (lines.length !== 1) return false
+							const [x1, y1, x2, y2] = sourceLineToSdk([lines[0].data.startX, lines[0].data.startY, lines[0].data.endX, lines[0].data.endY])
+							const isHorizontalBus = y1 === y2 && bx1 === bx2 && by1 !== by2
+							const isVerticalBus = x1 === x2 && by1 === by2 && bx1 !== bx2
+							if (!isHorizontalBus && !isVerticalBus) return false
+							const junction = isHorizontalBus
+								? [bx1, y1] as [number, number]
+								: [x1, by1] as [number, number]
+							const pointOnBranchEnd = (x: number, y: number) => x === junction[0] && y === junction[1]
+							const endpointJunction = pointOnBranchEnd(bx1, by1) || pointOnBranchEnd(bx2, by2)
+							const interior = isHorizontalBus
+								? junction[0] > Math.min(x1, x2) && junction[0] < Math.max(x1, x2)
+								: junction[1] > Math.min(y1, y2) && junction[1] < Math.max(y1, y2)
+							return endpointJunction && interior
+						})
+						if (candidates.length !== 1) return reject(`bus candidate count=${candidates.length}`)
+						const [[wireId, oldWire]] = candidates as Array<[string, any]>
+						const nextWire = after.wires.get(wireId)
+						if (!nextWire || nextWire.net !== oldWire.net || nextWire.color !== oldWire.color || nextWire.lineWidth !== oldWire.lineWidth || nextWire.lineType !== oldWire.lineType
+							|| plain(oldWire.sourceWireAttributes) !== plain(nextWire.sourceWireAttributes)) return reject('wire identity/net/style changed')
+						const oldTargetLines = oldLines.filter((record: any) => String(record.data?.lineGroup ?? '') === wireId)
+						const nextTargetLines = (after.records ?? []).filter((record: any) => record.header.type === 'LINE' && String(record.data?.lineGroup ?? '') === wireId)
+						if (oldTargetLines.length !== 1 || nextTargetLines.length !== 3) return reject(`line count old=${oldTargetLines.length}, new=${nextTargetLines.length}`)
+						const [oldX1, oldY1, oldX2, oldY2] = sourceLineToSdk([oldTargetLines[0].data.startX, oldTargetLines[0].data.startY, oldTargetLines[0].data.endX, oldTargetLines[0].data.endY])
+						const [rx1, ry1, rx2, ry2] = requested[0]
+						const junction = oldY1 === oldY2 ? [rx1, oldY1] : [oldX1, ry1]
+						const expected = oldY1 === oldY2
+							? [[oldX1, oldY1, junction[0], junction[1]], [junction[0], junction[1], oldX2, oldY2], [rx1, ry1, rx2, ry2]]
+							: [[oldX1, oldY1, junction[0], junction[1]], [junction[0], junction[1], oldX2, oldY2], [rx1, ry1, rx2, ry2]]
+						const actual = nextTargetLines.map((record: any) => {
+							const data = record.data ?? {}
+							if (!['fillColor', 'fillStyle', 'strokeColor', 'strokeStyle', 'strokeWidth'].every(key => Object.hasOwn(data, key) && data[key] === oldTargetLines[0].data[key])) return undefined
+							return segmentKey(sourceLineToSdk([data.startX, data.startY, data.endX, data.endY]))
+						}).sort()
+						if (actual.some((item: any) => item === undefined) || plain(actual) !== plain(expected.map(segmentKey).sort())) return reject(`target geometry/style mismatch actual=${plain(actual)} expected=${plain(expected.map(segmentKey).sort())}`)
+						const retained = nextTargetLines.filter((record: any) => String(record.header.id) === String(oldTargetLines[0].header.id))
+						if (retained.length !== 1) return reject(`retained old LINE count=${retained.length}`)
+						const oldAttrs = (before.records ?? []).filter((record: any) => record.header.type === 'ATTR' && String(record.data?.parentId ?? '') === wireId)
+						const nextAttrs = (after.records ?? []).filter((record: any) => record.header.type === 'ATTR' && String(record.data?.parentId ?? '') === wireId)
+						if (oldAttrs.length !== 2 || nextAttrs.length !== 2) return reject(`ATTR count old=${oldAttrs.length}, new=${nextAttrs.length}`)
+						for (const oldAttr of oldAttrs) {
+							const current = nextAttrs.find((record: any) => String(record.header.id) === String(oldAttr.header.id))
+							if (!current || plain(comparableHeader(oldAttr.header)) !== plain(comparableHeader(current.header))) return reject('ATTR identity changed')
+							const oldData = { ...oldAttr.data }, currentData = { ...current.data }
+							delete oldData.zIndex; delete currentData.zIndex
+							if (plain(oldData) !== plain(currentData)) return reject('ATTR field other than zIndex changed')
+							if (oldAttr.data?.zIndex !== current.data?.zIndex)
+								changes.push({ id: String(oldAttr.header.id), before: oldAttr.data?.zIndex, after: current.data?.zIndex, wireId })
+						}
+						const oldWireRecord = oldRecords.get(`WIRE\u0000${wireId}`), nextWireRecord = newRecords.get(`WIRE\u0000${wireId}`)
+						if (!oldWireRecord || !nextWireRecord || plain(comparableHeader(oldWireRecord.header)) !== plain(comparableHeader(nextWireRecord.header))) return reject('WIRE source identity changed')
+						const oldWireData = { ...oldWireRecord.data }, nextWireData = { ...nextWireRecord.data }
+						delete oldWireData.zIndex; delete nextWireData.zIndex
+						if (plain(oldWireData) !== plain(nextWireData)) return reject('WIRE field other than zIndex changed')
+						if (oldWireRecord.data?.zIndex !== nextWireRecord.data?.zIndex)
+							changes.push({ id: String(oldWireRecord.header.id), before: oldWireRecord.data?.zIndex, after: nextWireRecord.data?.zIndex, wireId })
+						const allowed = new Set([recordKey(oldWireRecord), ...oldTargetLines.map(recordKey), ...oldAttrs.map(recordKey)])
+						for (const [key, record] of oldRecords) {
+							if (record.header.type === 'DOCHEAD' || allowed.has(key)) continue
+							const current = newRecords.get(key)
+							if (!current || plain(comparableHeader(record.header)) !== plain(comparableHeader(current.header)) || plain(record.data) !== plain(current.data)) return reject(`non-target changed ${key}`)
+						}
+						for (const record of after.records ?? []) {
+							const key = recordKey(record)
+							if (record.header.type === 'DOCHEAD' || oldRecords.has(key)) continue
+							if (record.header.type !== 'LINE' || String(record.data?.lineGroup ?? '') !== wireId) return reject(`unexpected new record ${key}`)
+						}
+						const oldNet = oldAttrs.find((record: any) => ['NET', 'Name'].includes(String(record.data?.key)))
+						if (!oldNet || String(oldNet.data?.value ?? '') !== oldWire.net) return reject('existing net attr does not match getter')
+						namedBusTRejectReason = 'accepted'
+						return true
+					}
+					if (knownUnnamedBranchIntoNamedBus()) return
 					for (const record of oldRecords.values()) {
 						if (record.header.type !== 'ATTR') continue
 						const current = newRecords.get(recordKey(record))
 						if (current && plain(record.data?.zIndex) !== plain(current.data?.zIndex))
-							throw new Error(`ATTR ${record.header.id} 的 zIndex 变化没有对应的简单新增 LINE`)
+							throw new Error(`ATTR ${record.header.id} 的 zIndex 变化没有对应的简单新增 LINE（具名母线T接分类=${namedBusTRejectReason}）`)
 					}
 					return
 				}
@@ -3316,10 +3431,14 @@ export const schematicCommands: Array<ICommandDef> = [
 						const expectedStrokeStyle = wire?.styleRead?.lineType?.ok
 							? wire.lineType === null ? null : ({ 0: 'SOLID', 1: 'SHORT_DASH', 2: 'DOT' } as Record<number, string>)[wire.lineType]
 							: undefined
-						if (!wire || !line || !requestedGeometry.some(segment => geometryPreserved(line.sdkLine, [segment]))
+						const contributes = !!wire && wireContributes(wire, currentSegment)
+						const geometryMatches = !!line && requestedGeometry.some(segment => geometryPreserved(line.sdkLine, [segment]))
+						const styleMatches = !!wire && !!line && wire.styleRead?.color?.ok && wire.styleRead?.lineWidth?.ok && wire.styleRead?.lineType?.ok
+							&& line.strokeColor === wire.color && line.strokeWidth === wire.lineWidth && line.strokeStyle === expectedStrokeStyle
+						if (!wire || !line || !contributes || !geometryMatches
 							|| !wire.styleRead?.color?.ok || !wire.styleRead?.lineWidth?.ok || !wire.styleRead?.lineType?.ok
-							|| line.strokeColor !== wire.color || line.strokeWidth !== wire.lineWidth || line.strokeStyle !== expectedStrokeStyle)
-							throw new Error(`新增 LINE ${lineId} 的请求几何、归属或样式未与保留 WIRE 一致`)
+							|| !styleMatches)
+							throw new Error(`新增 LINE ${lineId} 的请求几何、归属或样式未与保留 WIRE 一致（wire=${Boolean(wire)}, contributes=${contributes}, geometry=${geometryMatches}, style=${styleMatches}）`)
 						continue
 					}
 					if (record.header.type === 'ATTR') {
@@ -3487,6 +3606,28 @@ export const schematicCommands: Array<ICommandDef> = [
 					throw error
 				}
 				if (i === 0) initialWriteSnapshot = before
+				if (i === 0) {
+					const contacts: Array<{ wireId: string, net: string }> = []
+					for (const requested of segments) {
+						for (const [wireId, wire] of before.wires.entries() as Iterable<[string, any]>) {
+							const knownNames = new Set<string>([
+								...(typeof wire.net === 'string' && wire.net.trim() ? [wire.net.trim()] : []),
+								...(wire.sourceNets ?? []).map((attr: any) => String(attr?.value ?? '').trim()).filter((value: string) => value),
+							])
+							if (!knownNames.size) continue
+							const touches = (wire.sourcePaths ?? []).some((path: Array<number>) => lineSegments(path).some((existing: Array<number>) => segmentsTouch(requested, existing)))
+							if (touches)
+								for (const existingNet of knownNames) contacts.push({ wireId, net: existingNet })
+						}
+					}
+					const conflicts = net
+						? contacts.filter(item => item.net !== net)
+						: [...new Set(contacts.map(item => item.net))].length > 1 ? contacts : []
+					if (conflicts.length) {
+						const unique = [...new Map(conflicts.map(item => [`${item.wireId}\u0000${item.net}`, item])).values()]
+						throw new Error(`drawWire${net ? ` 请求网络 ${net}` : ''} 将在端点/T接/共线路径处接触不同网络：${unique.map(item => `${item.wireId}=${item.net}`).join('、')}；纯内部十字不按电气接触处理。未写入，请调整路径或先确认网络归属`)
+					}
+				}
 				currentState = before
 				lastVerifiedPhase = i === 0 ? 'pre-write' : 'post-write'
 				lastVerifiedSegment = i || lastVerifiedSegment
@@ -4035,7 +4176,7 @@ export const schematicCommands: Array<ICommandDef> = [
 	},
 	{
 		name: 'schematic.dedupeWireNets',
-		summary: '清理导线重复网络名：识别NET/Name同名属性，冲突拒绝；按原导线整体带名重建并按返回ID立即读回验证',
+		summary: '保守清理同一简单、无分支且不接触其他导线的单一路径上的重复NET/Name标签；写前核对完整网表和标签归属，重建后核对几何、样式、标签外观、非目标源码及逐脚网表。分支/T接、合并或证据不完整时零写入并保留原标签，转人工在EDA处理',
 		params: [],
 		returns: '{ dupWires, rebuilt: 成功重建的原导线数, renamed: 独立modify次数(始终为0), skippedDiagonal, failed? }',
 		example: { cmd: 'schematic.dedupeWireNets' },
@@ -4048,6 +4189,8 @@ export const schematicCommands: Array<ICommandDef> = [
 			const parsedBefore = parseSourceLog(sourceBeforeText)
 			if (parsedBefore.uuid !== startingDoc.uuid || parsedBefore.docType !== 'SCH_PAGE') throw new Error('源码身份与焦点原理图不一致，未执行去重')
 			const sourceLinesByWire = new Map<string, Array<any>>()
+			const sourceAttrsByWire = new Map<string, Array<any>>()
+			const sourceRecords = [...resolveRecords(parsedBefore).values()]
 			for (const record of resolveRecords(parsedBefore, 'LINE').values()) {
 				const data = record.data as Record<string, unknown>
 				if (data?.lineGroup == null) continue
@@ -4055,9 +4198,15 @@ export const schematicCommands: Array<ICommandDef> = [
 				if (!sourceLinesByWire.has(id)) sourceLinesByWire.set(id, [])
 				sourceLinesByWire.get(id)!.push(record)
 			}
+			for (const record of resolveRecords(parsedBefore, 'ATTR').values()) {
+				const data = record.data as Record<string, unknown>
+				if (typeof data?.parentId !== 'string') continue
+				if (!sourceAttrsByWire.has(data.parentId)) sourceAttrsByWire.set(data.parentId, [])
+				sourceAttrsByWire.get(data.parentId)!.push(record)
+			}
 			const wires = await eda.sch_PrimitiveWire.getAll()
 			// 1. 找出 NET 属性重复的导线（每根导线正常只应有 1 个 NET 属性）
-			const dup: Array<{ id: string, net: string, line: Array<number> }> = []
+			const dup: Array<{ id: string, net: string, line: Array<number>, attrCount: number }> = []
 			const formatValues = (values: unknown[]) => {
 				try { return JSON.stringify(values) ?? String(values) }
 				catch { return `[无法序列化的${values.length}个值]` }
@@ -4109,20 +4258,100 @@ export const schematicCommands: Array<ICommandDef> = [
 						id,
 						net: values[0] as string,
 						line: line as Array<number>,
+						attrCount: netAttrs.length,
 					})
 				}
 			}
 			if (!dup.length)
 				return { dupWires: 0, rebuilt: 0, renamed: 0, skippedDiagonal: 0 }
+			const netlistBefore = await pinNetMapRobust()
+			if (!netlistBefore)
+				throw new Error('去重需要先读到完整原理图网表以保护位号.脚号归属；当前网表不可用，未改图')
+			const sortedNetlist = (items: Map<string, string>) => JSON.stringify([...items.entries()].sort(([a], [b]) => a.localeCompare(b)))
+			const sourcePointKey = (x: number, y: number) => `${Math.round(x * 1e9) / 1e9},${Math.round(y * 1e9) / 1e9}`
+			const attrAppearance = (data: Record<string, unknown>) => {
+				const copy = { ...data }
+				for (const key of ['id', 'parentId', 'key', 'zIndex']) delete copy[key]
+				return JSON.stringify(Object.fromEntries(Object.entries(copy).sort(([a], [b]) => a.localeCompare(b))))
+			}
+			const stableValue = (value: any): string => {
+				if (Array.isArray(value)) return `[${value.map(stableValue).join(',')}]`
+				if (value && typeof value === 'object') return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableValue(value[key])}`).join(',')}}`
+				return JSON.stringify(value) ?? String(value)
+			}
+			const comparableRecordHeader = (header: any) => { const { ticket: _ticket, ...rest } = header ?? {}; return rest }
 			// 2. 每条原导线单独保留一组正交线段；跳过非水平/垂直的 T 形分支编码伪段。
 			let skippedDiagonal = 0
-			const rebuilds: Array<{ id: string, net: string, segs: Array<{ line: Array<number>, color: unknown, width: unknown, strokeStyle: unknown }> }> = []
+			const rebuilds: Array<{ id: string, net: string, tagAppearance: string, relevanceAppearance: string, segs: Array<{ line: Array<number>, color: unknown, width: unknown, strokeStyle: unknown }> }> = []
 			for (const w of dup) {
 				const norm = new Set<string>()
 				const segs: Array<{ line: Array<number>, color: unknown, width: unknown, strokeStyle: unknown }> = []
 				let wireSegmentCount = 0
 				const sourceLines = sourceLinesByWire.get(w.id) ?? []
 				if (!sourceLines.length) throw new Error(`候选导线 ${w.id} 在源码中没有真实 LINE 段，未执行去重`)
+				if (sourceLines.length < 1 || sourceLines.length > 12)
+					throw new Error(`候选导线 ${w.id} 有 ${sourceLines.length} 个原生 LINE 段；超出可保守重建范围，原线与标签保留，请先用 EDA 界面或按端点重画处理`)
+				const sourceWire = sourceRecords.find(record => record.header.type === 'WIRE' && String(record.header.id) === w.id)
+				const sourceWireData = sourceWire?.data as Record<string, unknown> | undefined
+				if (!sourceWireData || Object.keys(sourceWireData).some(key => !['zIndex', 'line'].includes(key)))
+					throw new Error(`候选导线 ${w.id} 含未识别的 WIRE 属性；自动重建可能丢失对象属性，原线保留`)
+				const sourceAttrs = sourceAttrsByWire.get(w.id) ?? []
+				const sourceNetAttrs = sourceAttrs.filter(record => /^(NET|Name)$/i.test(String((record.data as any)?.key ?? '')))
+				const sourceRelevance = sourceAttrs.filter(record => String((record.data as any)?.key ?? '') === 'Relevance')
+				if (sourceNetAttrs.length !== w.attrCount || sourceRelevance.length !== 1 || sourceAttrs.length !== sourceNetAttrs.length + 1
+					|| sourceRelevance[0]?.data?.value !== '[]')
+					throw new Error(`候选导线 ${w.id} 的源码 NET/Name/Relevance 归属与属性接口不一致，或带有其他属性；原线保留，不能安全重建`)
+				if (sourceNetAttrs.some(record => String((record.data as any)?.value ?? '') !== w.net))
+					throw new Error(`候选导线 ${w.id} 的源码标签与目标网名 ${w.net} 不一致，原线保留`)
+				const appearances = sourceNetAttrs.map(record => attrAppearance(record.data as Record<string, unknown>))
+				if (!appearances.length || appearances.some(value => value !== appearances[0]))
+					throw new Error(`候选导线 ${w.id} 的重复标签显示属性或位置不同；自动重建会改动标签归属/位置，原线保留，请人工选择要保留的标签`)
+				const vertices = new Map<string, number>()
+				const edgeKeys = new Set<string>()
+				const sourceSegments: Array<[number, number, number, number]> = []
+				for (const record of sourceLines) {
+					const data = record.data as Record<string, unknown>
+					const coordinates = [data.startX, data.startY, data.endX, data.endY]
+					if (!coordinates.every(value => typeof value === 'number' && Number.isFinite(value)))
+						throw new Error(`候选导线 ${w.id} 的 LINE 端点不可信，原线保留`)
+					const [x1, y1, x2, y2] = coordinates as [number, number, number, number]
+					if (x1 === x2 && y1 === y2)
+						throw new Error(`候选导线 ${w.id} 含零长度 LINE；保留现有图元，避免去重改变原生几何`)
+					const a = sourcePointKey(x1, y1), b = sourcePointKey(x2, y2)
+					const edge = [a, b].sort().join('|')
+					if (edgeKeys.has(edge))
+						throw new Error(`候选导线 ${w.id} 含重复 LINE 段，不能证明重建拓扑保真，原线保留`)
+					edgeKeys.add(edge)
+					vertices.set(a, (vertices.get(a) ?? 0) + 1)
+					vertices.set(b, (vertices.get(b) ?? 0) + 1)
+					sourceSegments.push([x1, y1, x2, y2])
+				}
+				if ([...vertices.values()].some(degree => degree > 2) || [...vertices.values()].filter(degree => degree === 1).length !== 2)
+					throw new Error(`候选导线 ${w.id}（标签=${sourceNetAttrs.map(record => String(record.header.id)).join(',')}）不是单一路径（存在 T 接、分支或闭环）；原父线与标签均保留。请在 EDA 界面核对标签归属后人工处理，勿重试整线重建`)
+				const reached = new Set<string>()
+				const queue = [vertices.keys().next().value as string]
+				while (queue.length) {
+					const point = queue.pop()!
+					if (reached.has(point)) continue
+					reached.add(point)
+					for (const segment of sourceSegments) {
+						const a = sourcePointKey(segment[0], segment[1]), b = sourcePointKey(segment[2], segment[3])
+						if (a === point && !reached.has(b)) queue.push(b)
+						if (b === point && !reached.has(a)) queue.push(a)
+					}
+				}
+				if (reached.size !== vertices.size)
+					throw new Error(`候选导线 ${w.id} 包含互不连接的 LINE 组；自动重建可能跨接，原线保留`)
+				for (const [otherWireId, otherLines] of sourceLinesByWire) {
+					if (otherWireId === w.id) continue
+					for (const record of otherLines) {
+						const data = record.data as Record<string, unknown>
+						const other = [data.startX, data.startY, data.endX, data.endY]
+						if (other.every(value => typeof value === 'number' && Number.isFinite(value))
+							&& sourceSegments.some(segment => segmentsShareEndpointOrOverlap(segment, other as [number, number, number, number])))
+							throw new Error(`候选导线 ${w.id}（标签=${sourceNetAttrs.map(record => String(record.header.id)).join(',')}）与其他导线 ${otherWireId} 在几何上接触或相交；属于合并/外部连接范围，原线和标签保留。请在 EDA 界面核对两侧网络后人工处理`)
+					}
+				}
 				for (const record of sourceLines) {
 					const data = record.data as Record<string, unknown>
 					const [x1, sy1, x2, sy2] = [data.startX, data.startY, data.endX, data.endY]
@@ -4154,7 +4383,8 @@ export const schematicCommands: Array<ICommandDef> = [
 				const firstStyle = segs[0]
 				if (segs.some(segment => segment.color !== firstStyle.color || segment.width !== firstStyle.width || segment.strokeStyle !== firstStyle.strokeStyle))
 					throw new Error(`候选导线 ${w.id} 含混合颜色/线宽/线型；官方单次 create 无法证明逐段保真，未执行去重`)
-				rebuilds.push({ id: w.id, net: w.net, segs })
+			const relevanceData = sourceRelevance[0].data as Record<string, unknown>
+			rebuilds.push({ id: w.id, net: w.net, tagAppearance: appearances[0], relevanceAppearance: attrAppearance(relevanceData), segs })
 			}
 			const focusedAgain = await eda.dmt_SelectControl.getCurrentDocumentInfo()
 			if (focusedAgain?.uuid !== startingDoc.uuid || focusedAgain?.documentType !== 1)
@@ -4164,7 +4394,8 @@ export const schematicCommands: Array<ICommandDef> = [
 				throw new Error('快照与候选导线所属的原理图页不一致，原图未改动')
 			let rebuilt = 0
 			const renamed = 0
-			await withDocumentRecovery(snapshot, async (write) => {
+			const createdWireIds = new Set<string>()
+			try { await withDocumentRecovery(snapshot, async (write) => {
 				// 删除整组旧线；失败统一恢复完整原文，绝不按新 ID 逐个回滚。
 				if (await write(() => eda.sch_PrimitiveWire.delete(dup.map(w => w.id))) !== true)
 					throw new Error('删除重复属性导线返回 false')
@@ -4178,6 +4409,7 @@ export const schematicCommands: Array<ICommandDef> = [
 					const id = created.getState_PrimitiveId?.()
 					if (typeof id !== 'string' || !id) throw new Error(`原导线 ${original.id} 重建未返回有效ID`)
 					ids.add(id)
+					createdWireIds.add(id)
 					await assertSnapshotFocused(snapshot)
 					const sourceAfterText = await eda.sys_FileManager.getDocumentSource()
 					if (typeof sourceAfterText !== 'string' || !sourceAfterText.trim()) throw new Error(`原导线 ${original.id} 重建后源码读回失败`)
@@ -4194,6 +4426,14 @@ export const schematicCommands: Array<ICommandDef> = [
 								&& data.strokeColor === segment.color && data.strokeWidth === segment.width && data.strokeStyle === segment.strokeStyle
 						})
 						if (!exact) throw new Error(`原导线 ${original.id} 的线段几何或颜色/线宽/线型未完整读回`)
+					const createdAttrs = [...resolveRecords(sourceAfter, 'ATTR').values()].filter(record => (record.data as Record<string, unknown>)?.parentId === id)
+					const createdNetAttrs = createdAttrs.filter(record => /^(NET|Name)$/i.test(String((record.data as any)?.key ?? '')))
+					const createdRelevance = createdAttrs.filter(record => String((record.data as any)?.key ?? '') === 'Relevance')
+					if (createdNetAttrs.length !== 1 || String((createdNetAttrs[0]?.data as any)?.value ?? '') !== original.net
+						|| attrAppearance(createdNetAttrs[0].data as Record<string, unknown>) !== original.tagAppearance
+						|| createdRelevance.length !== 1 || (createdRelevance[0].data as any)?.value !== '[]'
+						|| attrAppearance(createdRelevance[0].data as Record<string, unknown>) !== original.relevanceAppearance)
+						throw new Error(`原导线 ${original.id} 重建后的唯一网络标签位置/显示属性或 Relevance 未保真读回`)
 					}
 					for (const id of ids) {
 						await assertSnapshotFocused(snapshot)
@@ -4224,7 +4464,38 @@ export const schematicCommands: Array<ICommandDef> = [
 					}
 					rebuilt += 1
 				}
-			})
+				await assertSnapshotFocused(snapshot)
+				const finalSourceText = await eda.sys_FileManager.getDocumentSource()
+				if (typeof finalSourceText !== 'string' || !finalSourceText.trim()) throw new Error('去重后完整源码读回失败')
+				const finalSource = parseSourceLog(finalSourceText)
+				if (finalSource.uuid !== snapshot.documentUuid) throw new Error('去重后完整源码页身份与快照不一致')
+				const initialRecords = new Map([...resolveRecords(parseSourceLog(snapshot.source)).values()].map(record => [`${record.header.type}\u0000${String(record.header.id ?? '')}`, record]))
+				const finalRecords = new Map([...resolveRecords(finalSource).values()].map(record => [`${record.header.type}\u0000${String(record.header.id ?? '')}`, record]))
+				const oldWireIds = new Set(dup.map(item => item.id))
+				const isOldTargetRecord = (record: any) => oldWireIds.has(String(record.header.id ?? ''))
+					|| ['LINE', 'ATTR'].includes(record.header.type) && oldWireIds.has(String(record.data?.lineGroup ?? record.data?.parentId ?? ''))
+				for (const [key, record] of initialRecords) {
+					if (record.header.type === 'DOCHEAD' || isOldTargetRecord(record)) continue
+					const current = finalRecords.get(key)
+					if (!current || stableValue(comparableRecordHeader(record.header)) !== stableValue(comparableRecordHeader(current.header)) || stableValue(record.data) !== stableValue(current.data))
+						throw new Error(`去重造成非目标原生记录变化：${key.replace('\u0000', ':')}`)
+				}
+				for (const [key, record] of finalRecords) {
+					if (record.header.type === 'DOCHEAD' || initialRecords.has(key)) continue
+					const newOwner = record.header.type === 'WIRE' ? String(record.header.id ?? '')
+						: record.header.type === 'LINE' || record.header.type === 'ATTR' ? String(record.data?.lineGroup ?? record.data?.parentId ?? '') : ''
+					if (!createdWireIds.has(newOwner)) throw new Error(`去重产生目标导线以外的新记录：${key.replace('\u0000', ':')}`)
+				}
+				const netlistAfter = await pinNetMapRobust()
+				if (!netlistAfter || sortedNetlist(netlistAfter) !== sortedNetlist(netlistBefore))
+					throw new Error('去重后位号.脚号到网络名的完整网表映射变化或不可读；已请求恢复原图')
+			}) }
+			catch (error) {
+				const cause = (error as any)?.cause
+				if (cause?.partial === true && cause?.restored !== true && cause?.contentRestored !== true)
+					Object.assign(cause, { outcome: 'unknown' })
+				throw error
+			}
 			return { dupWires: dup.length, rebuilt, renamed, skippedDiagonal }
 		},
 	},
@@ -5593,7 +5864,7 @@ export const schematicCommands: Array<ICommandDef> = [
 			if (failed.length || unprocessed.length || probeWriteUncertain || deadlineStoppedWrites) {
 				const error = new Error(`删除结果包含未完成项：deleted=${deleted.length} failed=${failed.length} unprocessed=${unprocessed.length}（分类：${JSON.stringify(outcomeBy)}）`)
 				;(error as any).cause = writeAttempted || probeWriteUncertain
-					? { partial: true, taskId: task.id, result: deleteResult }
+					? { partial: true, ...(uncertainWriteIds.size || probeWriteUncertain ? { outcome: 'unknown' } : { outcome: 'partial' }), taskId: task.id, result: deleteResult }
 					: { taskId: task.id, result: deleteResult }
 				throw error
 			}
@@ -6988,30 +7259,58 @@ export const schematicCommands: Array<ICommandDef> = [
 		},
 	},
 	{
+		name: 'schematic.listAssemblyVariants',
+		summary: '读取当前原理图工程的装配变体名称与 ID',
+		params: [],
+		returns: 'Array<{ text, value }>，text 为名称，value 为宿主 ID',
+		example: { cmd: 'schematic.listAssemblyVariants' },
+		handler: async (_params, ctx) => {
+			const variants = await readAssemblyVariants()
+			await ctx?.assertDocumentTarget?.()
+			return variants
+		},
+	},
+	{
 		name: 'schematic.exportBom',
 		summary: '导出宿主原始 BOM 文件及实测格式信息（base64 不转换）；EDA 4.1.78 的 csv 实为 UTF-16LE 制表符文本，按返回 format/encoding/delimiter 解析',
 		params: [
 			{ name: 'fileName', type: 'string', description: '文件名，默认 schematic-bom' },
 			{ name: 'fileType', type: 'string', description: 'xlsx | csv，默认 xlsx' },
+			{ name: 'assemblyVariant', type: 'string', description: '装配变体的准确名称或宿主 ID，可通过 schematic.listAssemblyVariants 查询；省略时沿用宿主默认导出' },
 		],
-		returns: '{ fileName, nativeFileName, size, mimeType, base64, format, encoding?, delimiter?, note? }；base64 保留宿主原始字节，fileName 按识别后的格式给出，nativeFileName 保留宿主原名',
+		returns: '{ fileName, nativeFileName, size, mimeType, base64, format, encoding?, delimiter?, assemblyVariant?, note? }；assemblyVariant 记录传给宿主的变体，base64 保留宿主原始字节',
 		example: { cmd: 'schematic.exportBom', params: { fileType: 'csv' } },
-		handler: async (params) => {
+		handler: async (params, ctx) => {
 			if (params.fileType != null && params.fileType !== 'csv' && params.fileType !== 'xlsx')
 				throw new Error('fileType 仅支持 csv 或 xlsx')
 			const fileType = (params.fileType ?? 'xlsx') as 'xlsx' | 'csv'
 			const requestedName = params.fileName == null ? '' : String(params.fileName).trim()
 			const fileStem = requestedName.replace(new RegExp(`\\.${fileType}$`, 'i'), '')
-			const file = await eda.sch_ManufactureData.getBomFile(
-				fileStem || undefined,
-				fileType,
-			)
+			let variant: { text: string; value: string } | undefined
+			if (params.assemblyVariant !== undefined) {
+				if (typeof params.assemblyVariant !== 'string' || !params.assemblyVariant.trim())
+					throw new Error('assemblyVariant 必须是有效的装配变体名称或 ID')
+				const nameOrId = params.assemblyVariant.trim()
+				const variants = await readAssemblyVariants()
+				const byId = variants.filter(item => item.value === nameOrId)
+				const matches = byId.length ? byId : variants.filter(item => item.text === nameOrId)
+				if (matches.length !== 1)
+					throw new Error(matches.length ? `装配变体 ${nameOrId} 有多条匹配，请核对宿主 ID` : `未找到装配变体 ${nameOrId}，未导出 BOM`)
+				variant = matches[0]
+				await ctx?.assertDocumentTarget?.()
+			}
+			ctx?.stopSignal?.assertActive()
+			const file = variant
+				? await eda.sch_ManufactureData.getBomFile(fileStem || undefined, fileType, undefined, undefined, undefined, undefined, undefined, variant)
+				: await eda.sch_ManufactureData.getBomFile(fileStem || undefined, fileType)
+			if (variant)
+				await ctx?.assertDocumentTarget?.()
 			const result = await fileToResult(file, `schematic-bom.${fileType}`)
 			if (!result)
 				throw new Error('BOM 导出失败：官方返回空（请确认已激活原理图图页且图中有器件）')
 			const metadata = describeBomFile(result, fileType)
 			const extension = ['tsv', 'csv', 'xlsx'].includes(metadata.format) ? metadata.format : null
-			return { ...result, ...metadata, nativeFileName: result.fileName, fileName: extension ? result.fileName.replace(/\.(csv|tsv|xlsx)$/i, '') + '.' + extension : result.fileName }
+			return { ...result, ...metadata, ...(variant ? { assemblyVariant: variant } : {}), nativeFileName: result.fileName, fileName: extension ? result.fileName.replace(/\.(csv|tsv|xlsx)$/i, '') + '.' + extension : result.fileName }
 		},
 	},
 	{

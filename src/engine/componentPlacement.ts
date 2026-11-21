@@ -4,7 +4,8 @@ interface DeviceRef { libraryUuid: string; uuid: string }
 
 interface PlacementApi {
 	lib_Device: {
-		getByLcscIds: (ids: Array<string>, libraryUuid?: string) => Promise<Array<any> | null | undefined>;
+		getByLcscIds: (ids: Array<string>, libraryUuid?: string, allowMultiMatch?: boolean) => Promise<Array<any> | null | undefined>;
+		search?: (key: string, libraryUuid?: string) => Promise<Array<any> | null | undefined>;
 		get: (uuid: string, libraryUuid: string) => Promise<any>;
 	};
 	sch_PrimitiveComponent: {
@@ -231,6 +232,8 @@ export async function placeDeviceSafely(api: PlacementApi, params: Record<string
 	let ref: DeviceRef;
 	let requestedLcscId: string | undefined;
 	let requestedLibraryUuid: string | undefined;
+	const exactCatalogMatch = (item: any, partNumber: string) =>
+		item?.supplierId === partNumber || item?.otherProperty?.['Supplier Part'] === partNumber;
 	try {
 		if (params.lcscId) {
 			requestedLcscId = String(params.lcscId);
@@ -242,10 +245,17 @@ export async function placeDeviceSafely(api: PlacementApi, params: Record<string
 				: await api.lib_Device.getByLcscIds([requestedLcscId]);
 			if (!items?.[0])
 				fail(`未找到立创编号为 ${requestedLcscId}${requestedLibraryUuid ? `（库 ${requestedLibraryUuid}）` : ''} 的器件`, 'resolve-device', false);
-			const selectedLibraryUuid = requireString(items[0].libraryUuid, '立创器件 libraryUuid');
-			const selectedDeviceUuid = requireString(items[0].uuid, '立创器件 uuid');
-			if (requestedLibraryUuid && selectedLibraryUuid !== requestedLibraryUuid)
-				fail(`立创器件搜索返回了非请求库的结果（want ${requestedLibraryUuid}, got ${selectedLibraryUuid}）`, 'resolve-device', false);
+			let selected = items[0];
+			if (requestedLibraryUuid && selected.libraryUuid !== requestedLibraryUuid) {
+				const partNumber = requestedLcscId;
+				const catalog = await api.lib_Device.search?.(partNumber, requestedLibraryUuid);
+				const inScope = catalog?.find(item => item?.libraryUuid === requestedLibraryUuid && exactCatalogMatch(item, partNumber));
+				if (!inScope)
+					fail(`立创器件搜索返回了非请求库的结果（want ${requestedLibraryUuid}, got ${selected.libraryUuid}），请求库未找到同料号`, 'resolve-device', false);
+				selected = inScope;
+			}
+			const selectedLibraryUuid = requireString(selected.libraryUuid, '立创器件 libraryUuid');
+			const selectedDeviceUuid = requireString(selected.uuid, '立创器件 uuid');
 			ref = { libraryUuid: selectedLibraryUuid, uuid: selectedDeviceUuid };
 		}
 		else if (params.deviceUuid && params.libraryUuid) {
@@ -262,10 +272,9 @@ export async function placeDeviceSafely(api: PlacementApi, params: Record<string
 		fail(`解析器件引用失败：${String((error as any)?.message ?? error)}`, 'resolve-device', false, undefined, error);
 	}
 
-	let device: any;
 	let expected: ReturnType<typeof readLibraryFootprint>;
 	try {
-		device = await api.lib_Device.get(ref.uuid, ref.libraryUuid);
+		const device = await api.lib_Device.get(ref.uuid, ref.libraryUuid);
 		if (!device)
 			fail(`无法读取完整库器件 ${ref.uuid}`, 'read-library-device', false);
 		if (requireString(device.uuid, '完整库器件 uuid') !== ref.uuid)
@@ -278,6 +287,44 @@ export async function placeDeviceSafely(api: PlacementApi, params: Record<string
 		if ((error as any)?.cause?.operation === 'schematic.placeDevice')
 			throw error;
 		fail(`完整库器件封装关联读取失败：${String((error as any)?.message ?? error)}`, 'read-library-device', false, undefined, error);
+	}
+	if (requestedLcscId && params.addIntoPcb !== false && !expected) {
+		// SDK's default lookup may return only the first same-MPN match.
+		let alternatives: Array<any> | null | undefined;
+		try {
+			alternatives = await api.lib_Device.getByLcscIds([requestedLcscId], requestedLibraryUuid, true);
+		}
+		catch (error) {
+			fail(`无法核对同料号候选：${String((error as any)?.message ?? error)}`, 'resolve-footprint-candidate', false, undefined, error);
+		}
+		const visited = new Set([JSON.stringify(ref)]);
+		const selectWithFootprint = async (items: Array<any> | null | undefined) => {
+			for (const item of items ?? []) {
+				if (typeof item?.uuid !== 'string' || !item.uuid.trim() || typeof item.libraryUuid !== 'string' || !item.libraryUuid.trim()
+					|| (requestedLibraryUuid && item.libraryUuid !== requestedLibraryUuid))
+					continue;
+				const identity = { libraryUuid: item.libraryUuid, uuid: item.uuid };
+				const key = JSON.stringify(identity);
+				if (visited.has(key))
+					continue;
+				visited.add(key);
+				const candidate = await api.lib_Device.get(identity.uuid, identity.libraryUuid);
+				if (candidate?.uuid !== identity.uuid || candidate?.libraryUuid !== identity.libraryUuid)
+					continue;
+				const footprint = readLibraryFootprint(candidate);
+				if (footprint) {
+					ref = identity;
+					expected = footprint;
+					break;
+				}
+			}
+		};
+		await selectWithFootprint(alternatives);
+		if (!expected && api.lib_Device.search) {
+			// The host's part-number lookup and system catalog search can expose different records.
+			const catalog = await api.lib_Device.search(requestedLcscId, requestedLibraryUuid);
+			await selectWithFootprint(catalog?.filter(item => exactCatalogMatch(item, requestedLcscId)));
+		}
 	}
 	await requireFocus(api, focus, '调用 create 前', false);
 

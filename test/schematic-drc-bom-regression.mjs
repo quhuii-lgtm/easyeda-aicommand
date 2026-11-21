@@ -15,6 +15,7 @@ const { schematicCommands } = await import(`data:text/javascript;base64,${Buffer
 const runDrc = schematicCommands.find(item => item.name === 'schematic.runDrc').handler
 const detailed = schematicCommands.find(item => item.name === 'schematic.runDrcDetailed').handler
 const exportBom = schematicCommands.find(item => item.name === 'schematic.exportBom').handler
+const listAssemblyVariants = schematicCommands.find(item => item.name === 'schematic.listAssemblyVariants').handler
 
 let drcResponses = []
 let bomArgs
@@ -69,5 +70,23 @@ assert.equal(xlsx.format, 'xlsx')
 assert.equal(xlsx.mimeType, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 assert.equal(Buffer.from(xlsx.base64, 'base64').compare(Buffer.from(await bomFile.arrayBuffer())), 0)
 await assert.rejects(exportBom({ fileType: 'CSV' }), /仅支持/)
+assert.equal(bomArgs.length, 2, 'ordinary BOM export keeps the existing SDK invocation')
+await assert.rejects(exportBom({ assemblyVariant: 'PERF' }), /没有提供装配变体列表/)
+const perf = { text: 'PERF', value: 'perf-id' }
+const cost = { text: 'COST', value: 'cost-id' }
+let variants = [perf, cost]
+globalThis.eda.sch_ManufactureData.getAssemblyVariantsConfigs = async () => variants
+assert.deepEqual(await listAssemblyVariants({}), [perf, cost])
+assert.deepEqual((await exportBom({ assemblyVariant: 'PERF' })).assemblyVariant, perf)
+assert.deepEqual(bomArgs, [undefined, 'xlsx', undefined, undefined, undefined, undefined, undefined, perf])
+assert.deepEqual((await exportBom({ assemblyVariant: 'cost-id' })).assemblyVariant, cost)
+const confirmedArgs = bomArgs
+await assert.rejects(exportBom({ assemblyVariant: 'unconfigured' }), /未找到/)
+variants = [perf, { text: 'PERF', value: 'another-perf-id' }]
+await assert.rejects(exportBom({ assemblyVariant: 'PERF' }), /有多条匹配/)
+await assert.rejects(exportBom({ assemblyVariant: 'perf-id' }, {
+	assertDocumentTarget: async () => { throw new Error('wrong page') },
+}), /wrong page/)
+assert.equal(bomArgs, confirmedArgs, 'unresolved variant/target does not send a default export')
 
 console.log('PASS schematic DRC unknown-result guard and BOM native format metadata')

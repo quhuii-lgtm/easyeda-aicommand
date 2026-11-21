@@ -253,22 +253,57 @@ export const projectCommands: Array<ICommandDef> = [
 	},
 	{
 		name: 'project.open',
-		summary: '打开指定工程（切换当前工程）',
+		summary: '打开指定工程，并读回当前实例是否已切到目标工程',
 		params: [
 			{ name: 'projectUuid', type: 'string', required: true, description: '工程 UUID（project.list 获取）' },
 		],
-		returns: '{ opened }',
+		returns: '{ opened:true, sdkOpened, activationConfirmed:true, projectUuid, activeProjectUuid, activeDocumentUuid, activeDocumentProjectUuid }；无法确认当前实例已切换时，在错误 cause 返回宿主状态和读回身份',
 		example: { cmd: 'project.open', params: { projectUuid: 'xxx' } },
-		handler: async (params) => {
+		handler: async (params, ctx) => {
 			if (!params.projectUuid)
 				throw new Error('缺少参数 projectUuid')
-			const info = await eda.dmt_Project.getProjectInfo(String(params.projectUuid))
+			const projectUuid = String(params.projectUuid)
+			const deadline = createOperationDeadline(params, 'project.open')
+			const info = await deadline.wait(() => eda.dmt_Project.getProjectInfo(projectUuid), '核对目标工程')
 			if (!info)
 				throw new Error('目标工程不存在或无权访问，未调用 openProject')
-			const opened = await eda.dmt_Project.openProject(String(params.projectUuid))
-			if (!opened)
-				throw new Error('工程打开失败，请检查 uuid 是否正确')
-			return { opened: true }
+			ctx?.stopSignal?.assertActive()
+			deadline.check('打开目标工程')
+			let sdkOpened: boolean
+			try {
+				sdkOpened = (await deadline.wait(() => eda.dmt_Project.openProject(projectUuid), '打开目标工程', true)) === true
+			}
+			catch (error) {
+				throw new Error(`宿主打开目标工程的结果未知：${error instanceof Error ? error.message : String(error)}`, {
+					cause: { projectUuid, partial: true, outcome: 'unknown', retryable: false, phase: 'project.open.outcomeUnknown' },
+				})
+			}
+			let activeProjectUuid: string | null = null
+			let activeDocumentUuid: string | null = null
+			let activeDocumentProjectUuid: string | null = null
+			let note: string | undefined
+			try {
+				const current = await deadline.wait(() => eda.dmt_Project.getCurrentProjectInfo(), '读回当前工程', true)
+				activeProjectUuid = current?.uuid ?? null
+				const document = await deadline.wait(() => eda.dmt_SelectControl.getCurrentDocumentInfo(), '读回活动文档', true)
+				activeDocumentUuid = document?.uuid ?? null
+				activeDocumentProjectUuid = document && 'parentProjectUuid' in document ? document.parentProjectUuid ?? null : null
+			}
+			catch (error) {
+				note = `当前实例读回未完成：${error instanceof Error ? error.message : String(error)}`
+			}
+			const activationConfirmed = !note && activeProjectUuid === projectUuid
+				&& (!activeDocumentUuid || activeDocumentProjectUuid === projectUuid)
+			const state = {
+				opened: sdkOpened || activationConfirmed, sdkOpened, activationConfirmed, projectUuid, activeProjectUuid, activeDocumentUuid, activeDocumentProjectUuid,
+			}
+			if (!activationConfirmed)
+				throw new Error(note ?? (sdkOpened
+					? '宿主已确认打开，当前连接尚未切换到目标工程。请重新查询连接及活动页'
+					: '目标工程存在，宿主未确认打开，当前连接也未切换。请核对窗口或在 EDA 工程列表打开目标'), {
+					cause: { ...state, partial: true, retryable: false, phase: 'project.open.activationUnconfirmed' },
+				})
+			return state
 		},
 	},
 	{

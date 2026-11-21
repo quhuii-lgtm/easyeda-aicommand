@@ -23,15 +23,20 @@ async function main() {
 		registerCommand(command);
 	const drawWireCommand = schematicCommands.find(command => command.name === 'schematic.drawWire');
 
-	function makeHarness({ create, hangSourceAfterCreate = false, driftExistingAttrZIndex = false } = {}) {
+	function makeHarness({ create, hangSourceAfterCreate = false, driftExistingAttrZIndex = false, driftExistingAttrValue = false, initialNamedBus = false } = {}) {
 		const wires = new Map();
 		const attributes = new Map();
 		let creates = 0;
 		let sourceReads = 0;
 		let modelReads = 0;
-		if (driftExistingAttrZIndex) {
+		if (driftExistingAttrZIndex || driftExistingAttrValue) {
 			wires.set('existing-wire', { id: 'existing-wire', line: [0, 0, 10, 0], color: '#000000', lineWidth: 6, lineType: 0, net: '' });
 			attributes.set('existing-attr', { id: 'existing-attr', key: 'Relevance', value: '[]', parentId: 'existing-wire', zIndex: 0 });
+		}
+		if (initialNamedBus) {
+			wires.set('bus-wire', { id: 'bus-wire', line: [220, 235, 260, 235], color: '#000000', lineWidth: 6, lineType: 0, net: 'ACE_T_AUDIT' });
+			attributes.set('bus-net', { id: 'bus-net', key: 'NET', value: 'ACE_T_AUDIT', parentId: 'bus-wire', zIndex: 5, x: 240, y: -235, rotation: null, keyVisible: false, valueVisible: true });
+			attributes.set('bus-rel', { id: 'bus-rel', key: 'Relevance', value: '[]', parentId: 'bus-wire', zIndex: 4 });
 		}
 		const wire = item => ({
 			getState_PrimitiveId: () => item.id,
@@ -52,8 +57,10 @@ async function main() {
 					let ticket = 2;
 					for (const item of wires.values()) {
 						rows.push(`${JSON.stringify({ type: 'WIRE', id: item.id, ticket: ticket++ })}||${JSON.stringify({ zIndex: 0 })}`);
-						for (let i = 0; i + 3 < item.line.length; i += 2)
-							rows.push(`${JSON.stringify({ type: 'LINE', id: `line-${item.id}-${i}`, ticket: ticket++ })}||${JSON.stringify({ lineGroup: item.id, startX: item.line[i], startY: -item.line[i + 1], endX: item.line[i + 2], endY: -item.line[i + 3], strokeColor: item.color, strokeWidth: item.lineWidth, strokeStyle: 'SOLID' })}`);
+						const paths = Array.isArray(item.line[0]) ? item.line : [item.line];
+						let lineIndex = 0;
+						for (const path of paths) for (let i = 0; i + 3 < path.length; i += 2)
+							rows.push(`${JSON.stringify({ type: 'LINE', id: `line-${item.id}-${lineIndex++}`, ticket: ticket++ })}||${JSON.stringify({ lineGroup: item.id, startX: path[i], startY: -path[i + 1], endX: path[i + 2], endY: -path[i + 3], fillColor: null, fillStyle: null, strokeColor: item.color, strokeWidth: item.lineWidth, strokeStyle: item.lineType === null ? null : ({ 0: 'SOLID', 1: 'SHORT_DASH', 2: 'DOT' })[item.lineType] })}`);
 					}
 					for (const attribute of attributes.values())
 						rows.push(`${JSON.stringify({ type: 'ATTR', id: attribute.id, ticket: ticket++ })}||${JSON.stringify(attribute)}`);
@@ -70,8 +77,10 @@ async function main() {
 					creates++;
 					if (driftExistingAttrZIndex && creates === 1)
 						attributes.get('existing-attr').zIndex = 1;
+					if (driftExistingAttrValue && creates === 1)
+						attributes.get('existing-attr').value = 'changed';
 					if (create)
-						return create({ line, wires, wire, creates });
+						return create({ line, wires, attributes, wire, creates });
 					const item = { id: `wire-${creates}`, line, color: '#000000', lineWidth: 6, lineType: 0, net: '' };
 					wires.set(item.id, item);
 					return wire(item);
@@ -87,10 +96,10 @@ async function main() {
 		};
 	}
 
-	async function runDrawWire(options) {
+	async function runDrawWire(options, params = {}) {
 		const harness = makeHarness(options);
 		const startedAt = Date.now();
-		const result = await executeCommand({ cmd: 'schematic.drawWire', params: { _timeoutMs: 1500, points: [[0, 0], [10, 0]] } });
+		const result = await executeCommand({ cmd: 'schematic.drawWire', params: { _timeoutMs: 1500, points: [[0, 0], [10, 0]], ...params } });
 		return { harness, result, elapsedMs: Date.now() - startedAt };
 	}
 
@@ -105,9 +114,9 @@ async function main() {
 			assert.equal(diagnostic.createReturned, true);
 			assert.equal(diagnostic.lastReadLabel, '读取原理图源码');
 		}],
-		['stable post-write validation rejection', { driftExistingAttrZIndex: true }, (diagnostic) => {
+		['stable unrelated attribute content rejection', { driftExistingAttrValue: true }, (diagnostic) => {
 			assert.equal(diagnostic.createReturned, true);
-			assert.match(diagnostic.lastValidationError?.message ?? '', /existing-wire 的 ATTR zIndex/);
+			assert.match(diagnostic.lastValidationError?.message ?? '', /自动网络标签重建字段无效|写后非目标有效记录发生变化|旧 ATTR .*除 zIndex 外的字段发生变化/);
 		}],
 	]) {
 		const { harness, result, elapsedMs } = await runDrawWire(options);
@@ -119,6 +128,38 @@ async function main() {
 		check(result.error.cause.drawWireDiagnostic);
 		assert.equal(harness.creates, 1, `${name} only attempts one create`);
 		assert.ok(elapsedMs >= 1100 && elapsedMs < 1500, `${name} elapsed=${elapsedMs}ms should return at the inner ~1350ms deadline`);
+	}
+	{
+		const { harness, result } = await runDrawWire({ driftExistingAttrZIndex: true });
+		assert.equal(result.ok, true, `pure display-order change should remain acceptable: ${JSON.stringify(result.error)}`);
+		assert.deepEqual(result.data.drawingOrderChanges, [{ id: 'existing-attr', before: 0, after: 1, wireId: 'existing-wire' }]);
+		assert.equal(harness.creates, 1);
+	}
+	{
+		const epsilon = 429.99999999999994;
+		const { result } = await runDrawWire({ create: ({ wires, attributes, wire, creates }) => {
+			const item = { id: `wire-${creates}`, line: [550, 430, 480, epsilon, 450, 430, 480, epsilon], color: null, lineWidth: null, lineType: null, net: 'NTC_IN_A' };
+			wires.set(item.id, item);
+			const attribute = (id, key, value, zIndex) => ({ id, key, value, parentId: item.id, zIndex });
+			attributes.set('net', attribute('net-attr', 'NET', 'NTC_IN_A', 4));
+			attributes.set('relevance', attribute('rel-attr', 'Relevance', '[]', 3));
+			return wire(item);
+		} }, { points: [[450, 430], [550, 430]], net: 'NTC_IN_A' });
+		assert.equal(result.ok, true, `host-split named T junction with float epsilon should verify: ${JSON.stringify(result.error)}`);
+		assert.ok(result.data.primitiveIds.includes('wire-1'));
+		assert.equal(result.data.net, 'NTC_IN_A');
+	}
+	{
+		const { result } = await runDrawWire({ initialNamedBus: true, create: ({ wires, attributes, wire }) => {
+			const item = wires.get('bus-wire');
+			item.line = [[220, 235, 240, 235], [240, 235, 260, 235], [240, 220, 240, 235]];
+			attributes.get('bus-net').zIndex = 9;
+			attributes.get('bus-rel').zIndex = 8;
+			return wire(item);
+		} }, { points: [[240, 220], [240, 235]] });
+		assert.equal(result.ok, true, `unnamed T branch into an existing named bus with only display-order changes should verify: ${JSON.stringify(result.error)}`);
+		assert.equal(result.data.primitiveIds.includes('bus-wire'), true);
+		assert.equal(result.data.drawingOrderChanges.some(item => item.id === 'bus-net' && item.before === 5 && item.after === 9), true);
 	}
 
 	let originalDiagnostic;

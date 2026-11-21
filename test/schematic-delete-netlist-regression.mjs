@@ -264,6 +264,7 @@ await withTestTimers(async () => {
 		const ids = ['wire-stuck-1', 'wire-stuck-2', 'wire-stuck-3', 'wire-stuck-4']
 		const state = makeEda({ wires: ids, persistDelete: false })
 		const error = await capturePartial({ primitiveIds: ids })
+		assert.equal(error.cause?.outcome, 'partial', '已读回仍存在的明确失败不冻结为unknown')
 		assert.equal(error.cause.result.failed.length, ids.length)
 		assert.equal(state.deleteCalls, ids.length, 'every confirmed-present target is attempted')
 		assert.deepEqual(ids.map(id => error.cause.result.outcomeBy[id]), ids.map(() => 'stillExists'))
@@ -287,6 +288,7 @@ await withTestTimers(async () => {
 		globalThis.__forceDeleteItemTimeout = undefined
 		const result = error.cause.result
 		assert.equal(error.cause.partial, true, `${pendingDelete} timeout preserves partial-write cause`)
+		assert.equal(error.cause.outcome, 'unknown', `${pendingDelete} in-flight write is explicitly unknown`)
 		assert.equal(result.outcomeBy['wire-timeout'], 'unknown', `${pendingDelete} timeout remains unknown`)
 		assert.deepEqual(result.unprocessed, ['wire-after-timeout'])
 		assert.deepEqual(result.deleted, [])
@@ -334,6 +336,7 @@ await withTestTimers(async () => {
 		const state = makeEda({ wires: ['wire-readback-unknown', 'wire-after-unknown'], failWireListsAfterDelete: true })
 		const error = await capturePartial({ primitiveIds: ['wire-readback-unknown', 'wire-after-unknown'] })
 		assert.equal(error.cause.partial, true)
+		assert.equal(error.cause.outcome, 'unknown', 'unavailable write-after-readback is explicitly unknown')
 		assert.equal(error.cause.result.outcomeBy['wire-readback-unknown'], 'unknown')
 		assert.deepEqual(error.cause.result.unprocessed, ['wire-after-unknown'])
 		assert.equal(state.deleteCalls, 1)
