@@ -1,5 +1,9 @@
 # Change log
 
+## 0.21.22
+
+- Read-only routing/manufacturing inspection and staged checks; independent standalone skill and portable AI companion downloads.
+
 ## 0.21.19
 
 - Write-outcome recovery, target verification, T-junction/cleanup and BOM fixes; complete restored KiRouting proxy integration.

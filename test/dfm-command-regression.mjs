@@ -23,6 +23,7 @@ const plugins = [{
 			if (args.path === 'official') return { contents: `
 				export const JLC_SUPPORTED_MATERIALS = ['FR4', 'CEM1'];
 				export const DFM_COVERAGE = ['coverage boundary'];
+				export const DFM_PACKAGE_CHECKS = ['实际阻焊桥'];
 				export const UPSTREAM_INFO = { repository: 'pinned-upstream', commit: 'commit-1', version: '1.0.4', license: 'Apache-2.0' };
 				export async function runOfficialDfm(kind, params, sdk) { return await globalThis.__dfm.runOfficialDfm(kind, params, sdk); }
 			` };
@@ -261,7 +262,7 @@ await test('iframe report failure clears a previously rendered report and uses t
 	assert.ok(allText(document.getElementById('report')).includes('thickness：1.6'));
 	assert.ok(allText(document.getElementById('report')).includes('下单外层铜厚目标：2 oz'));
 	assert.ok(allText(document.getElementById('report')).includes('下单内层铜厚选项：1 oz'));
-	assert.ok(allText(document.getElementById('report')).includes('综合 passed：是'));
+	assert.ok(allText(document.getElementById('report')).includes('基础检查：通过'));
 	assert.ok(allText(document.getElementById('report')).includes('图层 1 与目标差异：要求 2 oz，图纸记录 0.5 oz'));
 	assert.ok(allText(document.getElementById('report')).includes('0.15 mm 线宽/线距目标'));
 	document.getElementById('export-txt').click();

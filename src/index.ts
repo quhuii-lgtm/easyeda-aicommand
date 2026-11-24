@@ -21,6 +21,7 @@ import { componentAttributeCommands } from './commands/componentAttributes';
 import { copperShapeReviewCommands } from './commands/copperShapeReview';
 import { copperKeepoutCommands } from './commands/copperKeepouts';
 import { dfmCommands } from './commands/dfm';
+import { manufacturingDfmCommands } from './commands/manufacturingDfm';
 import { diffPairCommands } from './commands/diffPair';
 import { lengthTuneCommands } from './commands/tuneLength';
 import { editorCommands } from './commands/editor';
@@ -29,6 +30,8 @@ import { knowledgeCommands } from './commands/knowledge';
 import { kiRoutingCommands } from './commands/kirouting';
 import { libCommands } from './commands/lib';
 import { localRoutingReviewCommands } from './commands/localRoutingReview';
+import { routingRemnantCommands } from './commands/routingRemnants';
+import { routingDetourCommands } from './commands/routingDetours';
 import { manufacturingProfileCommands } from './commands/manufacturingProfile';
 import { moduleCommands } from './commands/module';
 import { padBranchCommands } from './commands/padBranches';
@@ -73,6 +76,8 @@ function registerAllCommands(): void {
 		...pcbPlacementPrimitiveCommands,
 		...pcbPlacementImageCommands,
 		...localRoutingReviewCommands,
+		...routingRemnantCommands,
+		...routingDetourCommands,
 		...copperShapeReviewCommands,
 		...copperKeepoutCommands,
 		...kiRoutingCommands,
@@ -93,6 +98,7 @@ function registerAllCommands(): void {
 		...padExpansionCommands,
 		...netSilkscreenCommands,
 		...dfmCommands,
+		...manufacturingDfmCommands,
 		...pcbGroupingCommands,
 		...pcbEditBatchCommands,
 		...pcbRatlineCommands,

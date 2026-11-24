@@ -23,10 +23,11 @@ export interface ReportedCopperDifference { layerId: number; requestedOz: number
 export interface ReportedCopper { status: 'available' | 'partial' | 'unavailable'; layers: ReportedCopperLayer[]; matchesTarget: boolean | null; differences: ReportedCopperDifference[]; messages: string[] }
 export interface DfmRun { results: CheckResult[]; expectedCount: number; issues: DfmIssue[]; coverage: string[]; upstreamPassed: boolean; complete: boolean; passed: boolean; reportedCopper?: ReportedCopper }
 export type PadPurposeEvidence = { padId: string; classification: 'nc' | 'reserved' | 'mechanical' | 'other'; reason: string; source: string }
-type DfmParams = {material?:string;thickness?:number;standard?:'economy'|'standard';minSpacingMm?:number;outerCopperOz?:number;innerCopperOz?:number;padPurposeEvidence?: PadPurposeEvidence[]}
+type DfmParams = {material?:string;thickness?:number;standard?:'economy'|'standard';minSpacingMm?:number;outerCopperOz?:number;innerCopperOz?:number;padPurposeEvidence?: PadPurposeEvidence[];smtDesignators?:string[]}
 export const UPSTREAM_INFO = { repository: 'https://github.com/easyeda/eext-jlc-order-dfm-checker', commit: 'afd538786d510f537ad4fa47c6329e6a99dc7625', version: '1.0.4', license: 'Apache-2.0' } as const;
 export { JLC_SUPPORTED_MATERIALS };
 export const DFM_COVERAGE = ['线距只检查正间隙 Line；不含接触、重叠、Arc 和 Polyline。', '长圆及不等边焊环按最大轴近似。', '同网焊盘间距使用胶囊体及内接圆近似。', '部分检查按有效铜图元层数启发式判定；第12/13项按设计铜层数分档。', 'EIA/BGA 按封装名称启发式识别。', '定位 ID 使用两组列表索引辅助匹配。'];
+export const DFM_PACKAGE_CHECKS = ['实际阻焊桥', '机贴器件本体间距及板边距', '钻孔与钢网开口相交', '邮票孔识别'];
 const CHECK_FAILURE = (number: number, item: string, message: string): CheckResult => ({ number, item, actualValue: message, standardValue: '完整读取后检查', result: 'warning' });
 const READ_METHOD = /^(get|fetch|query|find)/i;
 async function readReportedCopper(sdk: any): Promise<ReportedCopper> {
@@ -291,8 +292,9 @@ const ESYS_LogType: any = {INFO:0,WARNING:1,ERROR:2};
  };
  const runSmt = async (): Promise<CheckResult[]> => {
   const standard = params.standard ?? 'standard'; let compPads: ComponentPadCoords[] | null;
-  try { compPads = await collectComponentPadCoords(); } catch(e) { compPads=null; issues.push({code:'smt_prefetch_failed',message:'多引脚焊盘预取失败：'+String(e)}); }
-  const conf=SMT_STANDARDS[standard]; const checks:Array<[number,string,()=>Promise<CheckResult>|CheckResult]>=[[1,'焊接面',()=>checkSolderingSides(conf)],[2,'层数',()=>checkSmtLayerCount(conf)],[3,'板厚',()=>checkSmtBoardThickness(conf,selectedThickness)],[4,'尺寸',()=>checkSmtBoardSize(conf)],[5,'最小封装',()=>checkSmtMinPackage(conf)],[6,'最小 IC 引脚间距',()=>checkSmtIcPinPitch(conf,compPads??[])],[7,'BGA 球径间距',()=>checkSmtBgaPitch(conf,compPads??[])]];
+  const selected = params.smtDesignators === undefined ? undefined : await readSmtRoster(params.smtDesignators);
+  try { compPads = await collectComponentPadCoords(selected); } catch(e) { compPads=null; issues.push({code:'smt_prefetch_failed',message:'多引脚焊盘预取失败：'+String(e)}); }
+  const conf=SMT_STANDARDS[standard]; const checks:Array<[number,string,()=>Promise<CheckResult>|CheckResult]>=[[1,'焊接面',()=>checkSolderingSides(conf,selected)],[2,'层数',()=>checkSmtLayerCount(conf)],[3,'板厚',()=>checkSmtBoardThickness(conf,selectedThickness)],[4,'尺寸',()=>checkSmtBoardSize(conf)],[5,'最小封装',()=>checkSmtMinPackage(conf,selected)],[6,'最小 IC 引脚间距',()=>checkSmtIcPinPitch(conf,compPads??[])],[7,'BGA 球径间距',()=>checkSmtBgaPitch(conf,compPads??[])]];
   const out:CheckResult[]=[];for(const [n,item,fn] of checks){if(compPads===null&&n>=6){out.push(CHECK_FAILURE(n,item,'检查未完成：焊盘预取失败'));continue}try{out.push(await fn())}catch(e){issues.push({code:'check_failed',item:n,message:String(e)});out.push(CHECK_FAILURE(n,item,'检查失败：'+String(e)))}}return out;
  };
 function checkMaterialType(): CheckResult {
@@ -2398,8 +2400,29 @@ interface ComponentPadCoords {
  * 焊盘坐标: 用 getState_Pads() 的短 id 去 pcb_PrimitivePad.getAll() 按
  * 长 id endsWith 短 id 匹配取 getState_X/Y(同第17项 BGA 焊盘取法)。
  */
-async function collectComponentPadCoords(): Promise<ComponentPadCoords[]> {
-	const components = await eda.pcb_PrimitiveComponent.getAll();
+type SmtRoster = { components: any[]; top: number; bottom: number };
+
+async function readSmtRoster(designators: string[]): Promise<SmtRoster> {
+	const wanted = new Set(designators);
+	const components = (await eda.pcb_PrimitiveComponent.getAll() as any[]).filter(component => wanted.has(component.getState_Designator?.()));
+	const counts = new Map<string, number>();
+	const sides = { top: 0, bottom: 0 };
+	for (const component of components) {
+		const name = component.getState_Designator();
+		counts.set(name, (counts.get(name) ?? 0) + 1);
+		const layer = component.getState_Layer?.();
+		if (layer === 1) sides.top++;
+		else if (layer === 2) sides.bottom++;
+		else throw new Error(`机贴位号 ${name} 缺少可核对的顶／底面`);
+	}
+	const missing = designators.filter(name => counts.get(name) !== 1);
+	if (missing.length)
+		throw new Error(`机贴位号在当前 PCB 缺失或不唯一：${missing.join('、')}`);
+	return { components, ...sides };
+}
+
+async function collectComponentPadCoords(roster?: SmtRoster): Promise<ComponentPadCoords[]> {
+	const components = roster?.components ?? await eda.pcb_PrimitiveComponent.getAll();
 	const allPads = await eda.pcb_PrimitivePad.getAll();
 	const out: ComponentPadCoords[] = [];
 
@@ -2416,10 +2439,12 @@ async function collectComponentPadCoords(): Promise<ComponentPadCoords[]> {
 		for (const pad of allPads) {
 			const p: any = pad;
 			const pid = String(p.getState_PrimitiveId?.() ?? '');
-			if (shortIds.some(s => pid.endsWith(s))) {
+			if (shortIds.some(s => roster ? pid === `${c.getState_PrimitiveId?.() ?? ''}${s}` : pid.endsWith(s))) {
 				coords.push({ x: p.getState_X?.() ?? 0, y: p.getState_Y?.() ?? 0, layer: String(p.getState_Layer?.() ?? p.layer ?? 0) });
 			}
 		}
+		if (roster && coords.length !== shortIds.length)
+			throw new Error(`机贴位号 ${c.getState_Designator?.() ?? ''} 的焊盘无法按器件和焊盘 ID 逐一核对`);
 		if (coords.length === 0)
 			continue;
 
@@ -2748,7 +2773,7 @@ async function checkString(): Promise<CheckResult> {
 
 
 
-async function checkSolderingSides(standard: SmtStandardConfig): Promise<CheckResult> {
+async function checkSolderingSides(standard: SmtStandardConfig, roster?: SmtRoster): Promise<CheckResult> {
 	const result: CheckResult = {
 		number: 1,
 		item: '焊接面',
@@ -2758,6 +2783,14 @@ async function checkSolderingSides(standard: SmtStandardConfig): Promise<CheckRe
 	};
 
 	try {
+		if (roster) {
+			const supportDual = standard.solderingSides.includes('both');
+			result.actualValue = `机贴名单：顶面 ${roster.top} 件，底面 ${roster.bottom} 件`;
+			result.standardValue = supportDual ? '支持双面' : '仅支持单面';
+			if (roster.top && roster.bottom && !supportDual)
+				result.result = 'error';
+			return Object.assign(result, { assembly: { basis: 'explicit-designators', top: roster.top, bottom: roster.bottom } });
+		}
 		// 按焊盘所属层统计实际焊接面：
 		//   TOP(1) / BOTTOM(2) = 表层贴片焊盘，计入 SMT 焊接面（双面贴片元件两面都会贡献）
 		//   MULTI(12) = 通孔/插装焊盘，属插装工艺，不计入 SMT 焊接面（如 Type-C/SMA 的插针）
@@ -2928,7 +2961,7 @@ async function checkSmtBoardSize(standard: SmtStandardConfig): Promise<CheckResu
 /**
  * SMT 第5项：最小封装检查
  */
-async function checkSmtMinPackage(standard: SmtStandardConfig): Promise<CheckResult> {
+async function checkSmtMinPackage(standard: SmtStandardConfig, roster?: SmtRoster): Promise<CheckResult> {
 	const result: CheckResult = {
 		number: 5,
 		item: '最小封装',
@@ -2939,7 +2972,7 @@ async function checkSmtMinPackage(standard: SmtStandardConfig): Promise<CheckRes
 	};
 
 	try {
-		const components = await eda.pcb_PrimitiveComponent.getAll();
+		const components = roster?.components ?? await eda.pcb_PrimitiveComponent.getAll();
 		let smallestPkg: string | null = null;
 		const violations: ViolationCoord[] = [];
 

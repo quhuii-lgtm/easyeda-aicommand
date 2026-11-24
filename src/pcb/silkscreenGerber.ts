@@ -6,6 +6,7 @@ type Point = [number, number];
 type Ring = Point[];
 type MultiPolygon = Ring[][];
 type BBox = { minX: number; minY: number; maxX: number; maxY: number };
+export type GerberInterestBox = BBox;
 type CirclePadMaskCandidate = Extract<FootprintPadMaskCandidate, { sourcePad: { shape: 'ELLIPSE' } }>;
 function isCirclePadMaskCandidate(candidate: FootprintPadMaskCandidate): candidate is CirclePadMaskCandidate {
 	return candidate.sourcePad.shape === 'ELLIPSE';
@@ -28,7 +29,9 @@ export interface GerberArcApproximation {
 }
 export interface GerberShape { kind: 'stroke' | 'flash' | 'region'; polarity: Polarity; apertureId?: number; centerline?: Point[]; flashCenterMil?: Point; circleDiameterToken?: string; arcApproximation?: GerberArcApproximation; geometryLower: MultiPolygon; geometryUpper: MultiPolygon }
 export type GerberLayerName = 'GTO' | 'GBO' | 'GTS' | 'GBS' | 'GKO';
-export interface GerberLayerGeometry<Layer extends GerberLayerName | 'GTP' | 'GBP' = GerberLayerName> {
+export type CopperGerberLayerName = 'GTL' | 'GBL' | `G${number}`;
+type ParsedGerberLayerName = GerberLayerName | CopperGerberLayerName | 'GTP' | 'GBP';
+export interface GerberLayerGeometry<Layer extends ParsedGerberLayerName = GerberLayerName> {
 	layer: Layer;
 	fileName: string;
 	contentBytes: number;
@@ -514,7 +517,7 @@ function tokenizeGerber(source: string): string[] {
 	}
 	return tokens;
 }
-function parseAperture(token: string, macroNames: Set<string>): Aperture | undefined {
+function parseAperture(token: string, macroBodies: Map<string, string>): Aperture | undefined {
 	const match = token.match(/^%ADD(\d+)([A-Za-z][A-Za-z0-9]*)(?:,([^*]*))?%$/u);
 	if (!match)
 		return undefined;
@@ -525,16 +528,17 @@ function parseAperture(token: string, macroNames: Set<string>): Aperture | undef
 		const parameters = parseNumberList(rawParams);
 		return { id, shape: rawShape, parameters: parameters ?? [], rawShape, ...(rawShape === 'C' && parameters?.length === 1 ? { circleDiameterToken: rawParams } : {}) };
 	}
-	if (macroNames.has(rawShape) && rawShape === 'RoundRect') {
+	const macro = macroBodies.get(rawShape);
+	if (macro !== undefined && (rawShape === 'RoundRect' || macro === exactRoundRectMacro)) {
 		const parameters = parseNumberList(rawParams);
 		return { id, shape: 'RoundRect', parameters: parameters ?? [], rawShape };
 	}
-	if (macroNames.has(rawShape) && rawShape === 'Oval') {
+	if (macro !== undefined && (rawShape === 'Oval' || macro === exactOvalMacro)) {
 		const values = rawParams.split('X');
 		const parameters = values.length === 5 && values.every(value => value.trim() !== '' && Number.isFinite(Number(value))) ? values.map(Number) : undefined;
 		return { id, shape: 'Oval', parameters: parameters ?? [], rawShape };
 	}
-	if (macroNames.has(rawShape) && rawShape === 'Rect') {
+	if (macro !== undefined && (rawShape === 'Rect' || macro === exactRectMacro)) {
 		const values = rawParams.split('X');
 		const parameters = values.length === 3 && values.every(value => value.trim() !== '' && Number.isFinite(Number(value))) ? values.map(Number) : undefined;
 		return { id, shape: 'Rect', parameters: parameters ?? [], rawShape };
@@ -601,7 +605,7 @@ function shapeGeometry(aperture: Aperture, start: Point, end: Point, mode: 'flas
 	return undefined;
 }
 
-function isSimpleClosedRing(ring: Point[]): boolean {
+export function isSimpleClosedRing(ring: Point[]): boolean {
 	if (ring.length < 4 || !samePoint(ring[0], ring.at(-1)!))
 		return false;
 	const segments = ringSegments(ring);
@@ -615,10 +619,9 @@ function isSimpleClosedRing(ring: Point[]): boolean {
 	}
 	return Math.abs(ringArea(ring)) > 1e-9;
 }
-export function parseGerberLayerGeometry<Layer extends GerberLayerName | 'GTP' | 'GBP'>(layer: Layer, fileName: string, source: string, checkBudget?: () => void): GerberLayerGeometry<Layer> {
+export function parseGerberLayerGeometry<Layer extends ParsedGerberLayerName>(layer: Layer, fileName: string, source: string, checkBudget?: () => void, interest?: readonly GerberInterestBox[]): GerberLayerGeometry<Layer> {
 	const unknowns: string[] = [];
 	const unsupported: string[] = [];
-	const macroNames = new Set<string>();
 	const macroBodies = new Map<string, string>();
 	const apertures = new Map<number, Aperture>();
 	const shapes: GerberShape[] = [];
@@ -667,6 +670,10 @@ export function parseGerberLayerGeometry<Layer extends GerberLayerName | 'GTP' |
 	let sawEnd = false;
 	let tokenIndex = 0;
 	let arcApproximationLimited = false;
+	const relevant = (envelope: BBox | undefined, margin = 0) => interest === undefined || envelope === undefined
+		|| interest.some(box => envelope.minX - margin <= box.maxX && envelope.maxX + margin >= box.minX
+			&& envelope.minY - margin <= box.maxY && envelope.maxY + margin >= box.minY);
+	const apertureMargin = (aperture: Aperture) => Math.max(...aperture.parameters.map(Math.abs)) * MM_TO_MIL * 3 + 0.1;
 	const addFlash = (target: Point) => {
 		counts.flashes++;
 		if (!positionKnown) {
@@ -677,6 +684,8 @@ export function parseGerberLayerGeometry<Layer extends GerberLayerName | 'GTP' |
 			unsupported.push('D03前未选择光圈');
 			return;
 		}
+		if (currentAperture.shape !== 'unsupported' && !relevant(bounds([target]), apertureMargin(currentAperture)))
+			return;
 		const segmentInfo = arcSegments(currentAperture.parameters[0] * MM_TO_MIL / 2);
 		arcApproximationLimited ||= segmentInfo.limited;
 		const geom = shapeGeometry(currentAperture, target, target, 'flash', segmentInfo.count);
@@ -699,12 +708,16 @@ export function parseGerberLayerGeometry<Layer extends GerberLayerName | 'GTP' |
 				unsupported.push(`无法解析宏: ${token.slice(0, 60)}`);
 				continue;
 			}
-			macroNames.add(match[1]);
-			macroBodies.set(match[1], match[2].replace(/\s+/gu, '').replace(/\*$/u, ''));
+			const body = match[2].replace(/\s+/gu, '').replace(/\*$/u, '');
+			if (macroBodies.has(match[1]) && macroBodies.get(match[1]) !== body) {
+				unsupported.push(`宏 ${match[1]} 有冲突的重复定义`);
+				continue;
+			}
+			macroBodies.set(match[1], body);
 			continue;
 		}
 		if (token.startsWith('%ADD')) {
-			const aperture = parseAperture(token.replace(/\*%$/u, '%'), macroNames);
+			const aperture = parseAperture(token.replace(/\*%$/u, '%'), macroBodies);
 			if (!aperture) {
 				unsupported.push(`无法解析光圈定义: ${token}`);
 				continue;
@@ -726,15 +739,15 @@ export function parseGerberLayerGeometry<Layer extends GerberLayerName | 'GTP' |
 				unsupported.push(`光圈 ${aperture.id} 参数数量、符号或值无效`);
 				continue;
 			}
-			if (aperture.shape === 'RoundRect' && macroBodies.get('RoundRect') !== exactRoundRectMacro) {
+			if (aperture.shape === 'RoundRect' && macroBodies.get(aperture.rawShape) !== exactRoundRectMacro) {
 				unsupported.push(`光圈 ${aperture.id} 使用未经精确确认的RoundRect宏`);
 				continue;
 			}
-			if (aperture.shape === 'Oval' && macroBodies.get('Oval') !== exactOvalMacro) {
+			if (aperture.shape === 'Oval' && macroBodies.get(aperture.rawShape) !== exactOvalMacro) {
 				unsupported.push(`光圈 ${aperture.id} 使用未经精确确认的Oval宏`);
 				continue;
 			}
-			if (aperture.shape === 'Rect' && macroBodies.get('Rect') !== exactRectMacro) {
+			if (aperture.shape === 'Rect' && macroBodies.get(aperture.rawShape) !== exactRectMacro) {
 				unsupported.push(`光圈 ${aperture.id} 使用未经精确确认的Rect宏`);
 				continue;
 			}
@@ -782,6 +795,8 @@ export function parseGerberLayerGeometry<Layer extends GerberLayerName | 'GTP' |
 			for (const contour of regionContours) {
 				if (regionHasUnsupportedRecord)
 					break;
+				if (!relevant(bounds(contour)))
+					continue;
 				if (!isSimpleClosedRing(contour)) {
 					unsupported.push('区域轮廓未闭合或自相交');
 					continue;
@@ -918,6 +933,11 @@ export function parseGerberLayerGeometry<Layer extends GerberLayerName | 'GTP' |
 						const center = point(currentPoint[0] + Number(iText) / 100000 * MM_TO_MIL, currentPoint[1] + Number(jText) / 100000 * MM_TO_MIL);
 						const fullCircle = samePoint(currentPoint, target);
 						const diameter = currentAperture.parameters[0] * MM_TO_MIL;
+						const radius = Math.max(Math.hypot(currentPoint[0] - center[0], currentPoint[1] - center[1]), Math.hypot(target[0] - center[0], target[1] - center[1]));
+						if (!relevant(bounds([center]), radius * 2 + diameter + 0.1)) {
+							currentPoint = target;
+							continue;
+						}
 						const geom = arcStrokeGeometry(currentPoint, target, center, plotMode === 'cw', fullCircle, diameter / 2, checkBudget);
 						if (!geom) {
 							unsupported.push(reason);
@@ -949,7 +969,7 @@ export function parseGerberLayerGeometry<Layer extends GerberLayerName | 'GTP' |
 					if (!currentAperture) {
 						unsupported.push('D01前未选择光圈');
 					}
-					else {
+					else if (currentAperture.shape === 'unsupported' || relevant(bounds([currentPoint, target]), apertureMargin(currentAperture))) {
 						const segmentInfo = arcSegments(currentAperture.parameters[0] * MM_TO_MIL / 2);
 						arcApproximationLimited ||= segmentInfo.limited;
 						const geom = shapeGeometry(currentAperture, currentPoint, target, 'stroke', segmentInfo.count);

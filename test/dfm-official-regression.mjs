@@ -87,6 +87,23 @@ await check('接口和结果项固定为 PCB18 / SMT7 / spacing1', async () => {
   assert.equal(pcb.passed, false, 'no-outline fallback and missing geometry must not become a full pass')
 })
 
+await check('机贴名单只计实际选中器件，旧入口保留原图元估算', async () => {
+  const component = (ref, layer, footprint) => ({
+    getState_Designator: () => ref, getState_Layer: () => layer,
+    getState_Footprint: () => ({ name: footprint }), getState_Pads: () => [],
+  })
+  const sdk = makeSdk({ outline: true, pads: [pad('top', 0), pad('bottom', 10, { layer: 2 })] })
+  sdk.pcb_PrimitiveComponent = { getAll: async () => [component('R1', 1, 'R0603'), component('C15', 2, 'C0201')] }
+  const legacy = await runOfficialDfm('smt', { standard: 'economy', thickness: 1.6 }, sdk)
+  assert.match(legacy.results[0].actualValue, /双面/)
+  const scoped = await runOfficialDfm('smt', { standard: 'economy', thickness: 1.6, smtDesignators: ['R1'] }, sdk)
+  assert.deepEqual(scoped.results[0].assembly, { basis: 'explicit-designators', top: 1, bottom: 0 })
+  assert.equal(scoped.results[4].actualValue, '0603')
+  const wrong = await runOfficialDfm('smt', { standard: 'economy', thickness: 1.6, smtDesignators: ['R19'] }, sdk)
+  assert.equal(wrong.complete, false)
+  assert.ok(wrong.issues.some(issue => issue.message.includes('R19')))
+})
+
 await check('并行调用材料和板厚互不串值', async () => {
   const sdk = makeSdk()
   const [fr4, copper] = await Promise.all([
