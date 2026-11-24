@@ -111,7 +111,7 @@ export async function preflightAssembly(input: { bomBase64: string; placementBas
 	}
 }
 
-function layerKind(name: string) {
+export function layerKind(name: string) {
 	const ext = name.split('.').at(-1)?.toUpperCase() ?? ''
 	if (/^(GTL|GBL|G\d+|GTO|GBO|GTS|GBS|GTP|GBP|GKO)$/.test(ext)) return { role: 'production', layer: ext }
 	if (ext === 'DRL') return { role: 'drill', layer: ext }
@@ -119,7 +119,7 @@ function layerKind(name: string) {
 	return { role: 'unknown', layer: ext }
 }
 
-async function readArchive(base64: string) {
+export async function readArchive(base64: string) {
 	return JSZip.loadAsync(base64, { base64: true, checkCRC32: true })
 }
 
@@ -161,9 +161,14 @@ async function inspectPaste(base64: string, regions: PasteRegion[], assignments:
 	return { status: results.length && results.every(result => result.status === 'checked-region') ? 'checked-regions' : 'incomplete', evidence: '按传入的 Gerber 坐标范围核对完整闪光图形，范围和位号的对应由调用方提供', regions: results }
 }
 
-function parseDrill(text: string) {
+export function parseDrill(text: string) {
 	const lines = text.trim().split(/\r?\n/).map(line => line.trim()).filter(Boolean)
-	const plating = lines.find(line => /^;TYPE=(PLATED|NON_PLATED)$/.test(line))?.split('=')[1]
+	const platingTypes = new Set(lines.flatMap(line => {
+		const type = /^;TYPE=(PLATED|NON_PLATED)$/.exec(line)?.[1]
+		return type ? [type as 'PLATED' | 'NON_PLATED'] : []
+	}))
+	if (platingTypes.size > 1) throw new Error('同一钻孔程序含不同镀层声明，无法确认逐孔分类')
+	const plating = platingTypes.values().next().value
 	if (!plating || !lines.some(line => /^METRIC,LZ,0+\.0+$/.test(line)) || !lines.includes('G90') || lines.at(-1) !== 'M30')
 		throw new Error('需要带镀层声明、绝对坐标及结束标记的公制钻孔程序')
 	let tool = ''

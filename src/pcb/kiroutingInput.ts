@@ -73,7 +73,7 @@ function polygonSource(object: any, name: string): unknown[] {
 }
 const POURED_SOURCE_TO_MIL = 10
 const POURED_ARC_CHORD_TOLERANCE_MIL = 0.01
-function normalizePouredFillPathToMil(source: unknown): Array<Array<{ x: number, y: number }>> {
+export function normalizePouredFillPathToMil(source: unknown): Array<Array<{ x: number, y: number }>> {
 	if (!Array.isArray(source) || !source.length) throw new Error('实填充源码不是非空路径数组')
 	const rawRings = Array.isArray(source[0]) ? source as unknown[][] : [source as unknown[]]
 	const point = (x: unknown, y: unknown): { x: number, y: number } => {
@@ -126,7 +126,7 @@ function normalizePouredFillPathToMil(source: unknown): Array<Array<{ x: number,
 	})
 	return rings
 }
-function normalizePouredStrokePathToMil(source: unknown): Array<Array<{ x: number, y: number }>> {
+export function normalizePouredStrokePathToMil(source: unknown): Array<Array<{ x: number, y: number }>> {
 	if (!Array.isArray(source) || !source.length) throw new Error('开口实填路径不是非空数组')
 	const paths = Array.isArray(source[0]) ? source as unknown[][] : [source as unknown[]]
 	return paths.map((raw, pathIndex) => {

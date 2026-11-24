@@ -1,74 +1,47 @@
-# EasyEDA AI Command Engine
+# AI Command Engine
 
 [简体中文](README_ZH.md)
 
-AI Command Engine connects AI tools to JLCEDA Pro through a local Node.js proxy. It provides structured commands for reading and editing schematics, PCB layouts, projects, and component libraries.
+## Recent updates and new features: v0.21.22 (compared with v0.21.19)
 
-## Recent updates and fixes: v0.21.19 (compared with v0.21.18)
+- **Routing detours and remnants:** read-only review of branch stubs, collinear overlaps, suspected redundant vias and detour paths, bends and layer transitions worth checking. Reports do not authorize automatic cleanup or rerouting; missing rule, pad or obstacle evidence requires review.
+- **Manufacturing-file inspection:** inspect supported single-board/panel ZIP content for mask spacing, design-paste overlap with plated holes, drill and mouse-bite candidates, and component-to-edge clearances where body evidence is sufficient. Reports retain data sources and uncovered scope.
+- **Staged PCB checks:** complete AI packages add checks after placement, each routing batch, repouring and manufacturing export. Verify target identity/revision and retain reports; missing evidence remains incomplete rather than passing.
 
-### Changes
+### Actual verification and limits
 
-- **Write timeout and disconnection recovery.** Distinguish not-started, running and unknown outcomes. Unknown outcomes pause subsequent writes to the target window. Read the original request's actual terminal state and the drawing, then acknowledge that request before resuming; do not blindly resend a write.
-- **Project and page verification.** Report project opening separately from confirmed active-page identity. Verify the project, document and tab after opening a page rather than treating an unconfirmed page as complete.
-- **Schematic wiring and cleanup.** Improve unnamed-branch T-junction readback on named buses, duplicate labels at the same anchor and batch deletion checks. Different anchors and affected branches remain subject to safe refusal rather than forced merging.
-- **Library selection and assembly BOM.** Continue checking candidates when the first matching part lacks a footprint. Prefer a verified footprint-bearing device and use the SDK's actual assembly-variant list when selecting and checking exports.
-- **Complete companion proxy.** The final skill candidate restores the existing KiRouting service integration, permission checks and original data-directory behavior while retaining the new write-recovery fixes. Use the complete skill; the plugin source repository's generic `bridge/` is not the full KiRouting installation path.
+Installed v0.21.22 was confirmed in JLCEDA Pro 4.1.99. An independent project ran 18 basic PCB items, seven SMT items, six routing paths and one remnant/via candidate as read-only checks. The installed extension replayed manufacturing inspection using actual panel ZIP and saved single-board samples, matching prevalidation. The last independent-board source comparison was not completed; no further checks were redirected to a production project and no project write/save commands were issued.
 
-### Actual verification scope
+The order-specific stencil was not supplied, so only design-paste data was checked. Counts are not a complete production list when source materials are missing. Diagonal mouse bites and some special geometry remain uncovered. The narrow-mask control raised a finding, but a known merged-opening sample can be missed and needs manual or independent geometry review. The 0.10 mm value is a sample screening threshold, not an order acceptance standard; a conservative spacing bound is not an exact global minimum. The independent staged report remains incomplete for missing evidence/coverage and does not establish whole-board DRC, complete copper connectivity or manufacturing acceptance.
 
-On 2026-11-21, installed v0.21.19 on Windows / JLCEDA Pro 4.1.99 passed independent-project checks for opening projects, page identity and wrong-page refusal, T-junction readback, different-net refusal, restricted zero-write deduplication, two-wire deletion controls, library selection and assembly-BOM comparison. Relevant wires, deduplication and deletion controls passed save/close/reopen checks. In one deduplication scene, the host's first delete returned false without changing the drawing; processing succeeded after saving and reopening. This does not promise automatic recovery from every host refusal.
+## Three packages and installation
 
-The final candidate proxy and same-version bridge client also passed real timeout, normal-close and hard-disconnection reconnection, terminal-state readback, original-request acknowledgement, resumed writes and save/reopen checks in foreground independent EDA pages. Both disconnect modes reconnected the same instance. The user's shared running proxy was not restarted.
+| Package | Purpose and download | Install into |
+| --- | --- | --- |
+| EDA extension 0.21.22 `.eext` | [GitHub extension release](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.21.22) or the [JLCEDA marketplace](https://jlc-ext.com/item/eda_gdqnxffl/ai-command-engine) | JLCEDA Professional |
+| Standalone bilingual skill 2026.11.24.1 | [Complete skill ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.11.24.1/ai-command-engine-skill_v2026.11.24.1_en-zh.zip) | Your AI tool's skill directory |
+| Portable AI companion plugin 0.1.0 | [Portable plugin ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.11.24.1/ai-command-engine-companion_v0.1.0_portable.zip) | An AI client with local plugin/skill import |
 
-### Test conditions and upgrade
+**Install the EDA extension first. For AI access, choose either the standalone skill or the AI companion plugin.** Marketplace installation does not install either AI ZIP, Node.js or proxy dependencies.
 
-Two earlier hard-disconnection trials did not actively bring the independent EDA window to the foreground. No reconnect was observed during their respective **27-second and 110-second** observation windows. The cause is unconfirmed. This is not a proven background-timer defect and does not establish a fixed background reconnect deadline.
+1. Install the EDA extension from the marketplace, or download `.eext` and use EDA's Advanced → Extension Manager → Import, then enable it and allow external interaction. Check the actual marketplace approval state.
+2. Standalone route: extract and install the complete `ai-command-engine/` folder in your AI tool's skill directory. Keep scripts, references and personal settings, then reload the skill.
+3. Companion route: extract and import the root using the client's supported local-plugin mechanism. A skill-only client can import the packaged `skills/` directories using its skill mechanism. Preserve existing global instructions. Merging the extra collaboration policy into unrelated tasks is a user choice.
+4. Use Node.js >=20.17.0 on the computer running EDA. Run `npm ci --omit=dev` in standalone `ai-command-engine/` or companion `skills/ai-command-engine/`. Use the complete included proxy rather than copying a generic `bridge/` script from the source repository.
+5. Ask AI to read the chosen skill and connection guide, start the proxy in the background, and verify the actual EDA instance, project and drawing with a read-only query before editing. On Windows follow the guide for `scripts/start-proxy.ps1` and use its returned endpoint. Do not terminate an existing shared bridge merely to check a package.
 
-This round's KiRouting checks cover cold-start protocol, query endpoints and permissions; actual routing was not rerun. Earlier sample and unverified limits still apply. A cross-origin composite FreeRouting simulation error shared by old and new versions remains unassigned, not a claimed fix. Independent-sample acceptance does not establish whole-project or manufacturing acceptance.
+The companion plugin 0.1.0 is offline-package checked only; **installation in Codex, Claude, Kimi and OpenCode has not been tested**. Compatibility manifests do not establish working host installations. Its embedded skill version marker is 2026.11.22.3; the standalone skill is 2026.11.24.1. Shared runtime scripts and references match, while plugin entry points additionally load collaboration rules. Versions are managed separately.
 
-**Update the complete companion skill to 2026.11.21.1.** Download the [English/Chinese ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.11.21.1), preserve personal settings, install the complete `ai-command-engine/` folder and reload it. Marketplace installation does not install Node.js, proxy dependencies or the skill automatically. Updating files does not replace an already-running old proxy: verify the actual connection and recovery capabilities and follow the complete skill's upgrade guide without forcing a shared proxy restart.
+See the [first-install guide](https://github.com/quhuii-lgtm/easyeda-aicommand/blob/main/docs/QUICKSTART.md). SMT platform queries require separate credentials; ordinary drawing does not. Preserve personal settings, projects and in-flight tasks. File updates do not replace a running old proxy automatically. Marketplace approval/public versions can differ from GitHub.
 
-Check the actual [GitHub plugin release](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.21.19) and [marketplace](https://jlc-ext.com/item/eda_gdqnxffl/ai-command-engine). Submission, approval and public availability are separate states.
+## Capabilities
 
-## What it does
+Through the local proxy, AI can query and edit supported schematics, PCBs, projects and libraries, with module reuse, optional routing and checking tools. Follow the actual instance's help and complete skill. A successful command does not establish persistence, electrical correctness, whole-board DRC or manufacturing acceptance.
 
-- Query and edit schematic components, wires, labels, and project pages.
-- Inspect and edit PCB components, tracks, vias, copper, supported pads and holes, and silkscreen.
-- Run supported differential-pair, length-tuning, pad-branch, silkscreen, and manufacturing checks.
-- Export DSN, call an external routing service, and explicitly import SES results.
-- Search and maintain component-library resources and inspect project data.
+![Schematic workflow demo](images/demo-schematic.gif)
 
-### Module reuse
+![PCB workflow demo](images/demo-pcb.gif)
 
-Module reuse adds module extraction, library management, restoration, PCB composition, and component replacement to the AI Command Engine menu and `module.*` command family. Use the matching companion skill's module-reuse guide for the required order; query the target instance's `__help` for parameters. See the companion skill for operation-specific verification scope and conditions.
+Demos illustrate workflows, not host acceptance of every feature. Native routing is the default, with FreeRouting and KiRouting optional; arbitrary whole-board completion is not guaranteed.
 
-The selected library directory is remembered. If none is selected, the default is `module-library` under the actual JLCEDA installation directory, not the EDA documents directory. Before using the merged extension, finish any in-flight task in the standalone module-reuse extension and stop its bridge. Existing library files are not moved, overwritten, or automatically migrated.
-
-### Feature demos
-
-The following GIFs illustrate feature workflows. They are not evidence that every feature passed v0.21.19 host acceptance.
-
-![Schematic feature demo](images/demo-schematic.gif)
-
-![PCB feature demo](images/demo-pcb.gif)
-
-Available commands depend on the installed extension and EDA version. Query the connected instance's help before using a command. A successful command does not by itself establish saved persistence, electrical correctness, whole-board DRC, or manufacturing acceptance. Auxiliary autorouting does not promise a complete route for every board.
-
-## First installation
-
-The extension, proxy skill, and AI tool are separate parts. Installing `.eext` does not install Node.js or the skill.
-
-1. **Skill and proxy:** download the [v2026.11.21.1 skill ZIP](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/download/v2026.11.21.1/ai-command-engine-skill_v2026.11.21.1_en-zh.zip) from the [skill release](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.11.21.1), then install the complete `ai-command-engine/` folder. Keep its references and scripts. Use Node.js >=20.17.0 and run `npm ci --omit=dev` in the skill root.
-2. **Background startup:** ask the AI to follow the skill's [connection guide](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/blob/main/ai-command-engine/references/setup.md) and run `scripts/start-proxy.ps1`. Windows starts it hidden and reports the actual endpoint; compatible services are reused.
-3. **EDA extension:** get the `.eext` from the [v0.21.19 plugin release](https://github.com/quhuii-lgtm/easyeda-aicommand/releases/tag/v0.21.19), import and enable it, and allow external interaction.
-4. **Verify:** use the port reported by the launcher (within `49720–49729`) to check `/health` and `/connections`, confirm the target instance and project, then make a read-only `project.getInfo` call.
-
-See the [first-install guide](docs/QUICKSTART.md). After upgrading, handle and save pending work in every EDA window, then reload each window that still runs the old extension; importing into one window does not update all open windows. Plugin and skill versions are independent. Updating the skill does not overwrite proxy user data or force replacement of a compatible running proxy.
-
-## Project links
-
-- [GitHub releases](https://github.com/quhuii-lgtm/easyeda-aicommand/releases)
-- [JLCEDA extension marketplace](https://jlc-ext.com/item/eda_gdqnxffl/ai-command-engine)
-- [AI skill releases](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases)
-- [Issues and feedback](https://github.com/quhuii-lgtm/easyeda-aicommand/issues)
-- License: [Apache-2.0](LICENSE)
+[GitHub](https://github.com/quhuii-lgtm/easyeda-aicommand) · [AI packages](https://github.com/quhuii-lgtm/easyeda-aicommand-skill/releases/tag/v2026.11.24.1) · [Issues](https://github.com/quhuii-lgtm/easyeda-aicommand/issues) · [Apache-2.0](LICENSE)

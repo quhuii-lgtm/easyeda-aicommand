@@ -1,7 +1,8 @@
 import type { ICommandDef } from '../engine/types'
 import { executeCommand } from '../engine/registry'
+import { pcbSourceRevision } from '../pcb/dsnSourceSnapshot'
 import { parseSourceLog } from '../pcb/sourcelog'
-import { JLC_SUPPORTED_MATERIALS, UPSTREAM_INFO, runOfficialDfm, type DfmKind, type DfmRun } from '../dfm/official'
+import { DFM_PACKAGE_CHECKS, JLC_SUPPORTED_MATERIALS, UPSTREAM_INFO, runOfficialDfm, type DfmKind, type DfmRun } from '../dfm/official'
 
 type DfmInputs = {
 	material?: string
@@ -10,6 +11,7 @@ type DfmInputs = {
 	innerCopperOz?: 1
 	standard?: 'economy' | 'standard'
 	minSpacingMm?: number
+	smtDesignators?: string[]
 	padPurposeEvidence?: Array<{ padId: string; classification: 'nc' | 'reserved' | 'mechanical' | 'other'; reason: string; source: string }>
 }
 
@@ -143,6 +145,8 @@ function guardedSdk(sdk: any, expectedUuid: string, budgetMs: number, startedAt:
 function validateInputs(kind: DfmKind, params: Record<string, any>): DfmInputs {
 	if (kind !== 'pcb' && params.padPurposeEvidence !== undefined)
 		throw new Error('padPurposeEvidence 仅适用于 pcb.runDfm')
+	if (kind !== 'smt' && params.smtDesignators !== undefined)
+		throw new Error('smtDesignators 仅适用于 pcb.runSmtDfm')
 	if (kind === 'pcb') {
 		if (typeof params.material !== 'string' || !JLC_SUPPORTED_MATERIALS.includes(params.material))
 			throw new Error(`material 必须是受支持板材之一：${JLC_SUPPORTED_MATERIALS.join('、')}`)
@@ -162,7 +166,10 @@ function validateInputs(kind: DfmKind, params: Record<string, any>): DfmInputs {
 			throw new Error('standard 必须为 economy 或 standard')
 		if (typeof params.thickness !== 'number' || !Number.isFinite(params.thickness) || params.thickness <= 0)
 			throw new Error('thickness 必须是有限正数，单位 mm')
-		return { standard: params.standard, thickness: params.thickness }
+		const roster = params.smtDesignators
+		if (roster !== undefined && (!Array.isArray(roster) || roster.some(ref => typeof ref !== 'string' || !ref || ref !== ref.trim()) || new Set(roster).size !== roster.length))
+			throw new Error('smtDesignators 必须是无重复的精确机贴位号数组')
+		return { standard: params.standard, thickness: params.thickness, ...(roster === undefined ? {} : { smtDesignators: roster }) }
 	}
 	if (typeof params.minSpacingMm !== 'number' || !Number.isFinite(params.minSpacingMm) || params.minSpacingMm <= 0)
 		throw new Error('minSpacingMm 必须是有限正数，单位 mm')
@@ -183,13 +190,40 @@ export async function runDfmCommand(kind: DfmKind, params: Record<string, any>, 
 	if (focus?.documentType !== 3 || !documentUuid || focus.uuid !== documentUuid)
 		throw documentError(`当前焦点不是要求的 PCB（要求 ${documentUuid ?? '有效 UUID'}，实际 ${focus?.uuid ?? '无焦点'}）`)
 	const guarded = guardedSdk(sdk, documentUuid, budgetMs, startedAt)
+	const readRevision = async () => {
+		try {
+			const source = await guarded.sdk.sys_FileManager.getDocumentSource()
+			return await pcbSourceRevision(source, documentUuid)
+		}
+		catch {
+			guarded.throwIfFailed()
+			return null
+		}
+	}
+	const initialRevision = kind === 'spacing' ? null : await readRevision()
 	const core: DfmRun = await runOfficialDfm(kind, inputs, guarded.sdk)
 	await guarded.checkFinal()
 	guarded.throwIfFailed()
+	const revision = initialRevision ? await readRevision() : null
+	if (revision && revision !== initialRevision)
+		throw documentError('PCB 内容在检查期间改变，请重新检查')
 	return {
 		...core,
 		documentUuid,
 		checkType: kind,
+		checkScope: {
+			object: 'active-pcb',
+			revision,
+			revisionStatus: revision ? 'verified' : 'unverified',
+			ruleStatus: core.results.map(result => ({
+				number: result.number, item: result.item, result: result.result,
+				verification: core.issues.some(issue => issue.item === result.number) ? 'partial'
+					: result.result === 'warning' ? 'review-required' : 'evaluated',
+			})),
+			assemblyBasis: kind === 'smt' ? inputs.smtDesignators === undefined ? 'board-geometry-estimate' : 'explicit-designators' : null,
+			approximation: core.coverage,
+			notCovered: [...DFM_PACKAGE_CHECKS],
+		},
 		inputs,
 		timestamp: Date.now(),
 		upstream: UPSTREAM_INFO,
@@ -201,8 +235,8 @@ const def = (name: string, kind: DfmKind, params: ICommandDef['params'], summary
 	summary,
 	params,
 	returns: kind === 'pcb'
-		? '{ results, expectedCount, issues, coverage, upstreamPassed, complete, passed, reportedCopper, documentUuid, checkType, inputs, timestamp, upstream }'
-		: '{ results, expectedCount, issues, coverage, upstreamPassed, complete, passed, documentUuid, checkType, inputs, timestamp, upstream }',
+		? '{ results, expectedCount, issues, coverage, checkScope, upstreamPassed, complete, passed, reportedCopper, documentUuid, checkType, inputs, timestamp, upstream }'
+		: '{ results, expectedCount, issues, coverage, checkScope, upstreamPassed, complete, passed, documentUuid, checkType, inputs, timestamp, upstream }',
 	example: { cmd: name, params: kind === 'pcb'
 		? { material: JLC_SUPPORTED_MATERIALS[0], thickness: 1.6, outerCopperOz: 1, innerCopperOz: 1 }
 		: kind === 'smt' ? { standard: 'economy', thickness: 1.6 } : { minSpacingMm: 0.13 } },
@@ -220,6 +254,7 @@ export const dfmCommands: ICommandDef[] = [
 	def('pcb.runSmtDfm', 'smt', [
 		{ name: 'standard', type: 'string', required: true, description: 'SMT标准：economy（经济型）或 standard（标准型）' },
 		{ name: 'thickness', type: 'number', required: true, description: 'PCB板厚，单位 mm，必须为有限正数' },
+		{ name: 'smtDesignators', type: 'string[]', description: '可选。当前 PCB 的机贴位号，按名单检查贴装面、最小封装、IC 脚距和 BGA 球距。可使用 pcb.preflightAssembly 返回的名单；省略时按板上图元估计。' },
 	], '执行基于嘉立创下单检查器 v1.0.4 的 SMT DFM 检查；结果 complete 与 passed 分开，覆盖边界见 coverage。'),
 	def('pcb.checkSameNetPadSpacing', 'spacing', [
 		{ name: 'minSpacingMm', type: 'number', required: true, description: '同网络焊盘最小边缘间距，单位 mm，必须为有限正数' },

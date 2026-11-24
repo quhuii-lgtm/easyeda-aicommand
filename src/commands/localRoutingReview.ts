@@ -144,7 +144,7 @@ async function readVias(): Promise<LocalVia[]> {
 	}));
 }
 
-async function readPads(): Promise<LocalPad[]> {
+export async function readRoutingPads(): Promise<LocalPad[]> {
 	if (typeof eda.pcb_PrimitivePad?.getAll !== 'function')
 		throw new Error('SDK 没有焊盘列表接口');
 	const independent = await eda.pcb_PrimitivePad.getAll();
@@ -190,7 +190,7 @@ export async function reviewLocalRouting(params: Record<string, any>, ctx?: ICom
 	const lines = await readRequiredLines();
 	const arcs = await readOptionalCategory(readArcs);
 	const vias = await readOptionalCategory(readVias);
-	const pads = await readOptionalCategory(readPads);
+	const pads = await readOptionalCategory(readRoutingPads);
 	await ctx.assertDocumentTarget();
 	const revisionAfter = await readPcbRevision(ctx);
 	const analysis = analyzeLocalRouting({ nets: params.nets as string[] | undefined, region, lines, arcs: arcs.values, vias: vias.values, pads: pads.values });
